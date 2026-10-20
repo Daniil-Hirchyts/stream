@@ -1,0 +1,7 @@
+.gradle/
+**/build/
+local.properties
+__pycache__/
+*.pyc
+native/config.json
+native/run-host.sh

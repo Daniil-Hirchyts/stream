@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Daniil Cast</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <header><img src="icon.png" width="32" height="32" alt=""><div><h1>Daniil Cast</h1><small>Video plays directly on your Fire TV</small></div></header>
+  <p id="connection" role="status">Connecting to your Fire TV…</p>
+  <section><h2>Video on this page</h2><p id="pageTitle"></p>
+    <div class="row"><button id="scan">Find videos</button><button id="embedded" class="secondary">Find embedded streams</button></div>
+    <p id="hint">For embedded players, enable stream detection, then reload the page and start the video.</p>
+    <label for="sources">Stream</label><select id="sources"><option value="">No stream selected</option></select>
+    <p id="sourceInfo"></p>
+    <label class="check"><input type="checkbox" id="resume" checked> Continue from this page’s playback position</label>
+    <button id="cast" class="primary" disabled>Cast video</button>
+    <details><summary>Paste a direct video URL</summary><label for="url">MP4, HLS (.m3u8), or DASH (.mpd)</label><input type="url" id="url" placeholder="https://…"><button id="manual" class="secondary">Cast URL</button></details>
+  </section>
+  <section><h2>On your TV</h2><p id="nowPlaying">Nothing playing</p>
+    <div class="row"><button id="play" class="secondary">Play</button><button id="pause" class="secondary">Pause</button><button id="stop" class="secondary">Stop</button></div>
+    <label for="seek" id="time">00:00 / 00:00</label><input type="range" id="seek" min="0" max="0" value="0" step="1000" disabled>
+  </section>
+  <p id="error" role="alert"></p>
+  <footer>No screen capture. No ads. No cloud service.<br>Signed URLs can expire. DRM and login-bound streams may need the site’s TV app.</footer>
+  <details><summary>Extension updates</summary><p>After changing the local extension code, reload it and reopen this popup.</p><button id="reloadExtension" class="secondary">Reload extension</button></details>
+  <script src="popup.js" type="module"></script>
+</body></html>

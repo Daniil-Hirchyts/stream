@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Daniil Cast",
+  "version": "0.1.1",
+  "description": "Send a video stream from Chrome directly to your Fire TV over your trusted ADB connection.",
+  "minimum_chrome_version": "116",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlTtQP9moVZVODLwAB4oxbEkpj7InH9ns8iutLAf/StfpoeHPlhDSfQfGmGYJglpIY2kyoWJWU/wFsamKsDj/C9u3C+rIVh0BlYo/aT6dMnc7Igz5E1rdrScuYvOniMeinB7vK9zoWb3mH1jIyhlvD0mraqrwje0sBEz3E2eKDjGhYvQCXGQk2D0mdWPTZSDZMqjs11PjOO0fO+R1lkK3qTuFtxLYY0KJ2Q4M5eZzyQOjM4zCGf978pAI/ckF35THg1FWZkwEdoHUu0Wtqw+HmBUhuRlq+euki7UyB1F2FjT7DJgDYtJ584MMNw+T6TS+pbdVDociAxqn/WaPBInNlQIDAQAB",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "webRequest",
+    "nativeMessaging",
+    "contextMenus"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Cast video to Fire TV",
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "128": "icon.png"
+  }
+}
