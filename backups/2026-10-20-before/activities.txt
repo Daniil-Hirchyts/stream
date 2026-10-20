@@ -1,0 +1,140 @@
+ACTIVITY MANAGER ACTIVITIES (dumpsys activity activities)
+Display #0 (activities from top to bottom):
+
+  Stack #3: type=standard mode=fullscreen
+  isSleeping=false
+  mBounds=Rect(0, 0 - 0, 0)
+    Task id #1513
+    mBounds=Rect(0, 0 - 0, 0)
+    mMinWidth=-1
+    mMinHeight=-1
+    mLastNonFullscreenBounds=null
+    * TaskRecord{66e217b #1513 A=10163:com.amazon.tv.settings.v2 U=0 StackId=3 sz=1}
+      userId=0 effectiveUid=u0a163 mCallingUid=u0a153 mUserSetupComplete=true mCallingPackage=com.amazon.tv.launcher
+      affinity=10163:com.amazon.tv.settings.v2
+      intent={act=com.amazon.device.settings.action.DEVICE flg=0x10808000 cmp=com.amazon.tv.settings.v2/.tv.device.DeviceActivity}
+      realActivity=com.amazon.tv.settings.v2/.tv.device.DeviceActivity
+      autoRemoveRecents=false isPersistable=false numFullscreen=1 activityType=1
+      rootWasReset=false mNeverRelinquishIdentity=true mReuseTask=false mLockTaskAuth=LOCK_TASK_AUTH_PINNABLE
+      Activities=[ActivityRecord{a726683 u0 com.amazon.tv.settings.v2/.tv.device.DeviceActivity t1513}]
+      askedCompatMode=false inRecents=true isAvailable=true
+      stackId=3
+      hasBeenVisible=true mResizeMode=RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION mSupportsPictureInPicture=false isResizeable=true lastActiveTime=707333 (inactive for 437s)
+      * Hist #0: ActivityRecord{a726683 u0 com.amazon.tv.settings.v2/.tv.device.DeviceActivity t1513}
+          packageName=com.amazon.tv.settings.v2 processName=com.amazon.tv.settings.v2
+          launchedFromUid=10153 launchedFromPackage=com.amazon.tv.launcher userId=0
+          app=ProcessRecord{7a59f58 5691:com.amazon.tv.settings.v2/u0a163}
+          Intent { act=com.amazon.device.settings.action.DEVICE flg=0x10808000 cmp=com.amazon.tv.settings.v2/.tv.device.DeviceActivity (has extras) }
+          frontOfTask=true task=TaskRecord{66e217b #1513 A=10163:com.amazon.tv.settings.v2 U=0 StackId=3 sz=1}
+          taskAffinity=10163:com.amazon.tv.settings.v2
+          realActivity=com.amazon.tv.settings.v2/.tv.device.DeviceActivity
+          baseDir=/system/priv-app/com.amazon.tv.settings.v2/com.amazon.tv.settings.v2.apk
+          dataDir=/data/user_de/0/com.amazon.tv.settings.v2
+          stateNotNeeded=false componentSpecified=true mActivityType=standard
+          compat={320dpi always-compat} labelRes=0x7f120635 icon=0x7f080061 theme=0x7f1301a2
+          mLastReportedConfigurations:
+           mGlobalConfig={1.0 ?mcc?mnc [en_US] ldltr sw540dp w960dp h540dp 320dpi lrg long land television -touch -keyb/v/h dpad/v winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=Rect(0, 0 - 1920, 1080) mWindowingMode=fullscreen mActivityType=undefined} s.5}
+           mOverrideConfig={1.0 ?mcc?mnc [en_US] ldltr sw540dp w960dp h540dp 320dpi lrg long land television -touch -keyb/v/h dpad/v winConfig={ mBounds=Rect(0, 0 - 1920, 1080) mAppBounds=Rect(0, 0 - 1920, 1080) mWindowingMode=fullscreen mActivityType=standard} s.5}
+          CurrentConfiguration={1.0 ?mcc?mnc [en_US] ldltr sw540dp w960dp h540dp 320dpi lrg long land television -touch -keyb/v/h dpad/v winConfig={ mBounds=Rect(0, 0 - 1920, 1080) mAppBounds=Rect(0, 0 - 1920, 1080) mWindowingMode=fullscreen mActivityType=standard} s.5}
+          taskDescription: label="null" icon=null iconResource=0 iconFilename=null primaryColor=ff455a64
+           backgroundColor=ff303030
+           statusBarColor=ff000000
+           navigationBarColor=ff000000
+          launchFailed=false launchCount=1 lastLaunchTime=-8m56s969ms
+          haveState=false icicle=null
+          state=RESUMED stopped=false delayedResume=false finishing=false
+          keysPaused=false inHistory=true visible=true sleeping=false idle=true mStartingWindowState=STARTING_WINDOW_SHOWN
+          fullscreen=true noDisplay=false immersive=false launchMode=2
+          frozenBeforeDestroy=false forceNewConfig=false
+          mActivityType=standard
+          displayStartTime=-11s404ms startTime=0
+          waitingVisible=false nowVisible=true lastVisibleTime=-8m56s594ms
+          connections=[ConnectionRecord{c87e98f u0 CR com.amazon.tv.settings.core/.service.SettingsCoreService:@bd410ee}, ConnectionRecord{b4f3e60 u0 CR com.amazon.device.software.ota/.OtaService:@45d6263}]
+          resizeMode=RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION
+          mLastReportedMultiWindowMode=false mLastReportedPictureInPictureMode=false
+
+    Running activities (most recent first):
+      TaskRecord{66e217b #1513 A=10163:com.amazon.tv.settings.v2 U=0 StackId=3 sz=1}
+        Run #0: ActivityRecord{a726683 u0 com.amazon.tv.settings.v2/.tv.device.DeviceActivity t1513}
+
+    mResumedActivity: ActivityRecord{a726683 u0 com.amazon.tv.settings.v2/.tv.device.DeviceActivity t1513}
+    mLastPausedActivity: ActivityRecord{a726683 u0 com.amazon.tv.settings.v2/.tv.device.DeviceActivity t1513}
+
+  Stack #0: type=home mode=fullscreen
+  isSleeping=false
+  mBounds=Rect(0, 0 - 0, 0)
+
+    Task id #1510
+    mBounds=Rect(0, 0 - 0, 0)
+    mMinWidth=-1
+    mMinHeight=-1
+    mLastNonFullscreenBounds=null
+    * TaskRecord{b39eb98 #1510 A=10153:com.amazon.tv.launcher.home U=0 StackId=0 sz=1}
+      userId=0 effectiveUid=u0a153 mCallingUid=u0a163 mUserSetupComplete=true mCallingPackage=com.amazon.tv.settings.v2
+      affinity=10153:com.amazon.tv.launcher.home
+      intent={act=android.intent.action.MAIN cat=[android.intent.category.HOME] flg=0x14000000 cmp=com.amazon.tv.launcher/.ui.HomeActivity_vNext}
+      realActivity=com.amazon.tv.launcher/.ui.HomeActivity_vNext
+      autoRemoveRecents=false isPersistable=true numFullscreen=1 activityType=2
+      rootWasReset=false mNeverRelinquishIdentity=true mReuseTask=false mLockTaskAuth=LOCK_TASK_AUTH_PINNABLE
+      Activities=[ActivityRecord{a0f3775 u0 com.amazon.tv.launcher/.ui.HomeActivity_vNext t1510}]
+      askedCompatMode=false inRecents=true isAvailable=true
+      mRootProcess=ProcessRecord{2bde041 1725:com.amazon.tv.launcher/u0a153}
+      stackId=0
+      hasBeenVisible=true mResizeMode=RESIZE_MODE_UNRESIZEABLE mSupportsPictureInPicture=false isResizeable=false lastActiveTime=608019 (inactive for 537s)
+      * Hist #0: ActivityRecord{a0f3775 u0 com.amazon.tv.launcher/.ui.HomeActivity_vNext t1510}
+          packageName=com.amazon.tv.launcher processName=com.amazon.tv.launcher
+          launchedFromUid=10163 launchedFromPackage=com.amazon.tv.settings.v2 userId=0
+          app=ProcessRecord{2bde041 1725:com.amazon.tv.launcher/u0a153}
+          Intent { act=android.intent.action.MAIN cat=[android.intent.category.HOME] flg=0x14000000 cmp=com.amazon.tv.launcher/.ui.HomeActivity_vNext }
+          frontOfTask=true task=TaskRecord{b39eb98 #1510 A=10153:com.amazon.tv.launcher.home U=0 StackId=0 sz=1}
+          taskAffinity=10153:com.amazon.tv.launcher.home
+          realActivity=com.amazon.tv.launcher/.ui.HomeActivity_vNext
+          baseDir=/data/app/com.amazon.tv.launcher-NZg-n-Yk8z5NtzQ4OAgLNQ==/base.apk
+          dataDir=/data/user/0/com.amazon.tv.launcher
+          stateNotNeeded=false componentSpecified=false mActivityType=home
+          compat={320dpi always-compat} labelRes=0x7f1102ba icon=0x7f0801b2 theme=0x7f1201fb
+          mLastReportedConfigurations:
+           mGlobalConfig={1.0 ?mcc?mnc [en_US] ldltr sw540dp w960dp h540dp 320dpi lrg long land television -touch -keyb/v/h dpad/v winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=Rect(0, 0 - 1920, 1080) mWindowingMode=fullscreen mActivityType=undefined} s.5}
+           mOverrideConfig={1.0 ?mcc?mnc [en_US] ldltr sw540dp w960dp h540dp 320dpi lrg long land television -touch -keyb/v/h dpad/v winConfig={ mBounds=Rect(0, 0 - 1920, 1080) mAppBounds=Rect(0, 0 - 1920, 1080) mWindowingMode=fullscreen mActivityType=home} s.5}
+          CurrentConfiguration={1.0 ?mcc?mnc [en_US] ldltr sw540dp w960dp h540dp 320dpi lrg long land television -touch -keyb/v/h dpad/v winConfig={ mBounds=Rect(0, 0 - 1920, 1080) mAppBounds=Rect(0, 0 - 1920, 1080) mWindowingMode=fullscreen mActivityType=home} s.5}
+          OverrideConfiguration={0.0 ?mcc?mnc ?localeList ?layoutDir ?swdp ?wdp ?hdp ?density ?lsize ?long ?ldr ?wideColorGamut ?orien ?uimode ?night ?touch ?keyb/?/? ?nav/? winConfig={ mBounds=Rect(0, 0 - 0, 0) mAppBounds=null mWindowingMode=undefined mActivityType=home}}
+          taskDescription: label="null" icon=null iconResource=0 iconFilename=null primaryColor=ff455a64
+           backgroundColor=ff303030
+           statusBarColor=ff000000
+           navigationBarColor=ff000000
+          launchFailed=false launchCount=0 lastLaunchTime=-18m42s96ms
+          haveState=true icicle=Bundle[mParcelledData.dataSize=1976]
+          state=STOPPED stopped=true delayedResume=false finishing=false
+          keysPaused=false inHistory=true visible=false sleeping=false idle=true mStartingWindowState=STARTING_WINDOW_NOT_SHOWN
+          fullscreen=true noDisplay=false immersive=false launchMode=2
+          frozenBeforeDestroy=false forceNewConfig=false
+          mActivityType=home
+          waitingVisible=false nowVisible=false lastVisibleTime=-8m58s140ms
+          resizeMode=RESIZE_MODE_UNRESIZEABLE
+          mLastReportedMultiWindowMode=false mLastReportedPictureInPictureMode=false
+
+    Running activities (most recent first):
+      TaskRecord{b39eb98 #1510 A=10153:com.amazon.tv.launcher.home U=0 StackId=0 sz=1}
+        Run #0: ActivityRecord{a0f3775 u0 com.amazon.tv.launcher/.ui.HomeActivity_vNext t1510}
+
+    mLastPausedActivity: ActivityRecord{a0f3775 u0 com.amazon.tv.launcher/.ui.HomeActivity_vNext t1510}
+
+  ResumedActivity: ActivityRecord{a726683 u0 com.amazon.tv.settings.v2/.tv.device.DeviceActivity t1513}
+  mFocusedStack=ActivityStack{d01cff1 stackId=3 type=standard mode=fullscreen visible=true translucent=false, 1 tasks} mLastFocusedStack=ActivityStack{d01cff1 stackId=3 type=standard mode=fullscreen visible=true translucent=false, 1 tasks}
+  mCurTaskIdForUser={0=1514}
+  mUserStackInFront={}
+  displayId=0 stacks=2
+   mHomeStack=ActivityStack{c8727d6 stackId=0 type=home mode=fullscreen visible=false translucent=true, 1 tasks}
+  isHomeRecentsComponent=false  KeyguardController:
+    mKeyguardShowing=false
+    mAodShowing=false
+    mKeyguardGoingAway=false
+    mOccluded=false
+    mDismissingKeyguardActivity=null
+    mDismissalRequested=false
+    mVisibilityTransactionDepth=0
+  LockTaskController
+    mLockTaskModeState=NONE
+    mLockTaskModeTasks=
+    mLockTaskPackages (userId:packages)=
+      u0:[]

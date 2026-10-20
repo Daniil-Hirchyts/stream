@@ -1,0 +1,27 @@
+{
+  "created": "2026-10-20T18:36:46+0200",
+  "home": "com.amazon.tv.launcher/.ui.HomeActivity_vNext",
+  "host": "192.168.1.11",
+  "list": "/Users/hirchytsdaniil/Developer/Hobby/daniiltv/profiles/firetv-preserve-features.txt",
+  "packages": {
+    "com.amazon.ceviche": "enabled",
+    "com.amazon.dp.logger": "enabled",
+    "com.amazon.hybridadidservice": "enabled",
+    "com.amazon.kso.blackbird": "enabled",
+    "com.amazon.neo.minerva": "enabled",
+    "com.amazon.neo.minerva.logcat": "enabled",
+    "com.amazon.perfc": "enabled",
+    "com.amazon.perfcollection": "enabled",
+    "com.amazon.tv.acr": "enabled",
+    "com.amazon.tv.developer.dataservice": "enabled",
+    "com.amazon.tv.fw.metrics": "enabled",
+    "com.amazon.tv.launcher": "enabled",
+    "com.amazon.wirelessmetrics.service": "enabled"
+  },
+  "settings": {
+    "animator_duration_scale": "null",
+    "transition_animation_scale": "1.0",
+    "window_animation_scale": "1.0"
+  },
+  "version": 1
+}

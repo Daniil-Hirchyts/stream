@@ -1,0 +1,96 @@
+Receiver Resolver Table:
+  Schemes:
+      file:
+        7698747 com.amazon.tv.fw.metrics/.MetricsReceiver filter c326783
+          Action: "android.intent.action.MEDIA_MOUNTED"
+          Scheme: "file"
+
+  Non-Data Actions:
+      android.intent.action.BOOT_COMPLETED:
+        7698747 com.amazon.tv.fw.metrics/.MetricsReceiver filter 90abe32
+          Action: "android.intent.action.BOOT_COMPLETED"
+
+Key Set Manager:
+  [com.amazon.tv.fw.metrics]
+      Signing KeySets: 1
+
+Packages:
+  Package [com.amazon.tv.fw.metrics] (7106b74):
+    userId=10181
+    pkg=Package{273489d com.amazon.tv.fw.metrics}
+    codePath=/system/app/FireTvMetrics
+    resourcePath=/system/app/FireTvMetrics
+    legacyNativeLibraryDir=/system/app/FireTvMetrics/lib
+    primaryCpuAbi=null
+    secondaryCpuAbi=null
+    versionCode=1 minSdk=17 targetSdk=17
+    versionName=1.0
+    splits=[base]
+    apkSigningVersion=3
+    applicationInfo=ApplicationInfo{1a3f112 com.amazon.tv.fw.metrics}
+    flags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    privateFlags=[ ]
+    dataDir=/data/user/0/com.amazon.tv.fw.metrics
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    usesLibraries:
+      org.apache.http.legacy
+      com.fireos.sdk.metrics
+    usesLibraryFiles:
+      /system/framework/org.apache.http.legacy.boot.jar
+      /system/priv-app/MetricsApi/MetricsApi.apk
+    timeStamp=2009-01-01 01:00:00
+    firstInstallTime=2009-01-01 01:00:00
+    lastUpdateTime=2009-01-01 01:00:00
+    signatures=PackageSignatures{c2d50e3 version:3, signatures:[a34984b4], past signatures:[]}
+    installPermissionsFixed=true
+    pkgFlags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    requested permissions:
+      android.permission.BLUETOOTH
+      android.permission.RECEIVE_BOOT_COMPLETED
+      android.permission.WRITE_EXTERNAL_STORAGE
+      android.permission.ACCESS_NETWORK_STATE
+      android.permission.ACCESS_WIFI_STATE
+      com.amazon.device.permission.READ_CONTROLLERS
+      com.amazon.device.permission.WRITE_CONTROLLERS
+      com.amazon.permission.ACCESS_HDMI_SERVICE_ADVANCED
+      amazon.permission.COLLECT_METRICS
+      com.amazon.dcp.metrics.permission.METRICS_PERMISSION
+      com.amazon.permission.ESPRESSO_SHOT_PERMISSION
+      android.permission.READ_EXTERNAL_STORAGE
+    install permissions:
+      com.amazon.device.permission.READ_CONTROLLERS: granted=true
+      com.amazon.permission.ACCESS_HDMI_SERVICE_ADVANCED: granted=true
+      android.permission.RECEIVE_BOOT_COMPLETED: granted=true
+      android.permission.BLUETOOTH: granted=true
+      android.permission.READ_EXTERNAL_STORAGE: granted=true
+      amazon.permission.COLLECT_METRICS: granted=true
+      com.amazon.device.permission.WRITE_CONTROLLERS: granted=true
+      android.permission.ACCESS_NETWORK_STATE: granted=true
+      com.amazon.permission.ESPRESSO_SHOT_PERMISSION: granted=true
+      android.permission.WRITE_EXTERNAL_STORAGE: granted=true
+      android.permission.ACCESS_WIFI_STATE: granted=true
+      com.amazon.dcp.metrics.permission.METRICS_PERMISSION: granted=true
+    User 0: ceDataInode=-4294837062 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0 instant=false virtual=false
+      gids=[3002]
+      runtime permissions:
+      disabledComponents:
+        com.amazon.tv.fw.metrics.MetricsReceiver
+
+Package Changes:
+  Sequence number=34
+  User 0:
+    seq=1, package=com.amazon.tv.quicksettings.ui
+    seq=15, package=com.amazon.tv.settings.v2
+    seq=27, package=com.amazon.ceviche
+    seq=33, package=com.amazon.ftv.screensaver
+
+
+Dexopt state:
+  [com.amazon.tv.fw.metrics]
+    path: /system/app/FireTvMetrics/FireTvMetrics.apk
+      arm: [status=speed-profile] [reason=bg-dexopt]
+
+
+Compiler stats:
+  [com.amazon.tv.fw.metrics]
+    (No recorded stats)

@@ -1,0 +1,2 @@
+Filesystem            1K-blocks    Used Available Use% Mounted on
+/dev/block/mmcblk0p13   5222616 2151212   2947588  43% /data

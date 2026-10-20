@@ -1,0 +1,13 @@
+package:com.amazon.neo.minerva
+package:com.amazon.tv.acr
+package:com.amazon.hybridadidservice
+package:com.amazon.ceviche
+package:com.amazon.neo.minerva.logcat
+package:com.amazon.dp.logger
+package:com.android.nfc
+package:com.amazon.perfc
+package:com.amazon.wirelessmetrics.service
+package:com.amazon.tv.fw.metrics
+package:com.amazon.tv.developer.dataservice
+package:com.amazon.kso.blackbird
+package:com.amazon.perfcollection

@@ -1,0 +1,61 @@
+{
+  "apps": [
+    {
+      "app": "Netflix",
+      "component": "com.netflix.ninja/.MainActivity",
+      "started": true,
+      "response": "Starting: Intent { cmp=com.netflix.ninja/.MainActivity }\nWarning: Activity not started, its current task has been brought to the front\nStatus: ok\nActivity: com.netflix.ninja/.MainActivity\nThisTime: 2144\nTotalTime: 2144\nWaitTime: 2292\nComplete",
+      "resumed": [
+        "mResumedActivity: ActivityRecord{7a0f791 u0 com.netflix.ninja/.MainActivity t1511}",
+        "ResumedActivity: ActivityRecord{7a0f791 u0 com.netflix.ninja/.MainActivity t1511}"
+      ]
+    },
+    {
+      "app": "Prime Video",
+      "component": "com.amazon.firebat/com.amazon.pyrocore.IgnitionActivity",
+      "started": true,
+      "response": "Starting: Intent { cmp=com.amazon.firebat/com.amazon.pyrocore.IgnitionActivity }\nWarning: Activity not started, its current task has been brought to the front\nStatus: ok\nActivity: com.amazon.firebat/com.amazon.pyrocore.IgnitionActivity\nThisTime: 485\nTotalTime: 485\nWaitTime: 524\nComplete",
+      "resumed": [
+        "mResumedActivity: ActivityRecord{829f0c8 u0 com.amazon.firebat/com.amazon.pyrocore.IgnitionActivity t1512}",
+        "ResumedActivity: ActivityRecord{829f0c8 u0 com.amazon.firebat/com.amazon.pyrocore.IgnitionActivity t1512}"
+      ]
+    },
+    {
+      "app": "YouTube",
+      "component": "com.amazon.firetv.youtube/dev.cobalt.app.MainActivity",
+      "started": true,
+      "response": "Starting: Intent { cmp=com.amazon.firetv.youtube/dev.cobalt.app.MainActivity }\nStatus: ok\nActivity: com.amazon.firetv.youtube/dev.cobalt.app.MainActivity\nThisTime: 1349\nTotalTime: 1244\nWaitTime: 1748\nComplete",
+      "resumed": [
+        "mResumedActivity: ActivityRecord{1d3f60b u0 com.amazon.firetv.youtube/dev.cobalt.app.MainActivity t1513}",
+        "ResumedActivity: ActivityRecord{1d3f60b u0 com.amazon.firetv.youtube/dev.cobalt.app.MainActivity t1513}"
+      ]
+    },
+    {
+      "app": "Apple TV",
+      "component": "com.apple.atve.amazon.appletv/.MainActivity",
+      "started": true,
+      "response": "Starting: Intent { cmp=com.apple.atve.amazon.appletv/.MainActivity }\nStatus: ok\nActivity: com.apple.atve.amazon.appletv/.MainActivity\nThisTime: 2662\nTotalTime: 2434\nWaitTime: 2832\nComplete",
+      "resumed": [
+        "mResumedActivity: ActivityRecord{ee390d u0 com.apple.atve.amazon.appletv/.MainActivity t1514}",
+        "ResumedActivity: ActivityRecord{ee390d u0 com.apple.atve.amazon.appletv/.MainActivity t1514}"
+      ]
+    },
+    {
+      "app": "Disney+",
+      "component": "com.disney.disneyplus/com.bamtechmedia.dominguez.main.MainActivity",
+      "started": true,
+      "response": "Starting: Intent { cmp=com.disney.disneyplus/com.bamtechmedia.dominguez.main.MainActivity }\nStatus: ok\nActivity: com.disney.disneyplus/com.bamtechmedia.dominguez.main.MainActivity\nThisTime: 1808\nTotalTime: 1661\nWaitTime: 2499\nComplete",
+      "resumed": [
+        "mResumedActivity: ActivityRecord{f48a8c6 u0 com.disney.disneyplus/com.bamtechmedia.dominguez.main.MainActivity t1515}",
+        "ResumedActivity: ActivityRecord{f48a8c6 u0 com.disney.disneyplus/com.bamtechmedia.dominguez.main.MainActivity t1515}"
+      ]
+    }
+  ],
+  "boot_completed": true,
+  "installed_apps_unchanged": true,
+  "disabled_packages_match": true,
+  "wifi_validated": true,
+  "original_home_enabled": true,
+  "crash_log_has_fatal_exception": false,
+  "adb_port_closed": true
+}

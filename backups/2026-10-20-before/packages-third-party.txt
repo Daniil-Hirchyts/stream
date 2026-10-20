@@ -1,0 +1,10 @@
+package:fr.francetv.pluzz
+package:com.amazon.tv.legal.notices.overlay.localisation.common
+package:com.amazon.firetv.youtube
+package:com.apple.atve.amazon.appletv
+package:com.amazon.tv.settings.v2.overlay.localisation.common
+package:com.amazon.tv.parentalcontrols.overlay.localisation.common
+package:fr.tf1.mytf1
+package:com.esaba.downloader
+package:com.netflix.ninja
+package:com.disney.disneyplus

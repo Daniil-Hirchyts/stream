@@ -1,0 +1,60 @@
+Key Set Manager:
+  [com.amazon.neo.minerva.logcat]
+      Signing KeySets: 2
+
+Packages:
+  Package [com.amazon.neo.minerva.logcat] (4c65f6b):
+    userId=10211
+    pkg=Package{14b6ac8 com.amazon.neo.minerva.logcat}
+    codePath=/system/priv-app/com.amazon.neo.minerva.logcat-arm
+    resourcePath=/system/priv-app/com.amazon.neo.minerva.logcat-arm
+    legacyNativeLibraryDir=/system/priv-app/com.amazon.neo.minerva.logcat-arm/lib
+    primaryCpuAbi=armeabi-v7a
+    secondaryCpuAbi=null
+    versionCode=1095810 minSdk=21 targetSdk=35
+    versionName=0.1.176.0-com.amazon.neo.minerva.logcat-arm_1095810
+    splits=[base]
+    apkSigningVersion=2
+    applicationInfo=ApplicationInfo{6559761 com.amazon.neo.minerva.logcat}
+    flags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    privateFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION PRIVILEGED ]
+    dataDir=/data/user/0/com.amazon.neo.minerva.logcat
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    timeStamp=2009-01-01 01:00:00
+    firstInstallTime=2009-01-01 01:00:00
+    lastUpdateTime=2009-01-01 01:00:00
+    signatures=PackageSignatures{c973286 version:2, signatures:[e627f73a], past signatures:[]}
+    installPermissionsFixed=true
+    pkgFlags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    requested permissions:
+      com.amazon.neo.permission.ADD_SERVICE
+      com.amazon.neo.permission.LAUNCH_SERVICE
+      android.permission.READ_LOGS
+      amazon.permission.COLLECT_METRICS
+    install permissions:
+      com.amazon.neo.permission.ADD_SERVICE: granted=true
+      amazon.permission.COLLECT_METRICS: granted=true
+      com.amazon.neo.permission.LAUNCH_SERVICE: granted=true
+      android.permission.READ_LOGS: granted=true
+    User 0: ceDataInode=-4294836922 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0 instant=false virtual=false
+      gids=[1007]
+      runtime permissions:
+
+Package Changes:
+  Sequence number=34
+  User 0:
+    seq=1, package=com.amazon.tv.quicksettings.ui
+    seq=15, package=com.amazon.tv.settings.v2
+    seq=27, package=com.amazon.ceviche
+    seq=33, package=com.amazon.ftv.screensaver
+
+
+Dexopt state:
+  [com.amazon.neo.minerva.logcat]
+    path: /system/priv-app/com.amazon.neo.minerva.logcat-arm/com.amazon.neo.minerva.logcat-arm.apk
+      arm: [status=speed-profile] [reason=bg-dexopt]
+
+
+Compiler stats:
+  [com.amazon.neo.minerva.logcat]
+    (No recorded stats)

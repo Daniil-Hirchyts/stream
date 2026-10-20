@@ -1,0 +1,62 @@
+Key Set Manager:
+  [com.amazon.client.metrics.api]
+      Signing KeySets: 2
+
+Packages:
+  Package [com.amazon.client.metrics.api] (7527a2d):
+    userId=10041
+    pkg=Package{b25eb62 com.amazon.client.metrics.api}
+    codePath=/system/priv-app/MetricsApi
+    resourcePath=/system/priv-app/MetricsApi
+    legacyNativeLibraryDir=/system/priv-app/MetricsApi/lib
+    primaryCpuAbi=null
+    secondaryCpuAbi=null
+    versionCode=2568810 minSdk=17 targetSdk=28
+    versionName=1.2.225499.0_2568810
+    splits=[base]
+    apkSigningVersion=1
+    applicationInfo=ApplicationInfo{ca944f3 com.amazon.client.metrics.api}
+    flags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+    privateFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION PRIVILEGED ]
+    dataDir=/data/user/0/com.amazon.client.metrics.api
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    dynamic libraries:
+      com.amazon.client.metrics.api
+    timeStamp=2009-01-01 01:00:00
+    firstInstallTime=2009-01-01 01:00:00
+    lastUpdateTime=2009-01-01 01:00:00
+    signatures=PackageSignatures{e0695b0 version:1, signatures:[e627f73a], past signatures:[]}
+    installPermissionsFixed=true
+    pkgFlags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+    requested permissions:
+      com.amazon.permission.AMAZON_LIBRARY_ADDTOALL
+      android.permission.INTERACT_ACROSS_USERS
+      android.permission.INTERACT_ACROSS_USERS_FULL
+      amazon.aosp.permission.INTERACT_ACROSS_USERS_FULL
+      com.amazon.permission.INTERACT_ACROSS_USERS_FULL
+    install permissions:
+      amazon.aosp.permission.INTERACT_ACROSS_USERS_FULL: granted=true
+      com.amazon.permission.INTERACT_ACROSS_USERS_FULL: granted=true
+      android.permission.INTERACT_ACROSS_USERS: granted=true
+    User 0: ceDataInode=-4294837477 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0 instant=false virtual=false
+      runtime permissions:
+
+Package Changes:
+  Sequence number=34
+  User 0:
+    seq=1, package=com.amazon.tv.quicksettings.ui
+    seq=15, package=com.amazon.tv.settings.v2
+    seq=27, package=com.amazon.ceviche
+    seq=33, package=com.amazon.ftv.screensaver
+
+
+Dexopt state:
+  [com.amazon.client.metrics.api]
+    path: /system/priv-app/MetricsApi/MetricsApi.apk
+      arm: [status=speed] [reason=bg-dexopt]
+      used by other apps: [com.amazon.shoptv.firetv.client, com.amazon.avod, com.amazon.device.software.ota.override, com.esaba.downloader, com.phlox.tvwebbrowser, com.amazon.kso.blackbird, com.tv.hdobox, com.amazon.firebat, com.amazon.device.software.ota, com.canal.android.canal, com.falcofemoralis.hdrezkaapp, com.yoku.cinemahd.v3, fr.m6.m6replay.firetv, com.disney.disneyplus, com.android.systemui, cm.aptoidetv.pt, fr.tf1.mytf1, com.hdobox, com.drama.simpleplayer, to.pda.falcofemoralis.hdrezkaapp]
+
+
+Compiler stats:
+  [com.amazon.client.metrics.api]
+     MetricsApi.apk - 113

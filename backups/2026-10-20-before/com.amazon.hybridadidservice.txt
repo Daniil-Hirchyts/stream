@@ -1,0 +1,104 @@
+Receiver Resolver Table:
+  Non-Data Actions:
+      com.amazon.android.server.ads.identifier.HYBRID_AD_ID_UPDATE:
+        539b72a com.amazon.hybridadidservice/.service.UpdateMauiReceiver filter 5999893
+          Action: "android.intent.action.BOOT_COMPLETED"
+          Action: "com.amazon.android.server.ads.identifier.HYBRID_AD_ID_UPDATE"
+      android.intent.action.BOOT_COMPLETED:
+        539b72a com.amazon.hybridadidservice/.service.UpdateMauiReceiver filter 5999893
+          Action: "android.intent.action.BOOT_COMPLETED"
+          Action: "com.amazon.android.server.ads.identifier.HYBRID_AD_ID_UPDATE"
+
+Service Resolver Table:
+  Non-Data Actions:
+      com.amazon.hybridadidservice.FETCH_AD_ID:
+        3ddf91b com.amazon.hybridadidservice/.service.HybridAdIdService filter d5ac982
+          Action: "com.amazon.hybridadidservice.FETCH_AD_ID"
+
+Key Set Manager:
+  [com.amazon.hybridadidservice]
+      Signing KeySets: 1
+
+Packages:
+  Package [com.amazon.hybridadidservice] (d4b7ab8):
+    userId=10036
+    pkg=Package{ad78091 com.amazon.hybridadidservice}
+    codePath=/system/priv-app/HybridAdInfoService
+    resourcePath=/system/priv-app/HybridAdInfoService
+    legacyNativeLibraryDir=/system/priv-app/HybridAdInfoService/lib
+    primaryCpuAbi=null
+    secondaryCpuAbi=null
+    versionCode=28 minSdk=28 targetSdk=28
+    versionName=9
+    splits=[base]
+    apkSigningVersion=3
+    applicationInfo=ApplicationInfo{8141bf6 com.amazon.hybridadidservice}
+    flags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+    privateFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION PRIVILEGED ]
+    dataDir=/data/user/0/com.amazon.hybridadidservice
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    timeStamp=2009-01-01 01:00:00
+    firstInstallTime=2009-01-01 01:00:00
+    lastUpdateTime=2009-01-01 01:00:00
+    signatures=PackageSignatures{7590bf7 version:3, signatures:[a34984b4], past signatures:[]}
+    installPermissionsFixed=true
+    pkgFlags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+    requested permissions:
+      com.amazon.permission.GET_PROFILE
+      com.amazon.permission.GET_NON_AMZ_ADID
+      android.permission.RECEIVE_BOOT_COMPLETED
+      com.amazon.permission.HYBRID_AD_ID_UPDATE
+      android.permission.INTERNET
+      android.permission.READ_PHONE_STATE
+      com.amazon.dcp.sso.permission.USE_DEVICE_CREDENTIALS
+      com.amazon.dcp.sso.permission.MANAGE_DEVICE_AND_USER_DATA
+      com.amazon.dcp.sso.permission.MANAGE_COR_PFM
+      com.amazon.identity.permission.GENERIC_IPC
+      com.amazon.dcp.sso.permission.CUSTOMER_ATTRIBUTE_SERVICE
+      com.amazon.dcp.metrics.permission.METRICS_PERMISSION
+      com.amazon.dcp.config.permission.DYN_CONFIG_VALUES_UPDATED
+      com.amazon.identity.permission.CAN_CALL_MAP_INFORMATION_PROVIDER
+      com.amazon.identity.auth.device.perm.AUTH_SDK
+      amazon.permission.COLLECT_METRICS
+      com.amazon.dcp.sso.permission.account.changed
+      com.amazon.dcp.sso.permission.AmazonAccountPropertyService.property.changed
+    install permissions:
+      android.permission.RECEIVE_BOOT_COMPLETED: granted=true
+      com.amazon.dcp.sso.permission.MANAGE_COR_PFM: granted=true
+      android.permission.INTERNET: granted=true
+      com.amazon.dcp.config.permission.DYN_CONFIG_VALUES_UPDATED: granted=true
+      com.amazon.dcp.sso.permission.MANAGE_DEVICE_AND_USER_DATA: granted=true
+      amazon.permission.COLLECT_METRICS: granted=true
+      com.amazon.dcp.sso.permission.account.changed: granted=true
+      com.amazon.dcp.sso.permission.AmazonAccountPropertyService.property.changed: granted=true
+      com.amazon.dcp.sso.permission.CUSTOMER_ATTRIBUTE_SERVICE: granted=true
+      com.amazon.permission.HYBRID_AD_ID_UPDATE: granted=true
+      com.amazon.identity.auth.device.perm.AUTH_SDK: granted=true
+      com.amazon.identity.permission.GENERIC_IPC: granted=true
+      com.amazon.permission.GET_PROFILE: granted=true
+      com.amazon.dcp.sso.permission.USE_DEVICE_CREDENTIALS: granted=true
+      com.amazon.identity.permission.CAN_CALL_MAP_INFORMATION_PROVIDER: granted=true
+      com.amazon.permission.GET_NON_AMZ_ADID: granted=true
+      com.amazon.dcp.metrics.permission.METRICS_PERMISSION: granted=true
+    User 0: ceDataInode=-4294837311 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0 instant=false virtual=false
+      gids=[3003]
+      runtime permissions:
+
+Package Changes:
+  Sequence number=34
+  User 0:
+    seq=1, package=com.amazon.tv.quicksettings.ui
+    seq=15, package=com.amazon.tv.settings.v2
+    seq=27, package=com.amazon.ceviche
+    seq=33, package=com.amazon.ftv.screensaver
+
+
+Dexopt state:
+  [com.amazon.hybridadidservice]
+    path: /system/priv-app/HybridAdInfoService/HybridAdInfoService.apk
+      arm: [status=speed-profile] [reason=bg-dexopt]
+
+
+Compiler stats:
+  [com.amazon.hybridadidservice]
+    (No recorded stats)

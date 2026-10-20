@@ -1,0 +1,214 @@
+Receiver Resolver Table:
+  Non-Data Actions:
+      com.amazon.ceviche.action.SCHEDULE_ASAP_PIPELINE:
+        acc5309 com.amazon.ceviche/.pipelines.StartAsapPipelineScheduler filter 76e65c5
+          Action: "com.amazon.ceviche.action.SCHEDULE_ASAP_PIPELINE"
+      android.intent.action.BATTERY_OKAY:
+        c42490e com.amazon.ceviche/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryNotLowProxy filter a06564b
+          Action: "android.intent.action.BATTERY_OKAY"
+          Action: "android.intent.action.BATTERY_LOW"
+      android.intent.action.ACTION_POWER_DISCONNECTED:
+        94f8f2f com.amazon.ceviche/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryChargingProxy filter 8618b1a
+          Action: "android.intent.action.ACTION_POWER_CONNECTED"
+          Action: "android.intent.action.ACTION_POWER_DISCONNECTED"
+      android.intent.action.DEVICE_STORAGE_LOW:
+        1da793c com.amazon.ceviche/androidx.work.impl.background.systemalarm.ConstraintProxy$StorageNotLowProxy filter bffc828
+          Action: "android.intent.action.DEVICE_STORAGE_LOW"
+          Action: "android.intent.action.DEVICE_STORAGE_OK"
+      android.net.conn.CONNECTIVITY_CHANGE:
+        b5e16c5 com.amazon.ceviche/androidx.work.impl.background.systemalarm.ConstraintProxy$NetworkStateProxy filter 1d49941
+          Action: "android.net.conn.CONNECTIVITY_CHANGE"
+      android.intent.action.DEVICE_STORAGE_OK:
+        1da793c com.amazon.ceviche/androidx.work.impl.background.systemalarm.ConstraintProxy$StorageNotLowProxy filter bffc828
+          Action: "android.intent.action.DEVICE_STORAGE_LOW"
+          Action: "android.intent.action.DEVICE_STORAGE_OK"
+      amazon.intent.action.ESPRESSOSHOT_ACTION:
+        35de81a com.amazon.ceviche/.boot.completed.EspressoShotReceiver filter 51d862f
+          Action: "amazon.intent.action.ESPRESSOSHOT_ACTION"
+      android.intent.action.BATTERY_LOW:
+        c42490e com.amazon.ceviche/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryNotLowProxy filter a06564b
+          Action: "android.intent.action.BATTERY_OKAY"
+          Action: "android.intent.action.BATTERY_LOW"
+      android.intent.action.TIMEZONE_CHANGED:
+        9cfef4b com.amazon.ceviche/androidx.work.impl.background.systemalarm.RescheduleReceiver filter 77d3ee6
+          Action: "android.intent.action.BOOT_COMPLETED"
+          Action: "android.intent.action.TIME_SET"
+          Action: "android.intent.action.TIMEZONE_CHANGED"
+      android.intent.action.TIME_SET:
+        9cfef4b com.amazon.ceviche/androidx.work.impl.background.systemalarm.RescheduleReceiver filter 77d3ee6
+          Action: "android.intent.action.BOOT_COMPLETED"
+          Action: "android.intent.action.TIME_SET"
+          Action: "android.intent.action.TIMEZONE_CHANGED"
+      android.intent.action.BOOT_COMPLETED:
+        773ed28 com.amazon.ceviche/.boot.completed.BootCompletedReceiver filter 541bc0e
+          Action: "android.intent.action.BOOT_COMPLETED"
+        9cfef4b com.amazon.ceviche/androidx.work.impl.background.systemalarm.RescheduleReceiver filter 77d3ee6
+          Action: "android.intent.action.BOOT_COMPLETED"
+          Action: "android.intent.action.TIME_SET"
+          Action: "android.intent.action.TIMEZONE_CHANGED"
+      android.intent.action.ACTION_POWER_CONNECTED:
+        94f8f2f com.amazon.ceviche/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryChargingProxy filter 8618b1a
+          Action: "android.intent.action.ACTION_POWER_CONNECTED"
+          Action: "android.intent.action.ACTION_POWER_DISCONNECTED"
+      com.amazon.fireos.service.timeservice.clock.TIME_SYNC:
+        38e5a41 com.amazon.ceviche/.timestamps.TimeChangedReceiver filter 3cea43c
+          Action: "com.amazon.fireos.service.timeservice.clock.TIME_SYNC"
+      androidx.work.impl.background.systemalarm.UpdateProxies:
+        2626be6 com.amazon.ceviche/androidx.work.impl.background.systemalarm.ConstraintProxyUpdateReceiver filter 5620c27
+          Action: "androidx.work.impl.background.systemalarm.UpdateProxies"
+
+Service Resolver Table:
+  Non-Data Actions:
+      com.amazon.ceviche.action.ACTION_SYNC:
+        aac3527 com.amazon.ceviche/.configuration.ForceSyncRemoteConfigurationService filter 125b209
+          Action: "com.amazon.ceviche.action.ACTION_SYNC"
+
+Permissions:
+  Permission [com.amazon.ceviche.broadcast.SyncConfiguration] (6aeb3d4):
+    sourcePackage=com.amazon.ceviche
+    uid=10081 gids=null type=0 prot=signature
+    perm=Permission{d25597d com.amazon.ceviche.broadcast.SyncConfiguration}
+    packageSetting=PackageSetting{dd96072 com.amazon.ceviche/10081}
+
+Registered ContentProviders:
+  com.amazon.ceviche/.TrackEventsContentProvider:
+    Provider{b1cfcc3 com.amazon.ceviche/.TrackEventsContentProvider}
+
+ContentProvider Authorities:
+  [com.amazon.ceviche.track.events]:
+    Provider{b1cfcc3 com.amazon.ceviche/.TrackEventsContentProvider}
+      applicationInfo=ApplicationInfo{22d3940 com.amazon.ceviche}
+
+Key Set Manager:
+  [com.amazon.ceviche]
+      Signing KeySets: 2
+
+Packages:
+  Package [com.amazon.ceviche] (dd96072):
+    userId=10081
+    pkg=Package{c331079 com.amazon.ceviche}
+    codePath=/system/priv-app/com.amazon.ceviche
+    resourcePath=/system/priv-app/com.amazon.ceviche
+    legacyNativeLibraryDir=/system/priv-app/com.amazon.ceviche/lib
+    primaryCpuAbi=armeabi-v7a
+    secondaryCpuAbi=null
+    versionCode=1549510 minSdk=22 targetSdk=24
+    versionName=1.0.4311.0_1549510
+    splits=[base]
+    apkSigningVersion=1
+    applicationInfo=ApplicationInfo{22d3940 com.amazon.ceviche}
+    flags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    privateFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION PRIVILEGED ]
+    dataDir=/data/user/0/com.amazon.ceviche
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    usesLibraries:
+      org.apache.http.legacy
+      com.fireos.sdk.minerva
+      com.fireos.sdk.mapclientlib
+      com.fireos.sdk.ftvkarmalibrary
+    usesOptionalLibraries:
+      com.fireos.sdk.naatyamlib
+      com.fireos.sdk.ftvkarmalibrary
+      com.fireos.sdk.minerva
+      com.amazon.identity.auth.device
+      com.fireos.sdk.amazon_profile_service
+    usesLibraryFiles:
+      /system/framework/org.apache.http.legacy.boot.jar
+      /system/priv-app/MinervaApi/MinervaApi.apk
+      /system/framework/com.amazon.identity.auth.device.jar
+      /system/framework/com.amazon.tv.ftvkarmalibrary.jar
+      /system/framework/com.amazon.naatyam.lib.jar
+    timeStamp=2009-01-01 01:00:00
+    firstInstallTime=2009-01-01 01:00:00
+    lastUpdateTime=2009-01-01 01:00:00
+    signatures=PackageSignatures{75911be version:1, signatures:[e627f73a], past signatures:[]}
+    installPermissionsFixed=true
+    pkgFlags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    declared permissions:
+      com.amazon.ceviche.broadcast.SyncConfiguration: prot=signature, INSTALLED
+      com.amazon.ceviche.permission.TRACK_EVENTS: prot=signature
+    requested permissions:
+      com.amazon.ceviche.broadcast.SyncConfiguration
+      com.service_coordinator.ADD_SERVICE
+      com.amazon.neo.permission.ADD_SERVICE
+      com.amazon.neo.permission.LAUNCH_SERVICE
+      android.permission.WRITE_SECURE_SETTINGS
+      amazon.permission.COLLECT_METRICS
+      android.permission.READ_PRIVILEGED_PHONE_STATE
+      android.permission.READ_PHONE_STATE
+      com.amazon.dcp.config.permission.DYN_CONFIG_VALUES_UPDATED
+      com.amazon.dcp.metrics.permission.METRICS_PERMISSION
+      com.amazon.dcp.sso.permission.USE_DEVICE_CREDENTIALS
+      com.amazon.dcp.sso.permission.MANAGE_DEVICE_AND_USER_DATA
+      com.amazon.dcp.sso.permission.EXPIRE_ACCESS_TOKEN
+      com.amazon.dcp.sso.permission.MULTIPLE_PROFILE_AWARE
+      com.amazon.dcp.sso.permission.MANAGE_COR_PFM
+      com.amazon.dcp.sso.permission.account.changed
+      com.amazon.dcp.sso.permission.AmazonAccountPropertyService.property.changed
+      com.amazon.dcp.sso.permission.CUSTOMER_ATTRIBUTE_SERVICE
+      com.amazon.identity.auth.device.perm.AUTH_SDK
+      com.amazon.identity.permission.CAN_CALL_MAP_INFORMATION_PROVIDER
+      com.amazon.identity.permission.GENERIC_IPC
+      com.amazon.permission.GET_PROFILE
+      android.permission.INTERNET
+      android.permission.ACCESS_NETWORK_STATE
+      android.permission.RECEIVE_BOOT_COMPLETED
+      com.amazon.permission.ESPRESSO_SHOT_PERMISSION
+      android.permission.FOREGROUND_SERVICE
+      android.permission.WAKE_LOCK
+      android.permission.ACCESS_WIFI_STATE
+    install permissions:
+      com.amazon.neo.permission.ADD_SERVICE: granted=true
+      com.amazon.kso.blackbird.permission.RECEIVE_CONFIG_UPDATE: granted=true
+      android.permission.FOREGROUND_SERVICE: granted=true
+      android.permission.RECEIVE_BOOT_COMPLETED: granted=true
+      com.amazon.dcp.sso.permission.MANAGE_COR_PFM: granted=true
+      android.permission.INTERNET: granted=true
+      com.amazon.dcp.sso.permission.EXPIRE_ACCESS_TOKEN: granted=true
+      com.amazon.dcp.config.permission.DYN_CONFIG_VALUES_UPDATED: granted=true
+      com.amazon.ceviche.broadcast.SyncConfiguration: granted=true
+      com.amazon.dcp.sso.permission.MANAGE_DEVICE_AND_USER_DATA: granted=true
+      android.permission.WRITE_SECURE_SETTINGS: granted=true
+      amazon.permission.COLLECT_METRICS: granted=true
+      android.permission.READ_PRIVILEGED_PHONE_STATE: granted=true
+      com.amazon.dcp.sso.permission.account.changed: granted=true
+      com.amazon.dcp.sso.permission.AmazonAccountPropertyService.property.changed: granted=true
+      com.amazon.dcp.sso.permission.CUSTOMER_ATTRIBUTE_SERVICE: granted=true
+      com.amazon.neo.permission.LAUNCH_SERVICE: granted=true
+      android.permission.ACCESS_NETWORK_STATE: granted=true
+      com.amazon.identity.auth.device.perm.AUTH_SDK: granted=true
+      com.amazon.identity.permission.GENERIC_IPC: granted=true
+      com.amazon.permission.ESPRESSO_SHOT_PERMISSION: granted=true
+      com.amazon.permission.GET_PROFILE: granted=true
+      com.amazon.dcp.sso.permission.USE_DEVICE_CREDENTIALS: granted=true
+      android.permission.ACCESS_WIFI_STATE: granted=true
+      com.amazon.identity.permission.CAN_CALL_MAP_INFORMATION_PROVIDER: granted=true
+      android.permission.WAKE_LOCK: granted=true
+      com.amazon.dcp.metrics.permission.METRICS_PERMISSION: granted=true
+    User 0: ceDataInode=-4294837260 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0 instant=false virtual=false
+      gids=[3003]
+      runtime permissions:
+      disabledComponents:
+        com.amazon.ceviche.boot.completed.BootCompletedReceiver
+        androidx.work.impl.background.systemalarm.RescheduleReceiver
+      enabledComponents:
+        androidx.work.impl.background.systemjob.SystemJobService
+
+Package Changes:
+  Sequence number=34
+  User 0:
+    seq=1, package=com.amazon.tv.quicksettings.ui
+    seq=15, package=com.amazon.tv.settings.v2
+    seq=27, package=com.amazon.ceviche
+    seq=33, package=com.amazon.ftv.screensaver
+
+
+Dexopt state:
+  [com.amazon.ceviche]
+    path: /system/priv-app/com.amazon.ceviche/com.amazon.ceviche.apk
+      arm: [status=speed-profile] [reason=bg-dexopt]
+
+
+Compiler stats:
+  [com.amazon.ceviche]
+     com.amazon.ceviche.apk - 318

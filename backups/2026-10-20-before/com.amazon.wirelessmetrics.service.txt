@@ -1,0 +1,56 @@
+Key Set Manager:
+  [com.amazon.wirelessmetrics.service]
+      Signing KeySets: 1
+
+Packages:
+  Package [com.amazon.wirelessmetrics.service] (82cae0):
+    userId=10184
+    pkg=Package{ac0d199 com.amazon.wirelessmetrics.service}
+    codePath=/system/app/AmazonWirelessMetricsService
+    resourcePath=/system/app/AmazonWirelessMetricsService
+    legacyNativeLibraryDir=/system/app/AmazonWirelessMetricsService/lib
+    primaryCpuAbi=null
+    secondaryCpuAbi=null
+    versionCode=28 minSdk=28 targetSdk=28
+    versionName=9
+    splits=[base]
+    apkSigningVersion=3
+    applicationInfo=ApplicationInfo{94c0c5e com.amazon.wirelessmetrics.service}
+    flags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+    privateFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION DIRECT_BOOT_AWARE ]
+    dataDir=/data/user/0/com.amazon.wirelessmetrics.service
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    timeStamp=2009-01-01 01:00:00
+    firstInstallTime=2009-01-01 01:00:00
+    lastUpdateTime=2009-01-01 01:00:00
+    signatures=PackageSignatures{fda183f version:3, signatures:[a34984b4], past signatures:[]}
+    installPermissionsFixed=true
+    pkgFlags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+    requested permissions:
+      android.permission.ACCESS_WIFI_STATE
+      android.permission.BLUETOOTH
+    install permissions:
+      android.permission.BLUETOOTH: granted=true
+      android.permission.ACCESS_WIFI_STATE: granted=true
+    User 0: ceDataInode=-4294837078 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0 instant=false virtual=false
+      gids=[3002]
+      runtime permissions:
+
+Package Changes:
+  Sequence number=34
+  User 0:
+    seq=1, package=com.amazon.tv.quicksettings.ui
+    seq=15, package=com.amazon.tv.settings.v2
+    seq=27, package=com.amazon.ceviche
+    seq=33, package=com.amazon.ftv.screensaver
+
+
+Dexopt state:
+  [com.amazon.wirelessmetrics.service]
+    path: /system/app/AmazonWirelessMetricsService/AmazonWirelessMetricsService.apk
+      arm: [status=speed-profile] [reason=bg-dexopt]
+
+
+Compiler stats:
+  [com.amazon.wirelessmetrics.service]
+    (No recorded stats)
