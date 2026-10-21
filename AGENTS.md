@@ -33,7 +33,9 @@ validate some current video servers. Keep TLS verification enabled.
 Use Java for Android UI/Media3 and TypeScript for browser APIs. End users run a
 compiled Rust helper and do not need Rust, Python or Node. Simulator development
 requires toolchains; public signed desktop installers/compatibility testing are
-separate unfinished release work. See `casting/SYSTEM_REVIEW.md`.
+separate unfinished release work. See `casting/SYSTEM_REVIEW.md` and
+`docs/desktop-validation.md` for verified checks and the open Linux conversion
+CI failure. Do not label all desktop platforms verified based on local success.
 
 ## Local prerequisites and startup
 
