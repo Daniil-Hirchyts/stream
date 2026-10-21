@@ -1,4 +1,4 @@
-package tv.daniil.cast;
+package tv.daniil.playback;
 
 import android.app.Activity;
 import android.view.KeyEvent;
@@ -14,29 +14,38 @@ import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * The options drawer, opened by clicking Options or using the remote's Menu button. Pages stack: OK or right
  * opens a page or picks a value, left or Back goes up a level. It keeps its own row focus, so it never competes
  * with the player for view focus.
  */
-final class MenuPanel {
+public final class MenuPanel {
     interface Listener {
         void onMenuToggled(boolean open);
         void onMenuPageChanged();
     }
 
     /** A page is rebuilt each time it's shown or refreshed, so its values are always current. */
-    interface Page {
+    public interface Page {
         String title();
         List<Item> items();
         /** Style pages show a sample subtitle line while open. */
         default boolean previewsSubtitles() {
             return false;
         }
+
+        static Page of(String title, boolean previewsSubtitles, Supplier<List<Item>> items) {
+            return new Page() {
+                @Override public String title() { return title; }
+                @Override public List<Item> items() { return items.get(); }
+                @Override public boolean previewsSubtitles() { return previewsSubtitles; }
+            };
+        }
     }
 
-    static final class Item {
+    public static final class Item {
         private static final int PAGE = 0, CHOICE = 1, ACTION = 2;
 
         final String label;
@@ -54,16 +63,16 @@ final class MenuPanel {
         }
 
         /** A row that opens another page, showing its current value; a current row gets the focus first. */
-        static Item page(String label, @Nullable String value, boolean current, Runnable open) {
+        public static Item page(String label, @Nullable String value, boolean current, Runnable open) {
             return new Item(PAGE, label, value, current, open);
         }
 
         /** One value of a list; the current one is ticked. */
-        static Item choice(String label, @Nullable String value, boolean checked, Runnable choose) {
+        public static Item choice(String label, @Nullable String value, boolean checked, Runnable choose) {
             return new Item(CHOICE, label, value, checked, choose);
         }
 
-        static Item action(String label, @Nullable String value, Runnable run) {
+        public static Item action(String label, @Nullable String value, Runnable run) {
             return new Item(ACTION, label, value, false, run);
         }
     }
@@ -110,7 +119,7 @@ final class MenuPanel {
         Ui.action(activity.findViewById(R.id.menu_close), this::close);
     }
 
-    boolean isOpen() {
+    public boolean isOpen() {
         return open;
     }
 
@@ -134,14 +143,14 @@ final class MenuPanel {
         listener.onMenuToggled(true);
     }
 
-    void push(Page page) {
+    public void push(Page page) {
         stack.add(new Entry(page));
         render(true);
         listener.onMenuPageChanged();
     }
 
     /** Goes up a level, or closes the menu from its first page. */
-    void pop() {
+    public void pop() {
         if (stack.size() <= 1) {
             close();
             return;
@@ -151,7 +160,7 @@ final class MenuPanel {
         listener.onMenuPageChanged();
     }
 
-    void close() {
+    public void close() {
         if (!open) return;
         open = false;
         panel.animate().cancel();
@@ -161,7 +170,7 @@ final class MenuPanel {
     }
 
     /** Rebuilds the visible page, for example after tracks or the episode changed. */
-    void refresh() {
+    public void refresh() {
         if (!open || stack.isEmpty()) return;
         Entry entry = top();
         entry.items = entry.page.items();

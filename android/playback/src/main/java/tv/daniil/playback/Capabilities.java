@@ -1,4 +1,4 @@
-package tv.daniil.cast;
+package tv.daniil.playback;
 
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
@@ -25,11 +25,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Which video and audio formats this TV decodes, so the Mac converts only what the TV can't play, and before
- * playback rather than after a failure.
+ * Which video and audio formats this TV decodes, so Daniil Cast's Mac converts only what the TV can't play and
+ * sources are chosen before playback rather than after a failure.
  */
 @OptIn(markerClass = UnstableApi.class)
-final class Capabilities {
+public final class Capabilities {
     /** Names shared with the Chrome extension, by MIME type. */
     private static final Map<String, String> VIDEO = new LinkedHashMap<>();
     private static final Map<String, String> AUDIO = new LinkedHashMap<>();
@@ -56,7 +56,7 @@ final class Capabilities {
      * Debug builds can hide decoders, so an emulator behaves like the Fire TV Stick, which has no AV1 decoder:
      * {@code files/debug.json} with {@code {"blockDecoders": ["video/av01"]}}.
      */
-    static synchronized void load(Context context) {
+    public static synchronized void load(Context context) {
         Set<String> list = new HashSet<>();
         if ((context.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             try {
@@ -73,12 +73,12 @@ final class Capabilities {
     }
 
     /** Media3's decoder choice without the hidden decoders. */
-    static MediaCodecSelector selector() {
+    public static MediaCodecSelector selector() {
         return (mime, secure, tunneling) -> blocked.contains(mime) ? Collections.emptyList()
                 : MediaCodecSelector.DEFAULT.getDecoderInfos(mime, secure, tunneling);
     }
 
-    static boolean decodes(@Nullable String codec) {
+    public static boolean decodes(@Nullable String codec) {
         if (codec == null || codec.isEmpty()) return true;
         try {
             JSONArray video = json().getJSONArray("video");
@@ -88,14 +88,14 @@ final class Capabilities {
     }
 
     /** The display name of a MIME type, such as "AV1" for video/av01, or the type itself. */
-    static String name(@Nullable String mime) {
+    public static String name(@Nullable String mime) {
         if (mime == null) return "";
         String name = VIDEO.containsKey(mime) ? VIDEO.get(mime) : AUDIO.get(mime);
         return name != null ? name : mime.replaceFirst("^\\w+/", "").toUpperCase(Locale.US);
     }
 
     /** {"video": ["H.264", "VP9"…], "audio": ["AAC"…]}. */
-    static synchronized JSONObject json() throws Exception {
+    public static synchronized JSONObject json() throws Exception {
         if (cached != null) return cached;
         Set<String> found = new HashSet<>();
         for (MediaCodecInfo info : new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos()) {

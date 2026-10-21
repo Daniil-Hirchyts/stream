@@ -1,4 +1,4 @@
-package tv.daniil.cast;
+package tv.daniil.playback;
 
 import android.content.Context;
 
@@ -16,18 +16,18 @@ import javax.net.ssl.SSLPeerUnverifiedException;
 
 /**
  * Plain-language explanations of failures that need the viewer. Formats the TV can't decode are not among them:
- * the Mac converts those. The technical detail goes to the extension's activity log, not the screen.
+ * the app converts those or offers another source. The technical detail goes to diagnostics, not the screen.
  */
 @OptIn(markerClass = UnstableApi.class)
-final class PlaybackErrors {
-    static final class Description {
-        /** A short code the extension can act on, such as "expired" or "network". */
-        final String code, title, message, detail;
-        final int httpStatus;
+public final class PlaybackErrors {
+    public static final class Description {
+        /** A short code an app can act on, such as "expired" or "network". */
+        public final String code, title, message, detail;
+        public final int httpStatus;
         /** Whether trying the same stream again may help. */
-        final boolean retry;
+        public final boolean retry;
 
-        Description(String code, String title, String message, String detail, int httpStatus, boolean retry) {
+        public Description(String code, String title, String message, String detail, int httpStatus, boolean retry) {
             this.code = code;
             this.title = title;
             this.message = message;
@@ -36,7 +36,7 @@ final class PlaybackErrors {
             this.retry = retry;
         }
 
-        JSONObject toJson() throws JSONException {
+        public JSONObject toJson() throws JSONException {
             return new JSONObject().put("code", code).put("title", title).put("message", message)
                     .put("detail", detail).put("httpStatus", httpStatus).put("retry", retry);
         }
@@ -44,7 +44,7 @@ final class PlaybackErrors {
 
     private PlaybackErrors() {}
 
-    static Description describe(Context context, PlaybackException exception) {
+    public static Description describe(Context context, PlaybackException exception) {
         String detail = exception.getErrorCodeName();
         int http = httpStatus(exception);
         if (http != 0) detail += " · HTTP " + http;
@@ -71,13 +71,8 @@ final class PlaybackErrors {
         return of(context, "generic", R.string.error_generic_title, R.string.error_generic, detail, 0, true);
     }
 
-    /** No converting Mac answered for a format this TV can't decode. */
-    static Description needsMac(Context context, String format) {
-        return new Description("needs-mac", context.getString(R.string.error_needs_mac_title, format),
-                context.getString(R.string.error_needs_mac), "UNSUPPORTED_FORMAT · " + format, 0, false);
-    }
-
-    static Description of(Context context, String code, int title, int message, String detail, int http, boolean retry) {
+    public static Description of(Context context, String code, int title, int message, String detail, int http,
+            boolean retry) {
         return new Description(code, context.getString(title), context.getString(message), detail, http, retry);
     }
 

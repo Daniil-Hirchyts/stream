@@ -1,4 +1,4 @@
-package tv.daniil.cast;
+package tv.daniil.playback;
 
 import android.content.Context;
 
@@ -27,21 +27,23 @@ import java.util.regex.Pattern;
  * is the player's own index, so the page's names ("Eng.Original") can be put back on them.
  */
 @OptIn(markerClass = UnstableApi.class)
-final class AudioTracks {
+public final class AudioTracks {
     private static final Pattern NUMBERED = Pattern.compile("[A-Za-z]{2,3}(\\d{1,2})");
 
-    static final class Track {
-        final String id, label;
+    public static final class Track {
+        public final String id, label;
         /** The page's index for this voice-over. */
-        final int number;
-        final boolean selected;
+        public final int number;
+        @Nullable public final String language;
+        public final boolean selected;
         final TrackGroup group;
         final List<Integer> indices;
 
-        Track(String id, String label, int number, Tracks.Group group, List<Integer> indices) {
+        Track(String id, String label, int number, Format format, Tracks.Group group, List<Integer> indices) {
             this.id = id;
             this.label = label;
             this.number = number;
+            this.language = format.language;
             this.selected = group.isSelected();
             this.group = group.getMediaTrackGroup();
             this.indices = indices;
@@ -80,23 +82,34 @@ final class AudioTracks {
             if (seen > 1) label += " " + seen;
             List<Integer> indices = new ArrayList<>();
             for (int t = 0; t < group.length; t++) if (group.isTrackSupported(t)) indices.add(t);
-            list.add(new Track(String.valueOf(positions.get(k)), label, number, group, indices));
+            list.add(new Track(String.valueOf(positions.get(k)), label, number, format, group, indices));
         }
         return list;
     }
 
-    @Nullable static Track selected(List<Track> tracks) {
+    @Nullable public static Track selected(List<Track> tracks) {
         for (Track track : tracks) if (track.selected) return track;
         return null;
     }
 
-    @Nullable static Track find(List<Track> tracks, String id) {
+    @Nullable public static Track find(List<Track> tracks, String id) {
         for (Track track : tracks) if (track.id.equals(id)) return track;
         return null;
     }
 
     @Nullable static Track numbered(List<Track> tracks, int number) {
         for (Track track : tracks) if (track.number == number) return track;
+        return null;
+    }
+
+    /** The first track in {@code language}, ignoring regions and the digits streams append ("rus2"). */
+    @Nullable static Track spoken(List<Track> tracks, String language) {
+        String wanted = SubtitleTracks.primary(language);
+        if (wanted == null) return null;
+        for (Track track : tracks) {
+            String spoken = track.language == null ? null : SubtitleTracks.primary(track.language.replaceAll("\\d+$", ""));
+            if (wanted.equals(spoken)) return track;
+        }
         return null;
     }
 

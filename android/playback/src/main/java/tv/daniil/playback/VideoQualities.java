@@ -1,4 +1,4 @@
-package tv.daniil.cast;
+package tv.daniil.playback;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.OptIn;
@@ -17,12 +17,12 @@ import java.util.Map;
 
 /** The video's qualities, named as viewers know them (1080p, 720p…), with "Auto" letting Media3 adapt. */
 @OptIn(markerClass = UnstableApi.class)
-final class VideoQualities {
-    static final String AUTO = "auto";
+public final class VideoQualities {
+    public static final String AUTO = "auto";
 
-    static final class Option {
-        final String id, label;
-        final int lines;
+    public static final class Option {
+        public final String id, label;
+        public final int lines;
         final TrackGroup group;
         final List<Integer> indices = new ArrayList<>();
 
@@ -62,7 +62,7 @@ final class VideoQualities {
         return list.size() > 1 ? list : new ArrayList<>();
     }
 
-    @Nullable static Option find(List<Option> options, String id) {
+    @Nullable public static Option find(List<Option> options, String id) {
         for (Option option : options) if (option.id.equals(id)) return option;
         return null;
     }

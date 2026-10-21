@@ -23,6 +23,8 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.util.Collections;
 
+import tv.daniil.playback.Capabilities;
+
 /**
  * Keeps the TV reachable from paired Macs while the app is closed: an HTTP API on port 8765 and a discovery
  * responder on the same UDP port. Runs as a foreground service so Fire OS doesn't stop it.

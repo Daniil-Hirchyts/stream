@@ -1,4 +1,4 @@
-package tv.daniil.cast;
+package tv.daniil.playback;
 
 import android.app.Activity;
 import android.os.Handler;
@@ -26,6 +26,9 @@ final class ControlsOverlay {
     private final SeekBar progress;
     private final TextView playButton;
     private boolean scrubbing;
+    /** Where a drag on the timeline would seek; the seek waits for the release. */
+    private long dragTarget = C.TIME_UNSET;
+    private final PlaybackSession session;
     private final Player player;
     private final Handler handler;
     private final Runnable onVisibilityChanged;
@@ -40,8 +43,9 @@ final class ControlsOverlay {
         }
     };
 
-    ControlsOverlay(Activity activity, Player player, Handler handler, Runnable onVisibilityChanged) {
-        this.player = player;
+    ControlsOverlay(Activity activity, PlaybackSession session, Handler handler, Runnable onVisibilityChanged) {
+        this.session = session;
+        this.player = session.player();
         this.handler = handler;
         this.onVisibilityChanged = onVisibilityChanged;
         root = activity.findViewById(R.id.controls);
@@ -62,17 +66,22 @@ final class ControlsOverlay {
         progress.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onStartTrackingTouch(SeekBar bar) {
                 scrubbing = true;
+                dragTarget = C.TIME_UNSET;
                 handler.removeCallbacks(hide);
             }
             @Override public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
                 long duration = player.getDuration();
-                if (fromUser && duration > 0 && duration != C.TIME_UNSET) {
-                    player.seekTo(duration * value / 1000);
-                    elapsed.setText(Ui.time(duration * value / 1000));
-                }
+                if (!fromUser || duration <= 0 || duration == C.TIME_UNSET) return;
+                long target = duration * value / 1000;
+                // A drag shows where it would land and seeks on release, so a stream skips the positions on the way.
+                if (scrubbing) dragTarget = target;
+                else session.seekTo(target);
+                update();
             }
             @Override public void onStopTrackingTouch(SeekBar bar) {
                 scrubbing = false;
+                if (dragTarget != C.TIME_UNSET) session.seekTo(dragTarget);
+                dragTarget = C.TIME_UNSET;
                 show();
             }
         });
@@ -143,7 +152,8 @@ final class ControlsOverlay {
     }
 
     private void update() {
-        long duration = player.getDuration(), position = player.getCurrentPosition();
+        long duration = player.getDuration();
+        long position = scrubbing && dragTarget != C.TIME_UNSET ? dragTarget : session.position();
         boolean known = duration != C.TIME_UNSET && duration > 0;
         progress.setEnabled(known && player.isCurrentMediaItemSeekable());
         if (!scrubbing) progress.setProgress(known ? (int) (position * 1000 / duration) : 0);

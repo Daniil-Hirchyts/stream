@@ -40,7 +40,10 @@ Primary references:
 - `receiver/`: the TV app, package `tv.daniil.cast`. A Media3 player with MP4,
   HLS and DASH, a mouse/touch overlay with remote shortcuts and an options menu, plus a background
   service that listens for paired Macs (`CastService`). The service starts with
-  the TV, so a cast opens the app by itself.
+  the TV, so a cast opens the app by itself. The player, subtitles, menus and
+  overlay come from the shared library in
+  [`android/playback/`](../android/playback/README.md); the receiver adds
+  pairing, Chrome's commands and status, episodes and conversion waits.
 - `native/`: one compiled Rust helper for Chrome messages, TV discovery/pairing,
   controls, activity logs, conversion and installation. The same executable
   supplies Terminal commands. See [native/README.md](native/README.md).

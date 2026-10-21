@@ -19,6 +19,9 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import tv.daniil.playback.PlaybackSession;
+import tv.daniil.playback.R;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.lang.reflect.Field;
@@ -134,7 +137,7 @@ public final class SubtitleRegressionTest {
     private interface Check { boolean matches(ExoPlayer player); }
 
     private void waitFor(String description, Check check) throws Exception {
-        Field field = PlayerActivity.class.getDeclaredField("player");
+        Field field = PlayerActivity.class.getDeclaredField("session");
         field.setAccessible(true);
         long deadline = SystemClock.elapsedRealtime() + 12_000;
         AtomicBoolean matched = new AtomicBoolean();
@@ -142,7 +145,7 @@ public final class SubtitleRegressionTest {
             // A preparing spinner may animate continuously. Read on the main thread
             // without ActivityScenario.onActivity's wait-for-idle gate.
             InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
-                try { matched.set(check.matches((ExoPlayer) field.get(screen))); }
+                try { matched.set(check.matches(((PlaybackSession) field.get(screen)).player())); }
                 catch (Exception exception) { throw new AssertionError(exception); }
             });
             if (matched.get()) return;

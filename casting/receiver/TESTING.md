@@ -66,7 +66,9 @@ ffmpeg -f lavfi -i 'testsrc2=size=160x90:rate=1:duration=150' \
 ```
 
 Downloaded subtitle files use Media3's full-timeline compatibility path through
-`SubtitlePlayback`; embedded subtitles retain the current extraction pipeline.
+`SubtitlePlayback` in the shared library (`android/playback/`), so this suite
+also guards the standalone app's subtitles; embedded subtitles retain the
+current extraction pipeline.
 `PausedSubtitleCues` uses Media3's parsers off the UI thread to resolve the exact
 cue for a paused frame, since the legacy renderer waits for playback to resume.
 Some compatibility APIs are deprecated by Media3. Keep this test suite mandatory

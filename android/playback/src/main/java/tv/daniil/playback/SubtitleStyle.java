@@ -1,4 +1,4 @@
-package tv.daniil.cast;
+package tv.daniil.playback;
 
 import android.content.SharedPreferences;
 import android.graphics.Color;
@@ -17,8 +17,8 @@ import org.json.JSONObject;
  * values the Chrome extension sends, so both sides stay in step.
  */
 @OptIn(markerClass = UnstableApi.class)
-final class SubtitleStyle {
-    enum Setting {
+public final class SubtitleStyle {
+    public enum Setting {
         SIZE("size", R.string.subtitle_size, 1, new String[] {"small", "medium", "large", "xlarge"},
                 new int[] {R.string.size_small, R.string.size_medium, R.string.size_large, R.string.size_xlarge}),
         COLOR("color", R.string.subtitle_color, 0, new String[] {"white", "yellow", "cyan"},
@@ -28,7 +28,7 @@ final class SubtitleStyle {
         POSITION("position", R.string.subtitle_position, 1, new String[] {"low", "standard", "raised"},
                 new int[] {R.string.position_low, R.string.position_standard, R.string.position_raised});
 
-        final String key;
+        public final String key;
         final int title;
         final int fallback;
         final String[] values;
@@ -61,12 +61,12 @@ final class SubtitleStyle {
         }
     }
 
-    int get(Setting setting) {
+    public int get(Setting setting) {
         return choice[setting.ordinal()];
     }
 
     /** Returns whether the value changed. */
-    boolean set(Setting setting, int index) {
+    public boolean set(Setting setting, int index) {
         if (index < 0 || index >= setting.values.length || index == get(setting)) return false;
         choice[setting.ordinal()] = index;
         prefs.edit().putString("subtitle_" + setting.key, setting.values[index]).apply();
@@ -74,7 +74,7 @@ final class SubtitleStyle {
     }
 
     /** Applies a value sent by the extension, such as {@code size=large}; unknown values are ignored. */
-    boolean set(Setting setting, String value) {
+    public boolean set(Setting setting, String value) {
         return set(setting, indexOf(setting, value));
     }
 
@@ -97,7 +97,7 @@ final class SubtitleStyle {
         return BOTTOM_GAP[get(Setting.POSITION)];
     }
 
-    JSONObject toJson() throws JSONException {
+    public JSONObject toJson() throws JSONException {
         JSONObject json = new JSONObject();
         for (Setting setting : Setting.values()) json.put(setting.key, setting.values[get(setting)]);
         return json;

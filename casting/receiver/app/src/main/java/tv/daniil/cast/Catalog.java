@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import tv.daniil.playback.Capabilities;
+
 /**
  * A series as the page's player lists it: seasons, episodes, and for each episode its versions, voice-overs and
  * subtitle files. With it the TV changes episodes by itself, without Chrome.

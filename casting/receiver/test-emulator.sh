@@ -11,6 +11,13 @@ if [ "$("$adb_path" -s "$serial" shell getprop ro.kernel.qemu | tr -d '\r')" != 
   echo 'Refusing to test a device that is not an emulator.' >&2
   exit 2
 fi
+# A custom serial needs its AVD named too (DANIIL_CAST_AVD), so another emulator is never the target.
+expected_avd=${DANIIL_CAST_AVD:-DaniilCast_Local_TV}
+running_avd=$("$adb_path" -s "$serial" emu avd name 2>/dev/null | tr -d '\r' | head -n 1)
+if [ "$running_avd" != "$expected_avd" ]; then
+  echo "Refusing $serial: it runs AVD '$running_avd', not '$expected_avd'." >&2
+  exit 2
+fi
 ./gradlew assembleDebug assembleDebugAndroidTest
 "$adb_path" -s "$serial" install -r app/build/outputs/apk/debug/app-debug.apk
 "$adb_path" -s "$serial" install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
