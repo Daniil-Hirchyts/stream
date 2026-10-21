@@ -32,7 +32,8 @@ The simulator never installs to or controls a physical TV.
 
 See [simulator setup and commands](casting/simulator/README.md),
 [casting installation and architecture](casting/README.md),
-[desktop helper](casting/native/README.md), and [agent instructions](AGENTS.md).
+[desktop helper](casting/native/README.md), [agent instructions](AGENTS.md),
+and [validation results and release limitations](docs/desktop-validation.md).
 
 The older physical Fire TV cleanup tools remain separate from casting. Their
 [recovery notes](docs/firetv-cleanup.md), package profile and restore script are
