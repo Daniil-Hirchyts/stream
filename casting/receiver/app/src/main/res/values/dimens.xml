@@ -5,6 +5,6 @@
     <dimen name="safe_vertical">32dp</dimen>
     <dimen name="idle_inset">96dp</dimen>
     <dimen name="panel_width">400dp</dimen>
-    <!-- Subtitles move above the progress bar and hints while the overlay is up. -->
-    <dimen name="controls_height">136dp</dimen>
+    <!-- Subtitles move above the timeline and buttons while the overlay is up. -->
+    <dimen name="controls_height">196dp</dimen>
 </resources>

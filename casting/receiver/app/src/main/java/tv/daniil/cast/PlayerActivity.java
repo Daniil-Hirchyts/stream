@@ -50,7 +50,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Plays what a paired Mac sends, and lets the remote change episode, audio, subtitles, quality and speed. */
+/** Plays what a paired Mac sends, with mouse, touch and optional remote controls. */
 @OptIn(markerClass = UnstableApi.class)
 public final class PlayerActivity extends Activity implements CastHub.Screen, MenuPanel.Listener, Pairing.Listener {
     private static final long SEEK_STEP_MS = 10_000;
@@ -811,7 +811,7 @@ public final class PlayerActivity extends Activity implements CastHub.Screen, Me
     private void layoutSubtitles() {
         int right = menu.isOpen() ? getResources().getDimensionPixelSize(R.dimen.panel_width) : 0;
         int gap = Math.round(subtitles.getHeight() * style.bottomGap());
-        int overlay = controls.isShown() ? getResources().getDimensionPixelSize(R.dimen.controls_height) : 0;
+        int overlay = controls.isShown() ? controls.bottomClearance() : 0;
         subtitles.setPadding(0, 0, right, Math.max(gap, overlay));
     }
 
