@@ -16,15 +16,8 @@ android {
     }
 }
 dependencies {
-    // Includes fixes for active subtitle cues after seeking or enabling a track.
-    // Keep the Android 8+ runtime minimum and target behavior independent of the build SDK.
-    def media3 = '1.11.1'
-    implementation "androidx.media3:media3-exoplayer:$media3"
-    implementation "androidx.media3:media3-exoplayer-hls:$media3"
-    implementation "androidx.media3:media3-exoplayer-dash:$media3"
-    implementation "androidx.media3:media3-ui:$media3"
-    // Nullability annotations; already resolved through Media3.
-    implementation 'androidx.annotation:annotation:1.3.0'
+    // Media3, subtitles, track menus and the playback overlay; it also supplies the Media3 version.
+    implementation project(':playback')
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test:core:1.6.1'

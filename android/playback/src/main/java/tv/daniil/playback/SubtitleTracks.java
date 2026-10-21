@@ -1,4 +1,4 @@
-package tv.daniil.cast;
+package tv.daniil.playback;
 
 import android.content.Context;
 
@@ -22,18 +22,18 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-/** The current video's subtitle tracks, from its playlist or from the page, with readable names. */
+/** The current video's subtitle tracks, from its playlist or from external files, with readable names. */
 @OptIn(markerClass = UnstableApi.class)
-final class SubtitleTracks {
-    /** Format id given to files sent by the extension: {@code side-0}, {@code side-1}… */
+public final class SubtitleTracks {
+    /** Format id given to external files, in request order: {@code side-0}, {@code side-1}… */
     static final String SIDELOADED = "side-";
     // Packagers often name tracks "stream_0" or "subs1"; the language reads better.
     private static final Pattern TECHNICAL_LABEL = Pattern.compile("(?i)(stream|track|text|subs?|subtitles?)[ _-]?\\d*");
 
-    static final class Track {
-        final String id, label;
-        @Nullable final String language;
-        final boolean selected, preferred;
+    public static final class Track {
+        public final String id, label;
+        @Nullable public final String language;
+        public final boolean selected, preferred;
         @Nullable final String formatId;
         final TrackGroup group;
         final int index;
@@ -50,11 +50,14 @@ final class SubtitleTracks {
         }
     }
 
-    /** What the extension asked for when casting: a page file, "off", or the language the browser showed. */
-    static final class Request {
-        @Nullable final String choice, language, label;
+    /**
+     * Subtitles wanted for new media: an external file by its index ("0") or "off", else a track's label or
+     * language, such as what the browser was showing. All null leaves the choice to the viewer's last language.
+     */
+    public static final class Request {
+        @Nullable public final String choice, language, label;
 
-        Request(@Nullable String choice, @Nullable String language, @Nullable String label) {
+        public Request(@Nullable String choice, @Nullable String language, @Nullable String label) {
             this.choice = choice;
             this.language = language;
             this.label = label;
@@ -90,12 +93,12 @@ final class SubtitleTracks {
         return list;
     }
 
-    @Nullable static Track selected(List<Track> tracks) {
+    @Nullable public static Track selected(List<Track> tracks) {
         for (Track track : tracks) if (track.selected) return track;
         return null;
     }
 
-    @Nullable static Track find(List<Track> tracks, String id) {
+    @Nullable public static Track find(List<Track> tracks, String id) {
         for (Track track : tracks) if (track.id.equals(id)) return track;
         return null;
     }
@@ -149,7 +152,8 @@ final class SubtitleTracks {
         return null;
     }
 
-    @Nullable private static String primary(@Nullable String language) {
+    /** The language without its region, such as "en" for "en-US"; null when unknown. */
+    @Nullable static String primary(@Nullable String language) {
         String normalized = Util.normalizeLanguageCode(language);
         if (normalized == null || normalized.isEmpty() || C.LANGUAGE_UNDETERMINED.equals(normalized)) return null;
         return normalized.split("-")[0];

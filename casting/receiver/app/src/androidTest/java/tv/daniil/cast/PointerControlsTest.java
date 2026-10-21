@@ -9,6 +9,8 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
+import androidx.media3.common.Player;
+import androidx.media3.exoplayer.ExoPlayer;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -18,8 +20,12 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import java.lang.reflect.Field;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
+import tv.daniil.playback.PlaybackSession;
+import tv.daniil.playback.R;
 import static org.junit.Assert.*;
 
 /** Inject actual touchscreen and mouse MotionEvents, rather than invoking click listeners. */
@@ -41,7 +47,7 @@ public final class PointerControlsTest {
     }
 
     @Test public void touchNavigatesSettingsChoicesBackAndClose() throws Exception {
-        tap(R.id.idle_settings, false);
+        tap(tv.daniil.cast.R.id.idle_settings, false);
         row("Subtitle style", false);
         row("Size", false);
         row("Large", false);
@@ -118,6 +124,37 @@ public final class PointerControlsTest {
         send(new JSONObject().put("action","fail").put("code","network").put("retry",false));
         tap(R.id.error_close, false);
         waitFor(screen::isFinishing);
+    }
+
+    @Test public void repeatedRemoteSeeksAddUpToOneSeek() throws Exception {
+        load(false);
+        AtomicInteger seeks = new AtomicInteger();
+        instrumentation.runOnMainSync(() -> player().addListener(new Player.Listener() {
+            @Override public void onPositionDiscontinuity(Player.PositionInfo oldPosition,
+                    Player.PositionInfo newPosition, int reason) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) seeks.incrementAndGet();
+            }
+        }));
+        long initial = status().optLong("position");
+        // Three presses in one main-thread pass, so a slow emulator can't space them past the gathering delay.
+        instrumentation.runOnMainSync(() -> {
+            for (int i = 0; i < 3; i++) {
+                screen.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT));
+                screen.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_RIGHT));
+            }
+        });
+        waitFor(() -> ((TextView) screen.findViewById(R.id.seek_label)).getText().toString().equals("+30 s"));
+        waitFor(() -> status().optLong("position") >= initial + 29_000);
+        SystemClock.sleep(1000);
+        assertEquals("Gathered presses seek once", 1, seeks.get());
+    }
+
+    private ExoPlayer player() {
+        try {
+            Field field = PlayerActivity.class.getDeclaredField("session");
+            field.setAccessible(true);
+            return ((PlaybackSession) field.get(screen)).player();
+        } catch (Exception error) { throw new AssertionError(error); }
     }
 
     private void showNext() {

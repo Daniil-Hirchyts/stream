@@ -6,4 +6,6 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = 'DaniilCast'
-include ':app'
+include ':app', ':playback'
+// Shared with the standalone Daniil TV app.
+project(':playback').projectDir = new File(settingsDir, '../../android/playback')

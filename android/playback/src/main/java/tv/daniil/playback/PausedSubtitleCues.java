@@ -1,4 +1,4 @@
-package tv.daniil.cast;
+package tv.daniil.playback;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.OptIn;

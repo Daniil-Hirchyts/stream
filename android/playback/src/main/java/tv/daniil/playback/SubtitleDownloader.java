@@ -1,4 +1,4 @@
-package tv.daniil.cast;
+package tv.daniil.playback;
 
 import android.net.Uri;
 import android.os.SystemClock;
@@ -34,24 +34,29 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 /**
- * Fetches the page's subtitle files before playback starts. Media3 stops the whole video when a side-loaded file
+ * Fetches external subtitle files before playback starts. Media3 stops the whole video when a side-loaded file
  * fails, so a missing, expired or oversized file is skipped here instead. Files saved in a legacy single-byte
  * encoding, common for Cyrillic SRT, are converted to UTF-8.
  */
-final class SubtitleDownloader {
+public final class SubtitleDownloader {
     private static final int MAX_BYTES = 2 * 1024 * 1024;
     private static final long DEADLINE_MS = 8000;
     private static final Pattern SRT = Pattern.compile("^\\s*\\d+\\s*\\R\\s*\\d{1,2}:\\d{2}:\\d{2},\\d{1,3}\\s*-->");
     private static final Pattern DOTTED_CUES = Pattern.compile("\\d{2}:\\d{2}\\.\\d{3}\\s*-->");
 
-    static final class Source {
-        final String url, mime, language, label;
+    /** One subtitle file; empty strings mean unknown. The content decides the format when the type is wrong. */
+    public static final class Source {
+        public final String url, mime, language, label;
+
+        public Source(String url, String mime, String language, String label) {
+            this.url = url;
+            this.mime = mime;
+            this.language = language;
+            this.label = label;
+        }
 
         Source(JSONObject json) {
-            url = json.optString("url");
-            mime = json.optString("mime");
-            language = json.optString("language");
-            label = json.optString("label");
+            this(json.optString("url"), json.optString("mime"), json.optString("language"), json.optString("label"));
         }
     }
 
@@ -66,7 +71,8 @@ final class SubtitleDownloader {
 
     private SubtitleDownloader() {}
 
-    static List<Source> parse(@Nullable String json) throws JSONException {
+    /** Reads {@code [{"url", "mime", "language", "label"}…]}, the format the Chrome extension sends. */
+    public static List<Source> parse(@Nullable String json) throws JSONException {
         List<Source> sources = new ArrayList<>();
         if (json == null || json.isEmpty()) return sources;
         JSONArray items = new JSONArray(json);
