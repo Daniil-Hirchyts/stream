@@ -35,7 +35,9 @@ See [simulator setup and commands](casting/simulator/README.md),
 [desktop helper](casting/native/README.md), [agent instructions](AGENTS.md),
 and [validation results and release limitations](docs/desktop-validation.md).
 A separate standalone streaming app, Daniil TV, is
-[planned but not implemented](docs/STREAMING_APP_PLAN.md).
+[being implemented](docs/STREAMING_APP_PLAN.md). Its native engine and Android
+data layers are described in the [validation record](docs/streaming-validation.md);
+the standalone navigation/player screens are still unfinished.
 
 The older physical Fire TV cleanup tools remain separate from casting. Their
 [recovery notes](docs/firetv-cleanup.md), package profile and restore script are

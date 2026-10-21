@@ -9,6 +9,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { join, resolve, sep, extname } from 'node:path';
+import { addonFixtures } from './addon-fixtures.mjs';
 
 const run = promisify(execFile);
 const [adb, serial, avd, fixtureTool] = process.argv.slice(2);
@@ -53,6 +54,7 @@ async function buildIndex() {
 
 await verify();
 const index = await buildIndex();
+const serveAddon = addonFixtures(index, origin);
 const types = { '.mp4': 'video/mp4', '.mkv': 'video/x-matroska', '.torrent': 'application/x-bittorrent' };
 
 function serveFile(req, res, root, relative) {
@@ -82,6 +84,11 @@ const server = createServer(async (req, res) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405).end(); return; }
     const path = decodeURIComponent(new URL(req.url, origin).pathname);
     res.setHeader('Cache-Control', 'no-store');
+    if (path === '/addon/subtitle.vtt') {
+      res.writeHead(200, { 'Content-Type': 'text/vtt' }).end('WEBVTT\n\n00:00:00.000 --> 00:00:30.000\nGenerated subtitle\n');
+      return;
+    }
+    if (await serveAddon(req, res)) return;
     if (path === '/health') {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ app: 'Daniil TV fixtures', serial, avd }));

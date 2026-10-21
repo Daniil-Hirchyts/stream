@@ -39,3 +39,48 @@ These are local host/emulator results. GitHub CI, physical Fire OS performance,
 ARM32 runtime behavior, release shrinking, resource profiling, and the complete
 standalone-app acceptance matrix have not yet been verified. No physical TV was
 contacted or modified.
+
+## Add-ons and persistence, 2026-10-21
+
+`streaming/android/:app` now builds the `tv.daniil.stream` data layer. It has no
+launcher or playback activity yet. The engine remains in `:torrent`; the app
+uses the same shared playback dependency as Daniil Cast.
+
+Local checks on the same API 36 AVD:
+
+- `./streaming/simulator.sh test`: engine/playback `OK (12 tests)`, then
+  add-on/persistence `OK (13 tests)`.
+- After adding catalogue-to-native source integration coverage,
+  `./streaming/simulator.sh data-test`: `OK (14 tests)`.
+- `:app:assembleDebug`, `:app:assembleDebugAndroidTest`, and `:app:lintDebug`
+  pass. Lint retains advisory dependency-version, HTTP-support and missing-icon
+  warnings; launcher/icon work belongs to the unfinished standalone UI.
+
+Coverage includes configured paths and escaped query values, provider episode
+IDs, resource/type/prefix filtering, source-less episodes, explicit file zero
+and invalid indexes, HTTP/magnet/info-hash candidates, unsupported results,
+source-only headers, subtitle matching hints, partial search, pagination, stale
+metadata fallback, decompressed response limits, certificate rejection, four
+concurrent requests, request/discovery deadlines and configuration cancellation.
+The catalogue-to-source test obtains torrent metadata from the actual loopback
+seeder and reads verified payload through JNI; the app contains no fixture
+catalogue or fake engine implementation.
+
+Storage coverage includes Keystore encryption/authentication and ciphertext in
+SQLite/WAL, disabled backup, add-on order/enabling/removal/catalogue visibility,
+favourites/history and resume across reopen, watched/unwatched state, language
+preferences, version-1-to-2 migration, metadata cache bounds, removal of playable
+URLs from saved metadata, encrypted imported descriptors, private copied torrent
+files, traversal refusal and metadata-only imports without payload downloads.
+
+Runner evidence is local and ignored:
+`streaming/simulator/.cache/evidence/tv.daniil.torrent.test-instrumentation.txt`
+and `tv.daniil.stream.test-instrumentation.txt`. Public providers, public peers,
+trackers, DHT and the physical TV are not used by these tests. The deliberately
+untrusted TLS fixture on emulator loopback port 58135 is rejected without
+modifying certificate trust.
+
+Still required: the complete UI and playback host/lifecycle wiring, source
+ranking/failover and ambiguous file-selection flow, full-app live test room,
+smoke/30-minute soak/profiling, shrunk release verification, and emulator CI.
+Data-layer tests do not establish those unfinished application behaviors.

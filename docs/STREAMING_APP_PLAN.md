@@ -1,6 +1,10 @@
 # Daniil TV — Complete Standalone Streaming App
 
-**Status:** proposed; not implemented. Repository facts in section 2 and the
+**Status:** implementation in progress; shared playback, native streaming, and
+add-on/persistence layers are implemented. Standalone navigation/player screens
+and the full application acceptance matrix remain unfinished. See
+[streaming-validation.md](streaming-validation.md) for executed checks.
+Repository facts in section 2 describe the original planning baseline, and the
 native dependency pins in section 3 were checked against the sources, the
 local AVD configuration and upstream tags on 2026-10-21.
 

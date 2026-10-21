@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <!-- The Leanback feature and launcher activity arrive with the standalone navigation UI. -->
+    <application android:label="Daniil TV" android:allowBackup="false" android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:supportsRtl="true" android:networkSecurityConfig="@xml/network_security" />
+</manifest>
