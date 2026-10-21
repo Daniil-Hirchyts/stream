@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Daniil Cast palette, shared with the Chrome extension: deep ink surfaces and a single mint accent. -->
+    <color name="ink">#FF0B1116</color>
+    <color name="surface">#FF131B22</color>
+    <color name="surface_raised">#FF1A242D</color>
+    <color name="line">#1FFFFFFF</color>
+    <color name="text_primary">#FFEDF2F5</color>
+    <color name="text_secondary">#FF9AA8B2</color>
+    <color name="text_tertiary">#FF67757F</color>
+    <color name="accent">#FF69DBB4</color>
+    <color name="accent_soft">#2669DBB4</color>
+    <color name="danger">#FFFF8178</color>
+    <color name="danger_soft">#26FF8178</color>
+</resources>

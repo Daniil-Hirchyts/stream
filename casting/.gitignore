@@ -3,5 +3,6 @@
 local.properties
 __pycache__/
 *.pyc
-native/config.json
-native/run-host.sh
+native/target/
+sidepanel/node_modules/
+simulator/.cache/
