@@ -4,7 +4,8 @@
 #
 #   ./streaming/simulator.sh fixtures        Generate test media and torrents
 #   ./streaming/simulator.sh services        Start the fixture service (58133) and seeder (58134) for the emulator
-#   ./streaming/simulator.sh test            Native engine tests on the emulator (CheckJNI, real BitTorrent)
+#   ./streaming/simulator.sh test            Engine/playback and add-on/persistence tests (verified emulator only)
+#   ./streaming/simulator.sh engine-test | data-test
 #   ./streaming/simulator.sh status | logs | stop-services
 set -u
 
@@ -86,12 +87,12 @@ start_services() {
 }
 
 stop_services() {
-  for name in seeder fixtures; do
+  for name in tls seeder fixtures; do
     pid_file="$STATE_DIR/$name.pid"
     [ -f "$pid_file" ] || continue
     pid=$(cat "$pid_file")
     # Only a process this script started, and only if it still listens where ours did.
-    case "$name" in seeder) port=$SEEDER_PORT ;; *) port=$FIXTURE_PORT ;; esac
+    case "$name" in tls) port=58135 ;; seeder) port=$SEEDER_PORT ;; *) port=$FIXTURE_PORT ;; esac
     if [ -n "$pid" ] && [ "$(listener_pid "$port")" = "$pid" ]; then kill "$pid" && printf 'Stopped %s (PID %s).\n' "$name" "$pid"; fi
     rm -f "$pid_file"
   done
@@ -125,6 +126,24 @@ run_tests() {
   instrument tv.daniil.torrent.test -e fixtures "$FIXTURE_URL" -e seeder "127.0.0.1:$SEEDER_PORT"
 }
 
+run_data_tests() {
+  start_services || return 1
+  tls_dir="$SIM_DIR/.cache/tls"
+  mkdir -p "$tls_dir" || return 1
+  if [ ! -f "$tls_dir/cert.pem" ]; then
+    (umask 077; openssl req -x509 -newkey rsa:2048 -nodes -keyout "$tls_dir/key.pem" \
+      -out "$tls_dir/cert.pem" -days 7 -subj '/CN=localhost' >/dev/null 2>&1) || return 1
+  fi
+  start_service tls 58135 "$STATE_DIR/tls.log" "$(command -v node)" "$SIM_DIR/tls-fixture.mjs" \
+    "$tls_dir/key.pem" "$tls_dir/cert.pem" || return 1
+  device reverse tcp:58135 tcp:58135 >/dev/null || return 1
+  prepare_java
+  (cd "$ANDROID_DIR" && ./gradlew -q :app:assembleDebug :app:assembleDebugAndroidTest) || return 1
+  device install -r "$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk" || return 1
+  device install -r -t "$ANDROID_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" || return 1
+  instrument tv.daniil.stream.test -e fixtures "$FIXTURE_URL" -e badCertificate https://127.0.0.1:58135/manifest.json
+}
+
 show_status() {
   require_emulator || return 1
   printf 'AVD: %s (%s), Android %s (API %s)\n' "$AVD_NAME" "$SERIAL" "$(emulator_property ro.build.version.release)" \
@@ -137,7 +156,9 @@ show_status() {
 case "${1:-}" in
   fixtures) "$SIM_DIR/fixtures.sh" ;;
   services) start_services ;;
-  test) run_tests ;;
+  test) run_tests && run_data_tests ;;
+  engine-test) run_tests ;;
+  data-test) run_data_tests ;;
   status) show_status ;;
   logs)
     device logcat -d -t 400 -v time

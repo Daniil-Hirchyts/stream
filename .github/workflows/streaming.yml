@@ -52,4 +52,4 @@ jobs:
           path: streaming/native/.deps
           key: native-deps-android-${{ hashFiles('streaming/native/deps.lock', 'streaming/native/patches/**', 'streaming/native/build-openssl.sh') }}
       # armeabi-v7a (Fire TV Stick), arm64-v8a (local emulator) and x86_64 (Linux emulators).
-      - run: ./gradlew :torrent:assembleDebug :torrent:assembleDebugAndroidTest
+      - run: ./gradlew :torrent:assembleDebug :torrent:assembleDebugAndroidTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug

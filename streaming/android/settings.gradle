@@ -6,6 +6,6 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = 'DaniilTV'
-include ':playback', ':torrent'
+include ':playback', ':torrent', ':app'
 // Shared with Daniil Cast.
 project(':playback').projectDir = new File(settingsDir, '../../android/playback')
