@@ -1,0 +1,10 @@
+[
+  {"name": "film-v1", "torrent": "film-v1.torrent", "save": "", "about": "1080p H.264 MP4, 68 MB, v1, 1 MiB pieces"},
+  {"name": "film-hybrid", "torrent": "film-hybrid.torrent", "save": "", "about": "The same film as a hybrid v1+v2 torrent"},
+  {"name": "film-v2", "torrent": "film-v2.torrent", "save": "", "about": "The same film as a pure v2 torrent, 512 KiB pieces"},
+  {"name": "film-huge-pieces", "torrent": "film-huge-pieces.torrent", "save": "", "about": "32 MiB pieces: refused"},
+  {"name": "late-index", "torrent": "late-index.torrent", "save": "", "about": "MP4 with its index after the media"},
+  {"name": "matroska", "torrent": "matroska.torrent", "save": "", "about": "MKV, two audio languages, embedded subtitles"},
+  {"name": "series", "torrent": "series.torrent", "save": "", "about": "Three episodes, a text file and a poster"},
+  {"name": "unicode", "torrent": "unicode.torrent", "save": "unicode", "about": "A file name outside ASCII, emoji included"}
+]
