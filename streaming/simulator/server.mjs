@@ -1,0 +1,103 @@
+// Daniil TV's local fixture service on 127.0.0.1:58133, reached from the emulator through adb reverse. It serves the
+// generated torrents and their expected contents; the real BitTorrent seeder (dtv-fixture seed) runs separately on
+// 58134. Nothing here runs in the app's process, so it never counts toward the app's memory.
+import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
+import { join, resolve, sep, extname } from 'node:path';
+
+const run = promisify(execFile);
+const [adb, serial, avd, fixtureTool] = process.argv.slice(2);
+if (!/^emulator-\d+$/.test(serial || '')) throw Error('An emulator serial is required');
+const here = fileURLToPath(new URL('.', import.meta.url));
+const cache = join(here, '.cache');
+const media = join(cache, 'media');
+const origin = 'http://127.0.0.1:58133';
+const port = 58133;
+
+async function verify() {
+  const { stdout } = await run(adb, ['-s', serial, 'shell', 'getprop', 'ro.kernel.qemu']);
+  if (stdout.trim() !== '1') throw Error('Refusing a non-emulator device');
+  const { stdout: name } = await run(adb, ['-s', serial, 'emu', 'avd', 'name']);
+  if (name.trim().split(/\r?\n/)[0] !== avd) throw Error('Unexpected emulator at this port');
+}
+
+async function sha256(file) {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(file)) hash.update(chunk);
+  return hash.digest('hex');
+}
+
+// What each torrent holds, with every file's hash, so tests prove the bytes they read.
+async function buildIndex() {
+  const fixtures = JSON.parse(await readFile(join(here, 'fixtures.json'), 'utf8'));
+  const index = [];
+  for (const f of fixtures) {
+    const torrent = join(cache, 'torrents', f.torrent);
+    const { stdout } = await run(fixtureTool, ['info', torrent]);
+    const info = JSON.parse(stdout);
+    const files = [];
+    for (const file of info.files) {
+      const path = join(media, f.save, file.path);
+      files.push({ ...file, sha256: await sha256(path) });
+    }
+    index.push({ name: f.name, about: f.about, torrent: `${origin}/streaming/torrents/${encodeURIComponent(f.torrent)}`,
+      v1: info.v1, v2: info.v2, pieceLength: info.pieceLength, pieces: info.pieces, files });
+  }
+  return index;
+}
+
+await verify();
+const index = await buildIndex();
+const types = { '.mp4': 'video/mp4', '.mkv': 'video/x-matroska', '.torrent': 'application/x-bittorrent' };
+
+function serveFile(req, res, root, relative) {
+  const file = resolve(root, '.' + relative);
+  if (!file.startsWith(root.endsWith(sep) ? root : root + sep)) { res.writeHead(403).end(); return; }
+  return stat(file).then(info => {
+    let start = 0, end = info.size - 1;
+    res.setHeader('Content-Type', types[extname(file)] || 'application/octet-stream');
+    res.setHeader('Accept-Ranges', 'bytes');
+    if (req.headers.range) {
+      const m = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range);
+      if (!m) { res.writeHead(416, { 'Content-Range': `bytes */${info.size}` }).end(); return; }
+      start = Number(m[1]);
+      end = m[2] ? Math.min(Number(m[2]), end) : end;
+      if (start > end) { res.writeHead(416, { 'Content-Range': `bytes */${info.size}` }).end(); return; }
+      res.statusCode = 206;
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${info.size}`);
+    }
+    res.setHeader('Content-Length', end - start + 1);
+    if (req.method === 'HEAD') { res.end(); return; }
+    createReadStream(file, { start, end }).on('error', () => res.destroy()).pipe(res);
+  });
+}
+
+const server = createServer(async (req, res) => {
+  try {
+    if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405).end(); return; }
+    const path = decodeURIComponent(new URL(req.url, origin).pathname);
+    res.setHeader('Cache-Control', 'no-store');
+    if (path === '/health') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ app: 'Daniil TV fixtures', serial, avd }));
+      return;
+    }
+    if (path === '/streaming/index.json') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(index));
+      return;
+    }
+    if (path.startsWith('/streaming/torrents/')) return await serveFile(req, res, join(cache, 'torrents'), path.slice('/streaming/torrents'.length));
+    // The same media over plain HTTP, for direct-link sources.
+    if (path.startsWith('/streaming/media/')) return await serveFile(req, res, media, path.slice('/streaming/media'.length));
+    res.writeHead(404).end();
+  } catch (error) {
+    res.writeHead(503, { 'Content-Type': 'text/plain' }).end(error.message);
+  }
+});
+server.listen(port, '127.0.0.1', () => console.log(`Daniil TV fixtures: ${origin} (${serial}, ${index.length} torrents)`));

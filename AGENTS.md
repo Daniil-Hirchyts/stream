@@ -26,6 +26,9 @@ validate some current video servers. Keep TLS verification enabled.
 | Desktop helper | `casting/native/src/` (Rust) | Chrome native host, CLI, pairing, relay/conversion, packaging and installation. Replaces deleted Python helper/installer. `Cargo.lock` is committed. FFmpeg does encoding; Rust coordinates it. |
 | Android receiver | `casting/receiver/app/src/main/` (Java/XML) | `tv.daniil.cast/.PlayerActivity`; HTTP control/pairing service, Chrome command/status adapter, idle/pairing screens, episodes, conversion waits. Debug APK in `app/build/outputs/apk/debug/`. Android 8+ minimum, target/compile 36. |
 | Shared playback | `android/playback/` (Java/XML library, Media3) | `tv.daniil.playback`: `PlaybackSession`/`PlayerScreen`, subtitles, tracks, overlay, menu, errors. No Gradle build of its own: each app includes it as `:playback`. Changes must pass the receiver suite (and the standalone app's, once it exists). |
+| Daniil TV engine | `streaming/native/` (C++17; libtorrent 2.1.2 + `patches/libtorrent`) | Bounded piece cache, libtorrent disk subsystem, read-ahead/eviction controller, JNI. Sources pinned in `deps.lock`, fetched and verified by `fetch-deps.sh` into ignored `.deps/`; change libtorrent only through `patches/` (the checkout is reset). Host `dtv-fixture`, `dtv-tests`. |
+| Daniil TV Android | `streaming/android/` (Gradle: `:torrent`, shared `:playback`) | `tv.daniil.torrent`: `TorrentEngine` (JNI) and Media3 `TorrentDataSource`; `libdaniiltv.so` for armeabi-v7a, arm64-v8a, x86_64. The `tv.daniil.stream` app is planned. |
+| Daniil TV simulator | `streaming/simulator.sh`, `streaming/simulator/` | Generated media and torrents, fixture service on 58133, real seeder on 58134 (adb reverse), device tests; emulator identity checks in `simulator/emulator.sh`. |
 | Local simulator | `casting/simulator.sh`, `casting/simulator/`, `casting/Simulator.command` | Builds/starts the real components, generates local fixtures, hosts test room/live screen, tests playback. No mock Chrome APIs in the real test room. |
 | Fire TV maintenance | `scripts/`, `profiles/`, `restore-firetv.sh` | Separate owner-specific cleanup/recovery tools using Python and CleanYourTV. Not a casting runtime dependency. |
 | CleanYourTV | Git submodule `cleanyourtv/` | Pinned upstream maintenance dependency. Do not vendor its repository or modify it for casting work. |
@@ -97,6 +100,20 @@ setup preserves userdata and enables this. Cold restart after changing hardware.
 (cd casting/sidepanel && npm run check && npm test && npm run build)
 (cd casting/native && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked)
 ```
+
+Daniil TV (see `docs/STREAMING_APP_PLAN.md` and `streaming/native/README.md`):
+
+```sh
+./streaming/native/build-host.sh dev     # also asan, tsan, checks (libtorrent invariants)
+sh streaming/simulator/tests/identity.sh  # mocked wrong-device refusals
+./streaming/simulator.sh test            # engine via JNI + Media3 on the verified emulator
+```
+
+Required streaming tests use only generated fixtures, loopback peers and the
+emulator: no public torrents, trackers, DHT or LAN. Keep piece hash checks on,
+never substitute HTTP for the BitTorrent transfer, and keep the eviction
+regressions passing under every `build-host.sh` variant before touching the
+patch or moving libtorrent.
 
 Android instrumentation covers long VTT/SRT/ASS cues after forward/backward seeks,
 resumed load and late selection; certificate vs network errors; injected real

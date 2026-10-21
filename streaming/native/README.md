@@ -1,0 +1,109 @@
+# Daniil TV streaming engine
+
+C++17 code that lets the TV play a torrent while it downloads, keeping only a
+bounded window of it on disk. Built into `libdaniiltv.so` for the app (through
+`streaming/android/torrent`) and into `dtv-fixture` and `dtv-tests` for this
+computer. Plan: [docs/STREAMING_APP_PLAN.md](../../docs/STREAMING_APP_PLAN.md).
+
+| Path | Role |
+| --- | --- |
+| `src/piece_cache.*` | One preallocated file per torrent, divided into piece-sized slots; pins, verification, LRU eviction candidates |
+| `src/cache_disk_io.*` | libtorrent's disk subsystem over the cache; one worker for writes, reads, clears and releases in order, one for hashes |
+| `src/engine.*` | The session, readers, the read-ahead window controller, eviction, errors and statistics |
+| `jni/jni_bridge.cpp` | `tv.daniil.torrent.TorrentEngine`'s native methods |
+| `patches/libtorrent/` | The eviction patch (see [THIRD_PARTY.md](THIRD_PARTY.md)) |
+| `tools/` | `dtv-fixture` (content, torrents, a real seeder) and shared test fixtures |
+| `tests/` | Host tests: cache units, eviction regressions, streaming against real seeders |
+
+## Building
+
+```sh
+./streaming/native/build-host.sh dev        # debug build, then all tests
+./streaming/native/build-host.sh asan       # AddressSanitizer + UndefinedBehaviorSanitizer
+./streaming/native/build-host.sh tsan       # ThreadSanitizer
+./streaming/native/build-host.sh checks     # libtorrent asserts and full invariant checks
+```
+
+They fetch and verify the pinned sources (`fetch-deps.sh`), build OpenSSL for
+the host (`build-openssl.sh host`), then build and run. Android builds go
+through Gradle in `streaming/android`, which runs `build-openssl.sh` for each
+ABI first. The pinned NDK and CMake come from the SDK:
+
+```sh
+sdkmanager --install "ndk;29.0.14206865" "cmake;3.31.6"
+```
+
+## How streaming works
+
+1. A torrent is added with nothing to download (`default_dont_download`). For
+   a magnet link or info hash, its metadata comes from peers over BitTorrent.
+2. Choosing a file starts the read-ahead controller. From the most recent
+   reader's position it keeps about 45 seconds of media (from the bitrate the app
+   reports, bounded by the cache) at download priority; pieces a reader is
+   waiting for, and the next two, get deadlines. Partial pieces that leave the
+   window finish at the lowest priority, then become evictable. Nothing outside
+   the window downloads.
+3. A piece needs a cache slot before it may download. When none is free the
+   least recently used verified pieces are evicted, except the window, the piece
+   behind the reader, and (in caches of 8+ slots) the file's first and last
+   pieces, where containers keep their headers and indexes.
+4. Eviction runs on libtorrent's network thread
+   (`torrent_handle::evict_pieces`): the pieces go back to the piece picker as
+   never downloaded, queued uploads of them are rejected, peers supporting
+   lt_donthave (BEP 54) are told, and downloading peers without it are
+   reconnected so they get a fresh bitfield. Readers stop using a piece before
+   the torrent forgets it; its slot is freed after every disk job queued before
+   then and once no reader pins it.
+5. A reader waits until the piece it needs is verified, then copies from the
+   cache. Missing data is waited for and downloaded: never zeros, never an early
+   end of file.
+
+The cache file is preallocated, so it never grows past `slots × piece length`.
+Slot calculation leaves 64 KiB for filesystem metadata inside the configured
+budget: Android's ext4 includes extent blocks in allocated-byte accounting.
+Allocation failures are reported before payload writes. libtorrent asks for a piece's hash as soon as the last block is queued
+for writing; the hash waits until the piece is complete in the cache.
+`close_redundant_connections` is off: a streaming torrent counts as finished
+whenever its window is complete, and announcing upload-only then would make
+seeds drop it just before the window moves on. `min_reconnect_time` is five
+seconds, so seeds that dropped a client which once had every piece come back
+quickly after an eviction.
+
+## Testing
+
+`dtv-tests` runs against real BitTorrent seeders on loopback (DHT, local
+discovery, port mapping and trackers off), with no internet or LAN:
+
+- cache units: slots, reservation, pads, waits and cancellation, 64-bit offsets;
+- eviction regressions on plain sessions: v1, v2 and hybrid seeds re-download
+  evicted pieces; a finished torrent stays finished until it wants a piece; a
+  libtorrent leecher learns by lt_donthave and stays connected; queued upload
+  requests are rejected; downloading peers without lt_donthave are
+  disconnected and seeds are not;
+- streaming through the engine: several cache turnovers within the bound,
+  rewind into evicted data, seeks, multi-file v1/v2/hybrid torrents, metadata
+  from magnets, timeouts, cancellation, corrupt peers, refusals, offsets beyond
+  4 GiB, and concurrent readers.
+
+On the emulator, `./streaming/simulator.sh test` runs the same engine through
+JNI (with CheckJNI) and Media3 against the host's seeder.
+The fixture seeder is limited to 4 MiB/s, so the short generated film can prove
+first-frame playback before its full payload arrives even on fast loopback.
+Repeated shutdown during transfer is covered on host and Android. Disk workers
+hold the network event loop alive with an Asio work guard until all completions
+are posted, so callbacks cannot outlive libtorrent's session/peer allocator.
+CheckJNI is explicitly enabled during instrumentation; the prior emulator-only
+setting is restored afterward. Runner output is retained in the ignored
+`streaming/simulator/.cache/evidence/` directory.
+
+## Known upstream issues
+
+With `close_redundant_connections` off, libtorrent 2.1.2's `torrent::finished()`
+skips the `send_not_interested()` that normally clears interest. A magnet
+torrent added with `default_dont_download` is finished as soon as its metadata
+arrives and keeps its peers marked interesting until the next interest update.
+In builds with invariant checks this trips
+`!is_interesting() || m_need_interest_update` in `peer_connection.cpp`; it
+happens with stock code paths and no eviction. Release builds only keep a stale
+"interested" flag, which costs nothing. `build-host.sh checks` therefore runs
+the cache and eviction regressions, which pass under full invariant checks.

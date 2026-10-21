@@ -1,0 +1,8 @@
+# Fetched native sources, native and Gradle build output, and simulator caches stay local.
+native/.deps/
+native/build/
+android/.gradle/
+android/**/build/
+simulator/.cache/
+local.properties
+android/**/.cxx/
