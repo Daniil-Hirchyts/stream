@@ -1,13 +1,14 @@
 plugins { id 'com.android.application' }
 android {
     namespace 'tv.daniil.cast'
-    compileSdk 34
+    compileSdk 36
     defaultConfig {
         applicationId 'tv.daniil.cast'
         minSdk 26
-        targetSdk 28
-        versionCode 2
-        versionName '0.1.1'
+        targetSdk 36
+        versionCode 6
+        versionName '0.3.1'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -15,10 +16,16 @@ android {
     }
 }
 dependencies {
-    // This version builds with the installed SDK 34 and supports Fire OS 7.
-    def media3 = '1.4.1'
+    // Includes fixes for active subtitle cues after seeking or enabling a track.
+    // Keep the Android 8+ runtime minimum and target behavior independent of the build SDK.
+    def media3 = '1.11.1'
     implementation "androidx.media3:media3-exoplayer:$media3"
     implementation "androidx.media3:media3-exoplayer-hls:$media3"
     implementation "androidx.media3:media3-exoplayer-dash:$media3"
     implementation "androidx.media3:media3-ui:$media3"
+    // Nullability annotations; already resolved through Media3.
+    implementation 'androidx.annotation:annotation:1.3.0'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test:core:1.6.1'
 }
