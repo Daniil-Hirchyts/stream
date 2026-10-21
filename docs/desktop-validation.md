@@ -10,7 +10,7 @@ The local Apple Silicon macOS workflow is verified on 21 October 2026:
   caption clearance above the draggable timeline, retry and up-next controls.
 - Real Chrome extension detection/casting, pause, and clicking Play inside the
   browser's live emulator screen were exercised.
-- Native helper smoke tests pass for MP4/HLS/DASH, audio, four subtitle formats,
+- Native helper smoke tests pass for MP4/HLS/DASH, audio, four subtitle tracks,
   episodes, speed, quality, AV1 conversion/seeking and casting from Android Home.
 - Rust formatting, Clippy, unit/protocol/installation tests and the real AV1
   conversion test pass locally with the installed FFmpeg 7 tools.
