@@ -42,7 +42,8 @@ Two more tests distinguish a missing certificate trust anchor from a genuine
 network/DNS failure. Three pointer tests inject actual mouse and touchscreen MotionEvents into the
 app: settings/submenus/choices/back/close, playback/skip/timeline drag, speed and
 subtitle selection, up-next play/cancel, error retry/close, and remote shortcuts
-after pointer use. They do not call `performClick()` as a substitute for input.
+after pointer use. They also check that captions stay above the timeline’s touch
+target and that the center button has symmetric padding. They do not call `performClick()` as a substitute for input.
 The complete run must report `OK (8 tests)`.
 
 `./casting/simulator.sh smoke` exercises the real installed Rust helper and the

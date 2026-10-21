@@ -431,7 +431,7 @@
         android:paddingBottom="12dp"
         android:visibility="gone" />
 
-    <!-- Options, opened with the remote's Menu button. -->
+    <!-- Options, opened by click/touch or the remote Menu shortcut. -->
     <LinearLayout
         android:id="@+id/menu"
         android:layout_width="@dimen/panel_width"

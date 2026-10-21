@@ -73,6 +73,11 @@ public final class PointerControlsTest {
             View play=screen.findViewById(R.id.center_icon);
             assertEquals(play.getPaddingLeft(), play.getPaddingRight());
             assertEquals(play.getPaddingTop(), play.getPaddingBottom());
+            View captions = screen.findViewById(R.id.subtitles);
+            Rect timeline = new Rect();
+            screen.findViewById(R.id.progress).getGlobalVisibleRect(timeline);
+            assertTrue("Captions stay above the draggable timeline",
+                    captions.getHeight() - captions.getPaddingBottom() < timeline.top);
         });
         long initial=status().optLong("position");
         tap(R.id.control_forward, true);

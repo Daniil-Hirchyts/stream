@@ -11,7 +11,7 @@ import androidx.media3.common.C;
 import androidx.media3.common.Player;
 
 /**
- * The playback overlay: title, progress, time and remote hints. It stays up while paused and fades a few
+ * The playback overlay: title, draggable progress, time and pointer controls. It stays up while paused and fades a few
  * seconds after playback resumes.
  */
 final class ControlsOverlay {
@@ -55,6 +55,10 @@ final class ControlsOverlay {
         progress = activity.findViewById(R.id.progress);
         elapsed = activity.findViewById(R.id.elapsed);
         remaining = activity.findViewById(R.id.remaining);
+        ((View) progress.getParent()).addOnLayoutChangeListener((view, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (shown && (top != oldTop || bottom != oldBottom)) onVisibilityChanged.run();
+        });
         progress.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onStartTrackingTouch(SeekBar bar) {
                 scrubbing = true;
@@ -76,6 +80,14 @@ final class ControlsOverlay {
 
     boolean isShown() {
         return shown;
+    }
+
+    /** Keep captions above the full touch target, including its time labels and buttons. */
+    int bottomClearance() {
+        View strip = (View) progress.getParent();
+        int fallback = root.getResources().getDimensionPixelSize(R.dimen.controls_height);
+        int gap = Math.round(16 * root.getResources().getDisplayMetrics().density);
+        return strip.getHeight() > 0 ? Math.max(fallback, root.getHeight() - strip.getTop() + gap) : fallback;
     }
 
     void setTitle(String text) {

@@ -116,6 +116,11 @@ passing real seek/selection regressions; a cue beginning before the seek target
 must still appear. Pointer controls belong in production receiver sources, not
 an emulator-only screen. Every actionable UI row/button must work by click/touch
 and retain remote shortcuts. Preserve progress dragging and accessible labels.
+Back uses the platform callback on Android 13+ and `onBackPressed` on older
+versions; do not also consume its key-down and pop twice. See the official
+[Back dispatcher reference](https://developer.android.com/reference/android/window/OnBackInvokedDispatcher).
+Caption clearance is measured from the complete playback toolbar, including the
+timeline’s 48 dp touch target; changing control sizes must keep captions above it.
 
 ## Git, cleanup and privacy
 
