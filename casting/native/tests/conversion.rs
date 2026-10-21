@@ -194,6 +194,12 @@ async fn real_av1_conversion_seeking_authentication_and_cleanup() {
         .output()
         .await
         .unwrap();
+    assert!(
+        metadata.status.success(),
+        "ffprobe failed: {}",
+        String::from_utf8_lossy(&metadata.stderr)
+    );
+    let diagnostics = String::from_utf8_lossy(&metadata.stderr);
     let metadata: Value = serde_json::from_slice(&metadata.stdout).unwrap();
     assert!(
         metadata["streams"]
@@ -201,7 +207,7 @@ async fn real_av1_conversion_seeking_authentication_and_cleanup() {
             .unwrap()
             .iter()
             .any(|s| s["codec_name"] == "h264" && s["width"] == 160 && s["height"] == 90),
-        "conversion must preserve small source dimensions: {metadata}"
+        "conversion must preserve small source dimensions: {metadata}; ffprobe: {diagnostics}"
     );
     assert!(
         metadata["streams"]
