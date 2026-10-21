@@ -1,0 +1,8 @@
+.DS_Store
+.env
+.env.*
+*.log
+# Device snapshots and test captures are private local evidence, not app sources.
+backups/
+# Machine-local Android and build output; component ignores cover their own caches.
+**/local.properties
