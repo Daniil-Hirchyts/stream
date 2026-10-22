@@ -6,6 +6,9 @@
     <color name="tv_glass">#2EFFFFFF</color>
     <color name="tv_glass_low">#14FFFFFF</color>
     <color name="tv_hairline">#1FFFFFFF</color>
+    <color name="tv_glass_pressed">#40FFFFFF</color>
+    <color name="tv_glass_selected">#29FFFFFF</color>
+    <color name="tv_glass_focus_fill">#33FFFFFF</color>
     <color name="tv_text">#FFF5F5F7</color>
     <color name="tv_text_secondary">#A6EBEBF5</color>
     <color name="tv_text_tertiary">#66EBEBF5</color>

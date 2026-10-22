@@ -1,5 +1,5 @@
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_focused="true" android:color="@color/tv_on_focus_secondary" />
-    <item android:state_pressed="true" android:color="@color/tv_on_focus_secondary" />
+    <item android:state_focused="true" android:color="@color/tv_text_secondary" />
+    <item android:state_pressed="true" android:color="@color/tv_text_secondary" />
     <item android:color="@color/tv_text_secondary" />
 </selector>

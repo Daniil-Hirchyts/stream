@@ -12,14 +12,15 @@
         <item name="android:windowFullscreen">true</item>
         <item name="android:alertDialogTheme">@style/TvDialog</item>
     </style>
-    <!-- Dark, rounded sheets. Lists and buttons keep the platform's focus and touch behaviour. -->
     <style name="Spinner">
         <item name="android:indeterminateDrawable">@drawable/tv_loading_indicator</item>
         <item name="android:indeterminateTint">@color/tv_text</item>
         <item name="android:indeterminateTintMode">src_in</item>
     </style>
+    <!-- Translucent rounded glass sheets. -->
     <style name="TvDialog" parent="android:style/Theme.Material.Dialog.Alert">
         <item name="android:windowBackground">@drawable/tv_dialog</item>
+        <item name="android:windowIsTranslucent">true</item>
         <item name="android:colorBackground">@color/tv_surface</item>
         <item name="android:colorAccent">@color/tv_focus</item>
         <item name="android:colorControlActivated">@color/tv_focus</item>
@@ -29,7 +30,10 @@
         <item name="android:textColorAlertDialogListItem">@color/tv_text</item>
         <item name="android:textColorHint">@color/tv_text_tertiary</item>
         <item name="android:windowTitleStyle">@style/TvDialogTitle</item>
-        <item name="android:buttonBarButtonStyle">@style/TvDialogButton</item>
+        <item name="android:buttonBarButtonStyle">@style/TvDialogSecondaryButton</item>
+        <item name="android:buttonBarPositiveButtonStyle">@style/TvDialogPrimaryButton</item>
+        <item name="android:buttonBarNegativeButtonStyle">@style/TvDialogSecondaryButton</item>
+        <item name="android:buttonBarNeutralButtonStyle">@style/TvDialogSecondaryButton</item>
         <item name="android:fontFamily">sans-serif</item>
     </style>
     <style name="TvDialogTitle" parent="android:style/TextAppearance.Material.DialogWindowTitle">
@@ -37,10 +41,21 @@
         <item name="android:textColor">@color/tv_text</item>
         <item name="android:fontFamily">sans-serif-medium</item>
     </style>
-    <style name="TvDialogButton" parent="android:style/Widget.Material.Button.Borderless.Colored">
+    <style name="TvDialogSecondaryButton" parent="android:style/Widget.Material.Button.Borderless.Colored">
+        <item name="android:background">@drawable/tv_dialog_button</item>
         <item name="android:textColor">@color/tv_text</item>
         <item name="android:textSize">16sp</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:minWidth">104dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:paddingStart">18dp</item>
+        <item name="android:paddingEnd">18dp</item>
+        <item name="android:insetTop">4dp</item>
+        <item name="android:insetBottom">4dp</item>
+    </style>
+    <style name="TvDialogPrimaryButton" parent="TvDialogSecondaryButton">
+        <item name="android:background">@drawable/tv_dialog_primary</item>
+        <item name="android:textColor">@color/tv_on_focus</item>
     </style>
 </resources>

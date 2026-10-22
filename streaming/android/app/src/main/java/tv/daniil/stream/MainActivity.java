@@ -366,41 +366,202 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
 
     // Dialogs.
     private void showDialog(AlertDialog dialog) {
-        dialogs.add(dialog); dialog.setOnDismissListener(ignored -> dialogs.remove(dialog)); dialog.show();
+        dialogs.add(dialog); dialog.setOnDismissListener(ignored -> dialogs.remove(dialog)); dialog.show(); Tv.styleDialog(dialog);
         for (int id : new int[]{AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_NEUTRAL}) {
             View button = dialog.getButton(id);
             if (button != null) button.setOnTouchListener((v, event) -> { if (event.getActionMasked() == MotionEvent.ACTION_DOWN) v.requestFocus(); return false; });
         }
     }
+    private void showGlassDialog(Dialog dialog) {
+        dialogs.add(dialog); dialog.setOnDismissListener(ignored -> dialogs.remove(dialog));
+        dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        dialog.show(); Tv.styleDialog(dialog);
+    }
+    private LinearLayout glassSurface(Dialog dialog, String title) {
+        LinearLayout surface = new LinearLayout(this);
+        surface.setOrientation(LinearLayout.VERTICAL);
+        surface.setBackgroundResource(R.drawable.tv_dialog);
+        int horizontal = Tv.dp(this, 32);
+        surface.setPadding(horizontal, Tv.dp(this, 26), horizontal, Tv.dp(this, 24));
+
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView heading = Tv.heading(this, title, 25, R.color.tv_text);
+        heading.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        header.addView(heading);
+        ImageView close = Tv.icon(this, R.drawable.ic_tv_close, 22, R.color.tv_text_secondary);
+        close.setBackgroundResource(R.drawable.tv_button_round);
+        close.setContentDescription("Close");
+        close.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(Tv.dp(this, 48), Tv.dp(this, 48));
+        closeParams.setMarginStart(Tv.dp(this, 18));
+        header.addView(close, closeParams);
+        surface.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 48)));
+        Tv.control(close, "popup:close", dialog::cancel, ignored -> {}, 1.04f, false);
+        return surface;
+    }
+    private void showGlassMessage(String title, CharSequence message, boolean scroll, Runnable onClose) {
+        Dialog dialog = new Dialog(this);
+        LinearLayout surface = glassSurface(dialog, title);
+        if (scroll) {
+            ScrollView content = new ScrollView(this);
+            content.setVerticalScrollBarEnabled(false);
+            TextView body = Tv.text(this, message.toString(), 15, R.color.tv_text_secondary);
+            body.setTextIsSelectable(true);
+            body.setLineSpacing(Tv.dp(this, 3), 1f);
+            int pad = Tv.dp(this, 18);
+            body.setPadding(pad, pad, pad, pad);
+            content.addView(body);
+            LinearLayout.LayoutParams contentParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 380));
+            contentParams.topMargin = Tv.dp(this, 18);
+            surface.addView(content, contentParams);
+        } else {
+            TextView body = Tv.text(this, message.toString(), 17, R.color.tv_text_secondary);
+            body.setLineSpacing(Tv.dp(this, 4), 1f);
+            body.setPadding(0, Tv.dp(this, 18), 0, Tv.dp(this, 8));
+            surface.addView(body);
+        }
+        dialog.setOnCancelListener(ignored -> { if (onClose != null) onClose.run(); });
+        dialog.setContentView(surface);
+        dialog.setCanceledOnTouchOutside(true);
+        showGlassDialog(dialog);
+    }
+    private void showGlassConfirmation(String title, CharSequence message, String action, Runnable onAccept, Runnable onCancel) {
+        Dialog dialog = new Dialog(this);
+        LinearLayout surface = glassSurface(dialog, title);
+        ScrollView content = new ScrollView(this);
+        content.setVerticalScrollBarEnabled(false);
+        TextView body = Tv.text(this, message.toString(), 17, R.color.tv_text_secondary);
+        body.setLineSpacing(Tv.dp(this, 4), 1f);
+        content.addView(body);
+        LinearLayout.LayoutParams contentParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        contentParams.topMargin = Tv.dp(this, 18);
+        contentParams.bottomMargin = Tv.dp(this, 8);
+        surface.addView(content, contentParams);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams actionsParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 56));
+        actionsParams.topMargin = Tv.dp(this, 12);
+        surface.addView(actions, actionsParams);
+        FrameLayout primary = new FrameLayout(this);
+        primary.setBackgroundResource(R.drawable.tv_dialog_primary);
+        primary.setContentDescription(action);
+        primary.setMinimumWidth(Tv.dp(this, 176));
+        LinearLayout primaryContent = new LinearLayout(this);
+        primaryContent.setGravity(Gravity.CENTER);
+        primaryContent.addView(Tv.heading(this, action, 17, R.color.tv_on_focus));
+        ImageView arrow = Tv.icon(this, R.drawable.ic_tv_chevron, 20, R.color.tv_on_focus);
+        LinearLayout.LayoutParams arrowParams = (LinearLayout.LayoutParams) arrow.getLayoutParams();
+        arrowParams.setMarginStart(Tv.dp(this, 10));
+        primaryContent.addView(arrow, arrowParams);
+        primary.addView(primaryContent, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER));
+        actions.addView(primary, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        Tv.control(primary, "popup:confirm", () -> { dialog.dismiss(); onAccept.run(); }, ignored -> {}, 1.04f, false);
+        dialog.setOnCancelListener(ignored -> { if (onCancel != null) onCancel.run(); });
+        dialog.setContentView(surface);
+        dialog.setCanceledOnTouchOutside(true);
+        showGlassDialog(dialog);
+        primary.requestFocus();
+    }
     @Override public void edit(String title, String hint, String initial, Consumer<String> accept) {
+        Dialog dialog = new Dialog(this);
+        LinearLayout surface = new LinearLayout(this);
+        surface.setOrientation(LinearLayout.VERTICAL);
+        surface.setBackgroundResource(R.drawable.tv_dialog);
+        int horizontal = Tv.dp(this, 32);
+        surface.setPadding(horizontal, Tv.dp(this, 28), horizontal, Tv.dp(this, 28));
+
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView heading = Tv.heading(this, title, 26, R.color.tv_text);
+        heading.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        header.addView(heading);
+        ImageView close = Tv.icon(this, R.drawable.ic_tv_close, 22, R.color.tv_text_secondary);
+        close.setBackgroundResource(R.drawable.tv_button_round);
+        close.setContentDescription("Cancel");
+        close.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(Tv.dp(this, 48), Tv.dp(this, 48));
+        closeParams.setMarginStart(Tv.dp(this, 18));
+        header.addView(close, closeParams);
+        surface.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 48)));
+        Tv.control(close, "popup:cancel", dialog::dismiss, ignored -> {}, 1.04f, false);
+
+        String description;
+        if (title.equals("Add add-on")) description = "Connect a catalogue or source using its manifest URL.";
+        else if (title.equals("Import torrent")) description = "Paste a magnet link or a torrent URL.";
+        else if (title.toLowerCase(java.util.Locale.ROOT).contains("name") || title.startsWith("Rename")) description = "Choose the name shown in your library.";
+        else description = "Enter a value to continue.";
+        TextView detail = Tv.text(this, description, 16, R.color.tv_text_secondary);
+        detail.setPadding(0, Tv.dp(this, 6), 0, Tv.dp(this, 22));
+        surface.addView(detail);
+
         EditText input = new EditText(this);
-        input.setSingleLine(true); input.setHint(hint); input.setText(initial); input.setTextSize(20);
+        input.setSingleLine(true); input.setHint(hint); input.setText(initial); input.setTextSize(19);
+        input.setTextColor(getColor(R.color.tv_text)); input.setHintTextColor(getColor(R.color.tv_text_secondary));
         input.setSelectAllOnFocus(true); input.setContentDescription(title); input.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        LinearLayout box = new LinearLayout(this);
-        int pad = Tv.dp(this, 22); box.setPadding(pad, Tv.dp(this, 8), pad, 0);
-        box.addView(input, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle(title).setView(box).setNegativeButton("Cancel", null).setPositiveButton("Continue", null).create();
-        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+        input.setBackgroundResource(android.R.color.transparent); input.setPadding(0, 0, 0, 0);
+        LinearLayout field = new LinearLayout(this);
+        field.setGravity(Gravity.CENTER_VERTICAL);
+        field.setBackgroundResource(R.drawable.tv_dialog_field);
+        field.setPadding(Tv.dp(this, 20), 0, Tv.dp(this, 20), 0);
+        int inputIcon = hint.equalsIgnoreCase("Title") || hint.equalsIgnoreCase("Value") ? R.drawable.ic_tv_edit : R.drawable.ic_tv_link;
+        ImageView leading = Tv.icon(this, inputIcon, 23, R.color.tv_text_secondary);
+        LinearLayout.LayoutParams leadingParams = (LinearLayout.LayoutParams) leading.getLayoutParams();
+        leadingParams.setMarginEnd(Tv.dp(this, 16));
+        field.addView(leading, leadingParams);
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
+        field.addView(input, inputParams);
+        surface.addView(field, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 62)));
+
+        TextView error = Tv.text(this, "", 14, R.color.tv_warning);
+        error.setVisibility(View.GONE);
+        error.setPadding(Tv.dp(this, 4), Tv.dp(this, 8), 0, 0);
+        surface.addView(error);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams actionsParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 56));
+        actionsParams.topMargin = Tv.dp(this, 22);
+        surface.addView(actions, actionsParams);
+        FrameLayout proceed = new FrameLayout(this);
+        proceed.setBackgroundResource(R.drawable.tv_dialog_primary);
+        proceed.setContentDescription("Continue");
+        proceed.setMinimumWidth(Tv.dp(this, 176));
+        LinearLayout proceedContent = new LinearLayout(this);
+        proceedContent.setGravity(Gravity.CENTER);
+        TextView proceedLabel = Tv.heading(this, "Continue", 17, R.color.tv_on_focus);
+        proceedContent.addView(proceedLabel);
+        ImageView arrow = Tv.icon(this, R.drawable.ic_tv_chevron, 20, R.color.tv_on_focus);
+        LinearLayout.LayoutParams arrowParams = (LinearLayout.LayoutParams) arrow.getLayoutParams();
+        arrowParams.setMarginStart(Tv.dp(this, 10));
+        proceedContent.addView(arrow, arrowParams);
+        proceed.addView(proceedContent, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER));
+        actions.addView(proceed, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        Tv.control(proceed, "popup:continue", () -> {
             String text = input.getText().toString().trim();
-            if (text.isEmpty()) { input.setError("Enter a value"); return; }
-            dialog.dismiss(); accept.accept(text);
-        }));
+            if (text.isEmpty()) {
+                error.setText("Enter a value"); error.setVisibility(View.VISIBLE); input.requestFocus(); return;
+            }
+            error.setVisibility(View.GONE); dialog.dismiss(); accept.accept(text);
+        }, ignored -> {}, 1.04f, false);
         input.setOnEditorActionListener((v, action, event) -> {
             if (action != EditorInfo.IME_ACTION_DONE) return false;
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick(); return true;
+            proceed.performClick(); return true;
         });
-        showDialog(dialog);
-        // TV keyboards occupy the lower screen and can float over centred dialog buttons.
-        dialog.getWindow().setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        WindowManager.LayoutParams window = dialog.getWindow().getAttributes(); window.y = Tv.dp(this, 24); dialog.getWindow().setAttributes(window);
-        dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        dialog.setContentView(surface);
+        showGlassDialog(dialog);
         input.requestFocus();
     }
     @Override public void choose(String title, String[] options, Consumer<Integer> accept) {
-        showDialog(new AlertDialog.Builder(this).setTitle(title).setItems(options, (d, which) -> accept.accept(which)).setNegativeButton("Cancel", null).create());
+        Dialog dialog = Tv.glassChoices(this, title, options, accept, null);
+        showGlassDialog(dialog);
+        View first = dialog.getWindow().getDecorView().findViewWithTag("choice:0");
+        if (first != null) first.requestFocus();
     }
     @Override public void alert(String title, String message) {
-        showDialog(new AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("OK", null).create());
+        showGlassMessage(title, message, false, null);
     }
     @Override public void addAddon() { edit("Add add-on", "https://provider/manifest.json", "", this::previewAddon); }
     @Override public void previewAddon(String address) {
@@ -411,16 +572,13 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             boolean streams = false;
             for (tv.daniil.stream.addon.AddonManifest.Resource r : manifest.resources) if (r.name.equals("stream")) streams = true;
             String supplies = streams ? "It supplies streams for playback." : "It supplies catalogues and details, not streams.";
-            showDialog(new AlertDialog.Builder(this).setTitle("Install " + manifest.name + "?")
-                    .setMessage((manifest.description.isEmpty() ? "" : manifest.description + "\n\n") + supplies
-                            + (manifest.configurationRequired ? "\nThis add-on needs a configured manifest address." : "")
-                            + "\n\n" + manifest.catalogs.size() + " catalogues. The provider receives your searches and the titles you open.")
-                    .setNegativeButton("Cancel", (d, w) -> render())
-                    .setPositiveButton("Install", (d, w) -> mutate(() -> {
+            String details = (manifest.description.isEmpty() ? "" : manifest.description + "\n\n") + supplies
+                    + (manifest.configurationRequired ? "\nThis add-on needs a configured manifest address." : "")
+                    + "\n\n" + manifest.catalogs.size() + " catalogues. The provider receives your searches and the titles you open.";
+            showGlassConfirmation("Install " + manifest.name + "?", details, "Install", () -> mutate(() -> {
                         if (manifest.configurationRequired) throw new AddonException(AddonException.Kind.INVALID_URL, "Configuration required");
                         services.addons.install(address, manifest); return null;
-                    }))
-                    .setOnCancelListener(d -> { if (mine == generation) render(); }).create());
+                    }), () -> { if (mine == generation) render(); });
         });
     }
     @Override public void importAddress() {
@@ -449,12 +607,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
                 return bytes.toString("UTF-8");
             }
         }, text -> {
-            ScrollView scroll = new ScrollView(this);
-            TextView content = Tv.text(this, text, 14, R.color.tv_text_secondary);
-            int pad = Tv.dp(this, 24); content.setPadding(pad, 0, pad, pad); content.setTextIsSelectable(true);
-            scroll.addView(content);
-            showDialog(new AlertDialog.Builder(this).setTitle("Open source notices").setView(scroll)
-                    .setPositiveButton("Close", (d, w) -> render()).setOnCancelListener(d -> render()).create());
+            showGlassMessage("Open source notices", text, true, () -> render());
         }));
     }
 

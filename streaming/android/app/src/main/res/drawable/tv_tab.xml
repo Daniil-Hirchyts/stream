@@ -1,5 +1,6 @@
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_focused="true"><shape><solid android:color="@color/tv_focus" /><corners android:radius="22dp" /></shape></item>
-    <item android:state_activated="true"><shape><solid android:color="#33FFFFFF" /><corners android:radius="22dp" /></shape></item>
+    <item android:state_focused="true"><shape><solid android:color="@color/tv_glass_focus_fill" /><corners android:radius="22dp" /></shape></item>
+    <item android:state_activated="true"><shape><solid android:color="@color/tv_glass_selected" /><corners android:radius="22dp" /></shape></item>
+    <item android:state_pressed="true"><shape><solid android:color="@color/tv_glass_pressed" /><corners android:radius="22dp" /></shape></item>
     <item><shape><solid android:color="#00000000" /><corners android:radius="22dp" /></shape></item>
 </selector>

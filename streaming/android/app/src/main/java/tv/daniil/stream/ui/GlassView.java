@@ -33,8 +33,8 @@ public final class GlassView extends BlurView {
         View target = getRootView().findViewById(R.id.blur_target);
         if (target instanceof BlurTarget && configuredTarget != target) {
             configuredTarget = (BlurTarget) target;
-            setupWith(configuredTarget)
-                    .setBlurRadius(20f)
+            setupWith(configuredTarget, 0.5f, false)
+                    .setBlurRadius(9f)
                     .setOverlayColor(Color.TRANSPARENT);
         }
     }

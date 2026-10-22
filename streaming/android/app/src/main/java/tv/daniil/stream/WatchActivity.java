@@ -2,6 +2,7 @@ package tv.daniil.stream;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -30,6 +31,7 @@ import tv.daniil.playback.*;
 import tv.daniil.stream.addon.*;
 import tv.daniil.stream.data.TvStore;
 import tv.daniil.stream.ui.Failures;
+import tv.daniil.stream.ui.Tv;
 import tv.daniil.torrent.*;
 
 /** Owns playback only while visible. A single serial loader owns native create/select/destroy operations. */
@@ -58,10 +60,20 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private JSONObject nativeStats = new JSONObject();
     private boolean polling, preferencesInitialized;
     private String audioChoice = "", subtitleChoice = "";
-    private AlertDialog choiceDialog;
+    private Dialog choiceDialog;
     private boolean autoplay = true;
     private static final java.util.Set<String> HOST_ERRORS = new java.util.HashSet<>(java.util.Arrays.asList(
             "unsupported", "opening", "buffering", "provider", "no-sources", "storage"));
+
+    private AlertDialog showStyledDialog(AlertDialog dialog) {
+        dialog.show(); Tv.styleDialog(dialog); return dialog;
+    }
+    private Dialog showStyledGlassDialog(Dialog dialog) {
+        dialog.show(); Tv.styleDialog(dialog);
+        View first = dialog.getWindow().getDecorView().findViewWithTag("choice:0");
+        if (first != null) first.requestFocus();
+        return dialog;
+    }
 
     public static Intent intent(Context context, Title title, String video, String sourceKey) {
         return new Intent(context, WatchActivity.class).putExtra("provider", title.provider).putExtra("titleId", title.id)
@@ -101,7 +113,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                     screen = new PlayerScreen(this, session, this); screen.setTitle(title.name);
                     resolve(true); main.post(tick);
                 });
-            } catch (Exception e) { main.post(() -> { if (current(mine)) { choiceDialog = new AlertDialog.Builder(this).setMessage(Failures.message(e)).setPositiveButton("Close", (d, w) -> finish()).show(); } }); }
+            } catch (Exception e) { main.post(() -> { if (current(mine)) { choiceDialog = showStyledDialog(new AlertDialog.Builder(this).setMessage(Failures.message(e)).setPositiveButton("Close", (d, w) -> finish()).create()); } }); }
         });
     }
     private boolean current(int mine) { return visible && !releasing && mine == generation && !isFinishing(); }
@@ -248,7 +260,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             services.store.setPreference("cacheMiB", "128");
             main.post(() -> { if (visible && !releasing) onRetry(); });
         }));
-        choiceDialog = builder.show();
+        choiceDialog = showStyledDialog(builder.create());
     }
     private static boolean sameLanguage(String one, String two) {
         if (one == null || two == null || two.isEmpty()) return false;
@@ -258,17 +270,17 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private String episodeLabel() { for (Title.Episode e : title.episodes) if (e.id.equals(video)) return "S" + e.season + " E" + e.number + " · " + e.name; return ""; }
     private void chooseFile(MediaSource source, List<TorrentFile> files) {
         String[] names = new String[files.size()]; for (int i = 0; i < names.length; i++) names[i] = files.get(i).name() + " · " + files.get(i).size / (1 << 20) + " MiB";
-        choiceDialog = new AlertDialog.Builder(this).setTitle("Choose a video file").setItems(names, (d, which) -> open(source, files.get(which).index))
-                .setNegativeButton("Cancel", (d, w) -> finish()).setOnCancelListener(d -> finish()).show();
+        choiceDialog = showStyledGlassDialog(Tv.glassChoices(this, "Choose a video file", names,
+                which -> open(source, files.get(which).index), this::finish));
     }
     private void chooseSources() {
         if (session == null) return;
         save(session.snapshot()); session.stop(); cancelPreparation(); loader.execute(this::closeNative);
         if (candidates.isEmpty()) { failure("No sources available", "Return to the title and refresh its sources.", "no-sources"); return; }
         String[] names = new String[candidates.size()]; for (int i = 0; i < names.length; i++) names[i] = candidates.get(i).name + " · " + SourcePolicy.assess(candidates.get(i)).label;
-        choiceDialog = new AlertDialog.Builder(this).setTitle("Choose source").setItems(names, (d, which) -> {
+        choiceDialog = showStyledGlassDialog(Tv.glassChoices(this, "Choose source", names, which -> {
             automatic = false; explicitKey = SourcePolicy.key(candidates.get(which)); candidate = which; attempts = 0; open(candidates.get(which), -1);
-        }).setNegativeButton("Cancel", (d, w) -> finish()).setOnCancelListener(d -> finish()).show();
+        }, this::finish));
     }
     private void attemptFailed(String message, String code) {
         if (!visible || releasing) return;
@@ -397,7 +409,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         return result;
     }
     PlaybackSnapshot playbackSnapshot() { return session == null ? null : session.snapshot(); }
-    private void diagnostics() { choiceDialog = new AlertDialog.Builder(this).setTitle("Playback diagnostics").setMessage(diagnosticSnapshot().toString()).setPositiveButton("Close", null).show(); }
+    private void diagnostics() { choiceDialog = showStyledDialog(new AlertDialog.Builder(this).setTitle("Playback diagnostics").setMessage(diagnosticSnapshot().toString()).setPositiveButton("Close", null).create()); }
     @Override public boolean dispatchKeyEvent(KeyEvent event) { return screen != null && screen.dispatchKeyEvent(event) || super.dispatchKeyEvent(event); }
     @Override public void onBackPressed() { if (screen != null && screen.onRemoteKey(KeyEvent.KEYCODE_BACK)) return; finish(); }
     @Override protected void onStop() {
