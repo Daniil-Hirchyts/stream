@@ -313,7 +313,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             Route current = route();
             if (current.screen.equals("Search") && browse != null) {
                 Item search = browse.searchLoading(current);
-                String focus = current.focus.isEmpty() ? "keyboard:Q" : current.focus;
+                String focus = current.focus.isEmpty() ? "keyboard:A" : current.focus;
                 adapter.set(java.util.Collections.singletonList(search), focus);
                 return;
             }

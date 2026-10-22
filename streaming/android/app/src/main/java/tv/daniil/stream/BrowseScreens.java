@@ -77,7 +77,7 @@ final class BrowseScreens {
         Page page = new Page();
         Item search = searchItem(route);
         page.add(search);
-        page.initialFocus = "keyboard:Q";
+        page.initialFocus = "keyboard:A";
         if (route.value.trim().length() < 2) return page;
         AddonRepository.Result<Title> found = services.addons.search(route.value, scope);
         List<Tile> tiles = new ArrayList<>();
