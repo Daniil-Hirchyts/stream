@@ -1,9 +1,19 @@
 # Daniil TV implementation and validation
 
-The standalone application is implemented on `codex/streaming-app-plan`.
+All five Daniil TV phases are complete and locally verified on
+`codex/streaming-app-plan`, including the full thirty-minute soak on 2026-10-22.
 The [complete specification](STREAMING_APP_PLAN.md) remains the acceptance
 baseline. The first two sections record earlier stages; final application
-verification is recorded below and is currently in progress.
+verification is recorded below. Remote CI and physical Fire OS performance
+remain unverified.
+
+| Phase | Delivery | Local verification |
+| --- | --- | --- |
+| 1 | Shared playback library | Receiver 9 tests and installed-helper casting smoke |
+| 2 | Native torrent engine / bounded cache | 30 tests each in normal, ASan/UBSan and TSan builds; 16 invariant-check regressions; 12 JNI/Media3 tests |
+| 3 | Add-ons / encrypted persistence | 16 provider, store and source-policy tests |
+| 4 | Standalone screens / playback host | 11 application acceptance/profile tests |
+| 5 | Complete emulator validation | Process death, shrunk release JNI, compatibility checks and 30-minute soak passed |
 
 ## Native engine, 2026-10-21
 
@@ -121,13 +131,16 @@ and full native dependency notices. The local release probe explicitly signs
 with the Android debug key for validation; ordinary release output is unsigned.
 It opens no owner database and checks native loading, verified torrent bytes
 and the exception constructor called from JNI.
+The final ordinary unsigned APK is 28,767,773 bytes (27.4 MiB).
+Final `:app:assembleRelease`, `:app:lintDebug` and `:app:lintRelease` pass;
+each lint variant reports zero errors and 22 advisory warnings.
 
 The workflow now includes native sanitizer variants, safety/input tests,
 debug/release ABI builds and deterministic Linux emulator runs for both player
 consumers. A workflow-dispatch input enables the full thirty-minute soak.
 Remote GitHub execution has not been performed in this local session.
 
-The final combined debug run passed all 39 tests: engine/JNI/Media3 12,
+`./streaming/simulator.sh test` passed all 39 tests: engine/JNI/Media3 12,
 add-ons/storage/source policy 16, and application flows/acceptance/profiling 11.
 The application suite covers onboarding and all navigation/settings actions,
 real pointer/touch/remote input, search/pagination/focus restoration,
@@ -148,18 +161,21 @@ expected at the deliberate kill; the resumed runner must report success.
 These are one API 36 ARM64 emulator run with generated 1080p media, a 16 MiB
 test cache and the local BitTorrent seeder. They are not physical Fire OS
 performance guarantees or latency percentiles.
+First-frame timing starts when the chosen source opens. Seek measurements
+end after playback advances at least 250 ms beyond the target, including any
+required native read/download recovery.
 
 | Measurement | Observed |
 | --- | --- |
-| First rendered frame | 4,012 ms |
-| Cached seek recovery | 1,106 ms |
-| Uncached forward / backward seek recovery | 931 / 1,346 ms |
-| Accumulated buffering during the short profile | 2,818 ms |
-| PSS / RSS / peak RSS | 130.0 / 276.9 / 286.7 MiB |
-| Native / Java allocated heaps | 31.2 / 30.6 MiB |
+| First rendered frame | 3,955 ms |
+| Cached seek recovery | 1,226 ms |
+| Uncached forward / backward seek recovery | 871 / 1,237 ms |
+| Accumulated buffering during the short profile | 2,579 ms |
+| PSS / RSS / peak RSS | 129.7 / 280.3 / 290.0 MiB |
+| Native / Java allocated heaps | 32.4 / 30.3 MiB |
 | Allocated payload cache | 15,732,736 bytes, below 16 MiB |
-| Downloaded bytes / evictions / hash failures | 50,375,028 / 46 / 0 |
-| Dropped video frames | 1 |
+| Downloaded bytes / evictions / hash failures | 59,829,428 / 48 / 0 |
+| Dropped video frames | 2 |
 
 Image: `sdk_google_atv64_arm64`, Android TV 16/API 36, arm64-v8a,
 `google/sdk_google_atv64_arm64/emu64a:16/BT2A.260319.001/15058170:user/dev-keys`.
@@ -208,7 +224,43 @@ cache/eviction regressions with full libtorrent invariant checks. The native
 fix is committed as `e1e6dbe`.
 
 An emulator provider-deadline assertion exceeded its existing 17-second limit
-while the native variants were rebuilding. The full emulator run is being
-repeated after those builds finish, retaining the same deadline and recording
+while the native variants were rebuilding. The repeated data suite passed all
+16 tests after those builds finished, retaining the same deadline and recording
 elapsed time on any failure. Interrupted/failed runs remain separate evidence;
 they do not count as a completed thirty-minute soak.
+
+### Completed thirty-minute soak
+
+`./streaming/simulator.sh soak` passed (`OK (1 test)`) on the final native/app
+sources, commits `e1e6dbe` and `970ba74`. The runner used 1,800,009 ms of real
+elapsed time; it did not shorten the required duration. It completed 177
+forward/backward seek and advancing-playback cycles through the real loopback
+BitTorrent seeder, using a 16 MiB test cache and generated media larger than
+that cache.
+
+| Measurement | Observed |
+| --- | --- |
+| Duration / successful cycles | 30 minutes / 177 |
+| Peak / final PSS | 144.8 / 129.3 MiB |
+| Maximum allocated payload cache | 15,732,736 bytes; below 16 MiB throughout |
+| Evictions / hash failures | 3,791 / 0 |
+| Payload downloaded | 3,987,777,921 bytes |
+| Seek-to-advancing p50 / p95 / maximum | 2,079 / 2,408 / 3,466 ms |
+| Accumulated buffering / dropped frames | 175,948 ms / 342 |
+
+The soak seek clock includes waiting for at least one second of advancing
+playback beyond each target. Buffering and frame drops include all 177 seeks;
+these values describe that workload, not uninterrupted movie playback.
+Memory includes the app's instrumentation code; fixture services are separate
+host processes. No native crash, stalled seek, failed hash, or cache-bound
+violation occurred in the completed run. Physical-device performance remains
+unverified.
+
+Ignored evidence under `streaming/simulator/.cache/evidence/` includes
+`final-suite.txt`, `host-{dev,asan,tsan,checks}.txt`, `playback-profile.json/png`,
+`process-death/`, `release/`, `receiver-final.txt`, `casting-smoke-final.txt`,
+`soak.json`, `soak-summary.json` and `soak-instrumentation.txt`. Failed/partial
+runs are retained separately. `EndTestMode` passed after the soak and removed
+only the four harness overrides, restoring the normal database/configuration
+selection without opening or changing owner data. The standalone app is left
+available on the verified emulator.
