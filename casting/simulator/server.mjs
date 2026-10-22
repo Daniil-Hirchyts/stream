@@ -33,8 +33,8 @@ function page(format='mp4') {
     back: '<path d="m9 14-4-4 4-4"/><path d="M5 10h9a5 5 0 0 1 0 10h-2"/>',
     home: '<path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9M9 20v-6h6v6"/>',
     menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
-    rewind: '<path d="m11 12 9-7v14l-9-7Z"/><path d="M4 5v14"/><path d="m11 12-9-7v14l9-7Z"/>',
-    forward: '<path d="m13 12-9-7v14l9-7Z"/><path d="M20 5v14"/><path d="m13 12 9-7v14l-9-7Z"/>',
+    rewind: '<path d="M11 5 4 12l7 7V5Zm9 0-7 7 7 7V5Z"/><path d="M2 5v14"/>',
+    forward: '<path d="m13 5 7 7-7 7V5Zm-9 0 7 7-7 7V5Z"/><path d="M22 5v14"/>',
     mute: '<path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="m16 9 5 6m0-6-5 6"/>',
     volumeDown: '<path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15 9a5 5 0 0 1 0 6"/>',
     volumeUp: '<path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15 9a5 5 0 0 1 0 6M18 6a9 9 0 0 1 0 12"/>'
