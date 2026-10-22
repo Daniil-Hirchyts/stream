@@ -8,6 +8,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.animation.DecelerateInterpolator;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -87,55 +88,69 @@ public final class Tv {
 
     /** A rounded or circular button in one of the {@link Item.Action} styles. */
     public static View button(Context context, Item.Action action, Consumer<String> focused) {
-        LinearLayout button = new LinearLayout(context);
-        button.setGravity(Gravity.CENTER); button.setContentDescription(action.label);
+        GlassView button = new GlassView(context);
+        button.setContentDescription(action.label);
+        LinearLayout content = new LinearLayout(context);
+        content.setGravity(Gravity.CENTER);
+        content.setDuplicateParentStateEnabled(true);
         int height = dp(context, action.style == Item.Action.Style.CHIP ? 44 : 52);
         switch (action.style) {
             case ICON: {
                 button.setBackgroundResource(R.drawable.tv_button_round);
-                button.addView(icon(context, action.icon, 26, R.color.tv_on_glass));
+                content.addView(icon(context, action.icon, 26, R.color.tv_on_glass));
                 button.setLayoutParams(new LinearLayout.LayoutParams(height, height));
+                button.addView(content, new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
                 break;
             }
             case TILE: {
-                button.setOrientation(LinearLayout.VERTICAL); button.setGravity(Gravity.START | Gravity.TOP);
+                content.setOrientation(LinearLayout.VERTICAL);
+                content.setGravity(Gravity.START | Gravity.TOP);
                 button.setBackgroundResource(R.drawable.tv_tile_button);
-                int pad = dp(context, 20); button.setPadding(pad, pad, pad, pad);
+                int pad = dp(context, 20);
+                content.setPadding(pad, pad, pad, pad);
                 if (action.icon != 0) {
                     ImageView icon = icon(context, action.icon, 32, R.color.tv_on_glass);
                     ((LinearLayout.LayoutParams) icon.getLayoutParams()).bottomMargin = dp(context, 14);
-                    button.addView(icon);
+                    content.addView(icon);
                 }
-                TextView label = oneLine(heading(context, action.label, 19, R.color.tv_on_glass)); label.setDuplicateParentStateEnabled(true);
-                button.addView(label);
+                TextView label = oneLine(heading(context, action.label, 19, R.color.tv_on_glass));
+                label.setDuplicateParentStateEnabled(true);
+                content.addView(label);
                 if (!action.detail.isEmpty()) {
                     TextView detail = lines(text(context, action.detail, 14, R.color.tv_on_glass_secondary), 3);
-                    detail.setDuplicateParentStateEnabled(true); detail.setPadding(0, dp(context, 8), 0, 0);
-                    button.addView(detail);
+                    detail.setDuplicateParentStateEnabled(true);
+                    detail.setPadding(0, dp(context, 8), 0, 0);
+                    content.addView(detail);
                 }
                 button.setLayoutParams(new LinearLayout.LayoutParams(dp(context, 250), dp(context, 156)));
+                button.addView(content, new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
                 break;
             }
             default: {
-                button.setOrientation(LinearLayout.HORIZONTAL);
+                content.setOrientation(LinearLayout.HORIZONTAL);
                 button.setBackgroundResource(action.style == Item.Action.Style.CHIP ? R.drawable.tv_chip : R.drawable.tv_button);
                 int pad = dp(context, action.style == Item.Action.Style.PRIMARY ? 30 : 22);
-                button.setPadding(pad, 0, pad, 0);
-                button.setMinimumWidth(dp(context, action.style == Item.Action.Style.PRIMARY ? 168 : 52));
+                content.setPadding(pad, 0, pad, 0);
+                content.setMinimumWidth(dp(context, action.style == Item.Action.Style.PRIMARY ? 168 : 52));
                 if (action.icon != 0) {
                     ImageView icon = icon(context, action.icon, 22, R.color.tv_on_glass);
                     ((LinearLayout.LayoutParams) icon.getLayoutParams()).rightMargin = dp(context, 10);
-                    button.addView(icon);
+                    content.addView(icon);
                 }
                 TextView label = oneLine(heading(context, action.label, action.style == Item.Action.Style.CHIP ? 16 : 18, R.color.tv_on_glass));
                 label.setDuplicateParentStateEnabled(true);
-                button.addView(label);
+                content.addView(label);
                 if (action.style == Item.Action.Style.CHIP && !action.detail.isEmpty()) {
                     TextView value = oneLine(text(context, action.detail, 16, R.color.tv_on_glass_secondary));
-                    value.setDuplicateParentStateEnabled(true); value.setPadding(dp(context, 8), 0, 0, 0);
-                    button.addView(value);
+                    value.setDuplicateParentStateEnabled(true);
+                    value.setPadding(dp(context, 8), 0, 0, 0);
+                    content.addView(value);
                 }
                 button.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, height));
+                button.addView(content, new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER));
                 break;
             }
         }

@@ -5,26 +5,32 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/tv_canvas">
-    <ImageView
-        android:id="@+id/backdrop_back"
+    <eightbitlab.com.blurview.BlurTarget
+        android:id="@+id/blur_target"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:alpha="0"
-        android:importantForAccessibility="no"
-        android:scaleType="centerCrop" />
-    <ImageView
-        android:id="@+id/backdrop"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:alpha="0"
-        android:importantForAccessibility="no"
-        android:scaleType="centerCrop" />
-    <View
-        android:id="@+id/backdrop_scrim"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:alpha="0"
-        android:background="@drawable/tv_scrim" />
+        android:background="@drawable/tv_canvas">
+        <ImageView
+            android:id="@+id/backdrop_back"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:alpha="0"
+            android:importantForAccessibility="no"
+            android:scaleType="centerCrop" />
+        <ImageView
+            android:id="@+id/backdrop"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:alpha="0"
+            android:importantForAccessibility="no"
+            android:scaleType="centerCrop" />
+        <View
+            android:id="@+id/backdrop_scrim"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:alpha="0"
+            android:background="@drawable/tv_scrim" />
+    </eightbitlab.com.blurview.BlurTarget>
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent">
@@ -105,19 +111,25 @@
             android:paddingTop="20dp"
             android:paddingEnd="48dp"
             android:paddingBottom="8dp">
-            <LinearLayout
-                android:id="@+id/navigation"
+            <tv.daniil.stream.ui.GlassView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
                 android:background="@drawable/tv_tabs"
                 android:clipChildren="false"
-                android:clipToPadding="false"
-                android:orientation="horizontal"
-                android:paddingStart="8dp"
-                android:paddingTop="10dp"
-                android:paddingEnd="8dp"
-                android:paddingBottom="10dp" />
+                android:clipToPadding="false">
+                <LinearLayout
+                    android:id="@+id/navigation"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:clipChildren="false"
+                    android:clipToPadding="false"
+                    android:orientation="horizontal"
+                    android:paddingStart="8dp"
+                    android:paddingTop="10dp"
+                    android:paddingEnd="8dp"
+                    android:paddingBottom="10dp" />
+            </tv.daniil.stream.ui.GlassView>
         </FrameLayout>
     </FrameLayout>
 </FrameLayout>
