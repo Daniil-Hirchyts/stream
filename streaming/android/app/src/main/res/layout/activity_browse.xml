@@ -1,7 +1,140 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#0B1116" android:orientation="horizontal" android:padding="24dp">
-    <LinearLayout android:id="@+id/navigation" android:layout_width="132dp" android:layout_height="match_parent" android:orientation="vertical" android:paddingEnd="16dp" />
-    <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:orientation="vertical">
-        <TextView android:id="@+id/page_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#F4F7F6" android:textSize="30sp" android:paddingBottom="12dp" />
-        <androidx.recyclerview.widget.RecyclerView android:id="@+id/page_rows" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:clipToPadding="false" android:paddingBottom="24dp" />
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Artwork fills the screen behind a scrim; tabs float at the top. The content list scrolls under them. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/browse_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/tv_canvas">
+    <ImageView
+        android:id="@+id/backdrop_back"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0"
+        android:importantForAccessibility="no"
+        android:scaleType="centerCrop" />
+    <ImageView
+        android:id="@+id/backdrop"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0"
+        android:importantForAccessibility="no"
+        android:scaleType="centerCrop" />
+    <View
+        android:id="@+id/backdrop_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0"
+        android:background="@drawable/tv_scrim" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+        <FrameLayout
+            android:id="@+id/top_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="48dp"
+            android:paddingTop="20dp"
+            android:paddingEnd="48dp"
+            android:paddingBottom="8dp">
+            <TextView
+                android:id="@+id/brand"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="start|center_vertical"
+                android:fontFamily="sans-serif-medium"
+                android:letterSpacing="0.02"
+                android:text="@string/app_name"
+                android:textColor="@color/tv_text"
+                android:textSize="18sp" />
+            <LinearLayout
+                android:id="@+id/navigation"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:background="@drawable/tv_tabs"
+                android:clipChildren="false"
+                android:orientation="horizontal"
+                android:padding="4dp" />
+            <TextClock
+                android:id="@+id/clock"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end|center_vertical"
+                android:format12Hour="h:mm"
+                android:format24Hour="HH:mm"
+                android:importantForAccessibility="no"
+                android:textColor="@color/tv_text_secondary"
+                android:textSize="18sp" />
+        </FrameLayout>
+        <TextView
+            android:id="@+id/page_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:paddingStart="48dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="48dp"
+            android:paddingBottom="4dp"
+            android:textColor="@color/tv_text"
+            android:textSize="34sp"
+            android:visibility="gone" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal">
+            <LinearLayout
+                android:id="@+id/side_panel"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="0.42"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:paddingStart="48dp"
+                android:paddingEnd="24dp"
+                android:paddingBottom="48dp"
+                android:visibility="gone">
+                <ImageView
+                    android:id="@+id/side_icon"
+                    android:layout_width="168dp"
+                    android:layout_height="168dp"
+                    android:background="@drawable/tv_panel_icon"
+                    android:importantForAccessibility="no"
+                    android:padding="44dp"
+                    android:tint="@color/tv_text" />
+                <TextView
+                    android:id="@+id/side_title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="28dp"
+                    android:fontFamily="sans-serif-medium"
+                    android:gravity="center"
+                    android:textColor="@color/tv_text"
+                    android:textSize="30sp" />
+                <TextView
+                    android:id="@+id/side_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center"
+                    android:lineSpacingMultiplier="1.2"
+                    android:maxWidth="340dp"
+                    android:textColor="@color/tv_text_secondary"
+                    android:textSize="16sp" />
+            </LinearLayout>
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/page_rows"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:paddingTop="8dp"
+                android:paddingBottom="56dp"
+                android:scrollbars="none" />
+        </LinearLayout>
     </LinearLayout>
-</LinearLayout>
+</FrameLayout>

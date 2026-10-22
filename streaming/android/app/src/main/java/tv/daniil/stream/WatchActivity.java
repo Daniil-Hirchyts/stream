@@ -60,6 +60,8 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private String audioChoice = "", subtitleChoice = "";
     private AlertDialog choiceDialog;
     private boolean autoplay = true;
+    private static final java.util.Set<String> HOST_ERRORS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "unsupported", "opening", "buffering", "provider", "no-sources", "storage"));
 
     public static Intent intent(Context context, Title title, String video, String sourceKey) {
         return new Intent(context, WatchActivity.class).putExtra("provider", title.provider).putExtra("titleId", title.id)
@@ -130,19 +132,22 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 TvStore.Progress progress = services.store.progress(metadata.key(), video);
                 long resume = resumePosition > 0 ? resumePosition : progress != null && !progress.watched ? progress.positionMs : 0;
                 List<MediaSource> choices = Collections.emptyList();
+                Availability empty = null;
                 if (!metadata.provider.equals("local")) {
-                    AddonRepository.Result<MediaSource> found = services.addons.streams(metadata.type, video, request);
-                    List<MediaSource> available = new ArrayList<>(found.items);
+                    List<tv.daniil.stream.data.InstalledAddon> providers = services.addons.providers("stream", metadata.type, video);
+                    AddonRepository.Result<MediaSource> found = providers.isEmpty() ? null : services.addons.streams(metadata.type, video, request);
+                    List<MediaSource> available = new ArrayList<>(found == null ? Collections.emptyList() : found.items);
                     for (Title.Episode e : metadata.episodes) if (e.id.equals(video)) available.addAll(e.streams);
                     choices = SourcePolicy.ranked(available);
+                    if (choices.isEmpty()) empty = Availability.of(providers, available, found == null ? Collections.emptyMap() : found.failures, services.store.addons());
                 }
-                request.check(); Title resolved = metadata; List<MediaSource> sources = choices;
+                request.check(); Title resolved = metadata; List<MediaSource> sources = choices; Availability why = empty;
                 main.post(() -> {
                     if (!current(mine)) return;
                     title = resolved; resumePosition = resume; candidates = sources;
                     automatic = explicitKey == null || explicitKey.isEmpty();
                     if (title.provider.equals("local")) { open(null, -1); return; }
-                    if (candidates.isEmpty()) { failure("No playable sources", "Enable a compatible source add-on or select another title.", "no-sources"); return; }
+                    if (candidates.isEmpty()) { failure(why.heading, why.detail, "no-sources"); return; }
                     if (!automatic) {
                         for (int i = 0; i < candidates.size(); i++) if (SourcePolicy.key(candidates.get(i)).equals(explicitKey)) { candidate = i; open(candidates.get(i), -1); return; }
                         chooseSources(); return;
@@ -219,9 +224,31 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 });
             } catch (Exception e) {
                 if (!current(mine)) return;
+                if (e instanceof TorrentException && ((TorrentException) e).kind == TorrentException.LOW_STORAGE) {
+                    main.post(() -> { if (current(mine)) lowStorage(); });
+                    return;
+                }
                 main.post(() -> { if (current(mine)) attemptFailed(Failures.message(e), "opening"); });
             }
         });
+    }
+    /** Offers this app's own cleanup, or a smaller cache, then tries the same source again. */
+    private void lowStorage() {
+        failure("Not enough storage", Failures.message(new TorrentException(TorrentException.LOW_STORAGE, "")), "storage");
+        String size = services.store.preference("cacheMiB", "256");
+        AlertDialog.Builder builder = new AlertDialog.Builder(this).setTitle("Not enough storage")
+                .setMessage("Playback needs room for its cache plus 512 MiB kept free for the TV. Clearing removes only this app's "
+                        + "temporary video, subtitle and catalogue files; your library, imports and history stay.")
+                .setPositiveButton("Clear and retry", (d, w) -> loader.execute(() -> {
+                    closeNative(); SetupScreens.clearCaches(this, services);
+                    main.post(() -> { if (visible && !releasing) onRetry(); });
+                }))
+                .setNegativeButton("Close", null);
+        if (!size.equals("128")) builder.setNeutralButton("Use a 128 MiB cache", (d, w) -> app.persistence.execute(() -> {
+            services.store.setPreference("cacheMiB", "128");
+            main.post(() -> { if (visible && !releasing) onRetry(); });
+        }));
+        choiceDialog = builder.show();
     }
     private static boolean sameLanguage(String one, String two) {
         if (one == null || two == null || two.isEmpty()) return false;
@@ -270,8 +297,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         if (snapshot.renderedFirstFrame && firstFrameMs == 0) firstFrameMs = SystemClock.elapsedRealtime() - startMs;
         if (snapshot.error != null) {
             // Host-originated errors have already gone through bounded failover.
-            if (!snapshot.error.code.equals("unsupported") && !snapshot.error.code.equals("opening") && !snapshot.error.code.equals("buffering") && !snapshot.error.code.equals("provider") && !snapshot.error.code.equals("no-sources"))
-                queueFailure(playbackFailure(snapshot.error), "opening");
+            if (!HOST_ERRORS.contains(snapshot.error.code)) queueFailure(playbackFailure(snapshot.error), "opening");
             return;
         }
         if (!SourcePolicy.actualSupported(this, snapshot.videoFormat) || !SourcePolicy.actualSupported(this, snapshot.audioFormat)) {

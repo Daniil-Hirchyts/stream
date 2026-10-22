@@ -264,3 +264,35 @@ runs are retained separately. `EndTestMode` passed after the soak and removed
 only the four harness overrides, restoring the normal database/configuration
 selection without opening or changing owner data. The standalone app is left
 available on the verified emulator.
+
+## tvOS-style interface and source explanations, 2026-10-22
+
+The browse UI was rebuilt in an Apple TV style:
+- **Layout:** floating tabs, full-screen artwork that cross-fades behind a scrim, and a Home spotlight that follows the focused card (logo or title, facts, description).
+- **Shelves:** horizontal rows with lifting cards.
+- **Details:** a page over the backdrop with Play/Sources and round icon buttons.
+- **Split layouts:** Settings, Imports and Developer.
+- **Styling:** rounded dialog sheets throughout.
+
+Screens are now `ui.Page`/`ui.Item` lists built on workers (`BrowseScreens`, `TitleScreens`, `SetupScreens`) and drawn by `ui.PageAdapter`. The 500-line `MainActivity` is now a shell. The shared player takes the same neutral palette through app resource overrides only, so Daniil Cast is unchanged.
+
+Review problems fixed:
+- **Duplicate Home rows:** a provider's film and series catalogues now read "Popular Films" and "Popular Series".
+- **Clipped cards:** card text keeps a fixed one-line title and subtitle, and artwork keeps its aspect ratio. Grid cards are sized by weight, not by a possibly stale width.
+- **Low storage:** the player offers to clear this app's own caches or switch to a 128 MiB cache, then retries.
+
+"No playable sources" on every title came from the emulator profile having only Cinemeta, which supplies catalogues and metadata but no streams. Details and Sources now say "No source add-on installed" and offer to add one. The player reports the actual cause:
+- no source add-on;
+- named failing providers;
+- only unsupported results (with reasons);
+- no results.
+
+No source provider is installed or suggested by the app. A profile that already has an add-on or import now skips onboarding.
+
+The first run exposed one regression. A shelf heading equal to a card's title (case-insensitively) took the test's click. Headings now carry the provider in the same text.
+
+Local results on `emulator-5556` / `DaniilCast_Local_TV`:
+- **`./streaming/simulator.sh test`:** `OK (12 tests)`, `OK (16 tests)`, `OK (11 tests)`, exit 0.
+- **Release and lint:** `:app:assembleRelease`, `:app:lintDebug` and `:app:lintRelease` pass with 0 errors and 16 warnings (previously 22).
+- **Evidence:** screenshots and the runner log are in ignored `streaming/simulator/.cache/evidence/redesign/`.
+- **Not re-run:** the soak, process-death and release-probe runs were not repeated for this UI-only change.

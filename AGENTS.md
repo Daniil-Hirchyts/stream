@@ -138,6 +138,12 @@ use database-specific import directories and an untrusted loopback TLS fixture
 on 58135; certificate verification must reject it. Do not disable TLS to make it
 pass. The app now includes the standalone launcher and playback host; fixture
 providers, test content URIs and test configuration belong only to debug/tests.
+Its tvOS-style screens are `ui.Page`/`ui.Item` blocks built off the main thread
+and drawn by `ui.PageAdapter`. App instrumentation finds controls by their
+visible label or content description (for example Play, Resume, Sources, Add
+favourite, Start watching, the tab names), so keep those labels exact when
+restyling. Restyle the shared player for Daniil TV through app resource
+overrides, not by editing `android/playback`.
 
 Android instrumentation covers long VTT/SRT/ASS cues after forward/backward seeks,
 resumed load and late selection; certificate vs network errors; injected real

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Overrides the shared player's side panel with this app's neutral glass. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools" tools:ignore="UnusedResources">
+    <item android:drawable="@color/line" />
+    <item android:left="1dp">
+        <shape>
+            <solid android:color="#F21C1C1E" />
+        </shape>
+    </item>
+</layer-list>
