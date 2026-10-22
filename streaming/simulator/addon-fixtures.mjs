@@ -3,7 +3,7 @@ import { gzipSync } from 'node:zlib';
 
 export function addonFixtures(index, origin) {
   const attempts = new Map();
-  let active = 0, maximum = 0;
+  let active = 0, maximum = 0, storeRequests = 0;
   const film = index.find(t => t.name === 'film-hybrid');
   const show = index.find(t => t.name === 'series');
   const episodeId = 'fixture:episode/custom?part=2';
@@ -19,7 +19,10 @@ export function addonFixtures(index, origin) {
     catalogs: [ { type: 'movie', id: 'films/list', name: 'Generated films', extra: [
       { name: 'search' }, { name: 'skip' }, { name: 'genre', options: ['Generated'] },
     ] }, { type: 'series', id: 'shows', name: 'Generated series' } ],
+    behaviorHints: { p2p: true },
   };
+  const setup = { ...manifest, id: 'tv.daniil.fixtures.setup', name: 'Setup fixture', behaviorHints: { p2p: true, configurable: true, configurationRequired: true } };
+  const community = { ...manifest, id: 'tv.daniil.fixtures.community', name: 'Community fixture', resources: ['subtitles'], catalogs: [], behaviorHints: {} };
   // A store directory, as Cinemeta publishes Stremio's lists through addon_catalog.
   const directory = {
     id: 'tv.daniil.fixtures.directory', version: '1.0.0', name: 'Fixture directory', types: ['movie', 'series'], resources: ['addon_catalog'],
@@ -30,22 +33,27 @@ export function addonFixtures(index, origin) {
     official: [
       listing('/addon/good/store-with-a-longer-configuration/manifest.json'),
       listing('/addon/good/store/manifest.json'),
-      listing('/addon/good/needs-setup/manifest.json', { id: 'tv.daniil.fixtures.setup', name: 'Setup fixture', behaviorHints: { configurable: true, configurationRequired: true } }),
+      listing('/addon/good/needs-setup/manifest.json', setup),
       listing('/addon/good/adult/manifest.json', { id: 'tv.daniil.fixtures.adult', name: 'Adult fixture', behaviorHints: { adult: true } }),
       { transportUrl: 'http://127.0.0.2:11470/local-addon/manifest.json', transportName: 'http', manifest: { ...manifest, id: 'other-host', name: 'Other host' } },
       { transportUrl: origin + '/legacy/stremio/v1', transportName: 'http', manifest: { ...manifest, id: 'legacy', name: 'Legacy' } },
       null, 5,
     ],
-    community: [listing('/addon/good/store/manifest.json'), listing('/addon/good/community/manifest.json', { id: 'tv.daniil.fixtures.community', name: 'Community fixture' })],
+    community: [listing('/addon/good/store/manifest.json'), listing('/addon/good/community/manifest.json', community)],
   };
   const json = (res, object, status = 200) => res.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(object));
   return async function handle(req, res) {
     const url = new URL(req.url, origin);
-    if (url.pathname === '/addon/stats.json') { json(res, { active, maximum }); return true; }
+    if (url.pathname === '/addon/stats.json') { json(res, { active, maximum, storeRequests }); return true; }
     const match = /^\/addon\/([^/]+)\/([^/]+)\/(.*)$/.exec(url.pathname);
     if (!match) return false;
     const [, variant, configuration, route] = match;
-    if (route === 'manifest.json') { json(res, configuration === 'directory' ? directory : manifest); return true; }
+    if (route === 'manifest.json') {
+      json(res, configuration === 'directory' ? directory : configuration === 'needs-setup' ? setup
+        : configuration.startsWith('configured-setup') ? { ...setup, behaviorHints: { p2p: true, configurable: true, configurationRequired: false } }
+        : configuration === 'community' ? community : manifest);
+      return true;
+    }
     if (variant === 'broken') { json(res, { error: 'Deliberate fixture failure' }, 503); return true; }
     if (variant === 'malformed') { res.writeHead(200).end('{bad'); return true; }
     if (variant === 'oversized') {
@@ -100,6 +108,7 @@ export function addonFixtures(index, origin) {
     ], request: { id, type, extras: Object.fromEntries(extras), headers: req.headers } });
     }
     else if (resource === 'addon_catalog') {
+      storeRequests++;
       if (lists[id]) json(res, { addons: lists[id], request: { type, id } }); else json(res, {}, 404);
     }
     else if (resource === 'subtitles') json(res, { subtitles: [

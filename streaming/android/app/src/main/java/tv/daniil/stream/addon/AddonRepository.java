@@ -165,7 +165,7 @@ public final class AddonRepository implements AutoCloseable {
         return collect(tasks, keys, scope, deadline);
     }
     /**
-     * The add-on store, by list: built-in add-ons, then each list that installed add-ons publish through
+     * The add-on store, by list: built-in add-ons, curated torrent scrapers when using the public directory, then each list that installed add-ons publish through
      * {@code addon_catalog}, then the default directory's. An add-on appears once, in the first list naming it.
      * Lists are cached like catalogues, so a provider failure falls back to the saved list, marked stale.
      */
@@ -204,11 +204,22 @@ public final class AddonRepository implements AutoCloseable {
             });
         }
         Result<AddonListing> remote = collect(tasks, keys, scope, deadline);
+        return combineListings(remote, directory.contains(DIRECTORY) ? TorrentAddons.listings() : Collections.emptyList());
+    }
+
+    /** Merges local descriptors with directory results, including when every remote list has failed. No provider is contacted. */
+    static Result<AddonListing> combineListings(Result<AddonListing> remote, List<AddonListing> scrapers) {
         Map<String, List<AddonListing>> groups = new LinkedHashMap<>();
         List<AddonListing> all = new ArrayList<>();
         java.util.Set<String> shown = new java.util.HashSet<>();
         groups.put("Built in", BuiltinAddons.listings());
         for (AddonListing l : BuiltinAddons.listings()) { shown.add(l.manifest.id); all.add(l); }
+        // Fixture/custom directories never acquire public providers as a side effect. These descriptors need no
+        // network request; the selected add-on is contacted only when its review is opened.
+        if (!scrapers.isEmpty()) {
+            groups.put(TorrentAddons.COLLECTION, scrapers);
+            for (AddonListing l : scrapers) { shown.add(l.manifest.id); all.add(l); }
+        }
         for (Map.Entry<String, List<AddonListing>> group : remote.byResource.entrySet()) {
             List<AddonListing> unique = new ArrayList<>();
             for (AddonListing l : group.getValue()) if (shown.add(l.manifest.id)) unique.add(l);

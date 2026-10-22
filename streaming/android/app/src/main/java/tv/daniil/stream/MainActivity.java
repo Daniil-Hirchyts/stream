@@ -568,6 +568,14 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     @Override public void alert(String title, String message) {
         showGlassMessage(title, message, false, null);
     }
+    @Override public void openWebsite(String address) {
+        try {
+            AddonUrl.web(address);
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(address)));
+        } catch (android.content.ActivityNotFoundException unavailable) {
+            alert("Open on a phone or computer", address + "\n\nCopy the manifest address from that page, then choose Enter configured address on this TV.");
+        } catch (AddonException invalid) { alert("Unable to open setup", "This add-on supplied an invalid setup address."); }
+    }
     @Override public void addAddon() { edit("Add add-on", "https://… or stremio://…/manifest.json", "", this::previewAddon); }
     @Override public void previewAddon(String input) {
         String address = AddonUrl.normalize(input);
@@ -575,14 +583,15 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         int mine = generation;
         Cancellation request = scope;
         work(() -> services.addons.preview(address, request), manifest -> {
-            boolean streams = false;
-            for (tv.daniil.stream.addon.AddonManifest.Resource r : manifest.resources) if (r.name.equals("stream")) streams = true;
-            String supplies = streams ? "It supplies streams for playback." : "It supplies catalogues and details, not streams.";
+            if (manifest.configurationRequired) {
+                Route review = new Route("Add-on review"); review.value = address; push(review); return;
+            }
+            String supplies = StoreScreens.supplies(manifest);
+            boolean torrents = manifest.p2p || tv.daniil.stream.addon.TorrentAddons.find(address) != null;
             String details = (manifest.description.isEmpty() ? "" : manifest.description + "\n\n") + supplies
-                    + (manifest.configurationRequired ? "\nThis add-on needs a configured manifest address." : "")
+                    + (torrents ? "\nTorrent sources play directly on this TV and share data with peers." : "")
                     + "\n\n" + manifest.catalogs.size() + " catalogues. The provider receives your searches and the titles you open.";
             showGlassConfirmation("Install " + manifest.name + "?", details, "Install", () -> mutate(() -> {
-                        if (manifest.configurationRequired) throw new AddonException(AddonException.Kind.INVALID_URL, "Configuration required");
                         services.addons.install(address, manifest); return null;
                     }), () -> { if (mine == generation) render(); });
         });

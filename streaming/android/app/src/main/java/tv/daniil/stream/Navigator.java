@@ -20,6 +20,7 @@ interface Navigator {
     void edit(String title, String hint, String initial, Consumer<String> accept);
     void choose(String title, String[] options, Consumer<Integer> accept);
     void alert(String title, String message);
+    void openWebsite(String address);
     /** Runs {@code task} on a worker, then rebuilds the current route. */
     void mutate(Callable<?> task);
     /** Runs {@code task} on a worker, then {@code after} on the main thread. */

@@ -63,6 +63,9 @@ public final class AddonUrl {
 
     public boolean builtin() { return manifest.startsWith(BUILTIN); }
 
+    /** Keeps configured escapes and query parameters intact, just like resource addresses. */
+    public String configuration() { return base + "/configure" + query; }
+
     /** What people paste: add-on configure pages hand out {@code stremio://host/…/manifest.json} install links. */
     public static String normalize(String input) {
         String value = input.trim();

@@ -58,14 +58,38 @@ public final class AppFlowTest extends AppHarness {
         services.store.setPreference("onboardingDone", "true"); launch();
         tap("Add-ons", true); waitUntil("store lists", 15_000, () -> visible("Setup fixture") || visible("Local fixtures"));
         assertTrue(visible("Internet Archive"));
+        assertFalse(visible("Torrentio")); // Local-only instrumentation must never offer public scraper endpoints.
+        int loadedLists = storeRequests();
+        tap("Torrent/P2P", false);
+        waitUntil("torrent filter", 10_000, () -> visible("Local fixtures") && !visible("Internet Archive") && !visible("Community fixture"));
+        assertEquals("Changing a filter must reuse the directory results", loadedLists, storeRequests());
         tap("Local fixtures", false); waitUntil("review", 10_000, () -> visible("Install"));
         assertTrue(services.store.addons().isEmpty());
         tap("Install", true); waitUntil("installed from the store", 10_000, () -> services.store.addons().size() == 1);
         waitUntil("installed state", 10_000, () -> visible("Manage add-on"));
         assertEquals(origin + "/addon/good/store/manifest.json", services.store.addons().get(0).address.manifest);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
-        tap("Subtitles", false); waitUntil("subtitle filter", 10_000, () -> visible("Community fixture") && !visible("Internet Archive"));
+        tap("Subtitles", false); tap("Community fixture", true);
+        waitUntil("subtitle provider review", 10_000, () -> visible("Install") && visible("Community fixture"));
+        assertTrue("Installing a provider must refresh directory discovery", storeRequests() > loadedLists);
+        assertEquals(1, services.store.addons().size());
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
         tap("Setup fixture", true); waitUntil("needs setup", 10_000, () -> visible("Enter configured address"));
+        assertFalse(visible("Install"));
+        tap("Enter configured address", false);
+        String configured = origin + "/addon/good/configured-setup%2Fprivate/manifest.json?token=fixture-only";
+        enter(configured); tap("Continue", true);
+        waitUntil("configured manifest review", 10_000, () -> visible("Install"));
+        assertEquals(1, services.store.addons().size()); // Entering an address isn't acceptance.
+        tap("Install", false);
+        waitUntil("configured install", 10_000, () -> services.store.addons().size() == 2 && visible("Manage add-on"));
+        assertTrue(services.store.addons().stream().anyMatch(a -> a.address.manifest.equals(configured)));
+    }
+    private int storeRequests() throws Exception {
+        try (tv.daniil.stream.addon.AddonClient client = new tv.daniil.stream.addon.AddonClient();
+             tv.daniil.stream.addon.Cancellation scope = new tv.daniil.stream.addon.Cancellation()) {
+            return client.json(origin + "/addon/stats.json", scope, tv.daniil.stream.addon.AddonClient.deadline()).getInt("storeRequests");
+        }
     }
     static tv.daniil.playback.PlaybackSession session(WatchActivity activity) {
         try { java.lang.reflect.Field f = WatchActivity.class.getDeclaredField("session"); f.setAccessible(true); return (tv.daniil.playback.PlaybackSession) f.get(activity); }

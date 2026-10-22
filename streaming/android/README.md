@@ -81,7 +81,9 @@ offer constant; constructing the store/repository installs nothing.
 
 ### Store
 
-The Add-ons tab (`StoreScreens`) lists, by section: built-in add-ons, the lists
+The Add-ons tab (`StoreScreens`) lists, by section: built-in add-ons, a curated
+Torrent/P2P section (Torrentio, Comet, Meteor, MediaFusion, StremThru Torz,
+Peerflix and TorrentsDB), the lists
 installed add-ons publish through the protocol's `addon_catalog` resource, and
 the default directory's Official and Community lists. The default directory is
 Cinemeta's `addon_catalog` (Stremio's public lists); `AddonRepository.store()`
@@ -93,13 +95,21 @@ non-manifest addresses, add-ons on loopback/private hosts (unless the list comes
 from that host), adult add-ons and unreadable manifests; an add-on appears once,
 at its shortest address, so a configured copy embedding someone's settings is
 never offered in place of the plain add-on. Filters: All, Sources, Catalogues,
-Subtitles.
+Subtitles, plus Torrent/P2P for torrent-capable source providers. The curated
+section needs no directory response and remains listed when remote lists fail;
+local-only/fixture directories exclude it. See [ADDON_STORE.md](ADDON_STORE.md)
+for endpoints, setup requirements and the extent of provider verification.
+Filter changes reuse the loaded lists for up to a minute. Refresh add-on lists
+checks again immediately; installed add-on changes also invalidate this UI cache.
 
 Choosing a listing opens a review built from the add-on's own current manifest:
 what it supplies, its catalogues, its host, what it receives and whether its
 sources are peer-to-peer. Install happens only from that review (or the
 existing address dialog). Add-ons that need configuration show their
-`/configure` address and accept the configured manifest address; `stremio://`
+setup address and accept the configured manifest address; the store knows
+providers with separate setup hosts (such as Peerflix). Open setup page launches
+a browser when available or displays the address for a phone/computer. Optional
+setup is also available for installed add-ons. `stremio://`
 install links are accepted and fetched as `https://`. Anything else
 Stremio-compatible installs from its address.
 

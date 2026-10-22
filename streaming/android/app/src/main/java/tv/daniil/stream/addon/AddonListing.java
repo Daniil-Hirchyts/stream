@@ -24,6 +24,7 @@ public final class AddonListing {
     }
 
     public boolean sources() { return manifest.declares(AddonManifest.STREAM); }
+    public boolean torrents() { return sources() && (manifest.p2p || TorrentAddons.find(url) != null); }
     public boolean catalogues() { return manifest.declares(AddonManifest.CATALOG) && !manifest.catalogs.isEmpty() || manifest.declares(AddonManifest.META); }
     public boolean subtitles() { return manifest.declares(AddonManifest.SUBTITLES); }
     public boolean builtin() { return url.startsWith(AddonUrl.BUILTIN); }
