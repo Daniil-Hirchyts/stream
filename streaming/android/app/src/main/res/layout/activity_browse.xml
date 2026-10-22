@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Artwork fills the screen behind a scrim; tabs float at the top. The content list scrolls under them. -->
+<!-- Artwork and page content fill the screen; the translucent header floats above both. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/browse_root"
     android:layout_width="match_parent"
@@ -25,67 +25,12 @@
         android:layout_height="match_parent"
         android:alpha="0"
         android:background="@drawable/tv_scrim" />
-    <LinearLayout
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical">
-        <FrameLayout
-            android:id="@+id/top_bar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingStart="48dp"
-            android:paddingTop="20dp"
-            android:paddingEnd="48dp"
-            android:paddingBottom="8dp">
-            <TextView
-                android:id="@+id/brand"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="start|center_vertical"
-                android:fontFamily="sans-serif-medium"
-                android:letterSpacing="0.02"
-                android:text="@string/app_name"
-                android:textColor="@color/tv_text"
-                android:textSize="18sp" />
-            <LinearLayout
-                android:id="@+id/navigation"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:background="@drawable/tv_tabs"
-                android:clipChildren="false"
-                android:clipToPadding="false"
-                android:orientation="horizontal"
-                android:padding="4dp" />
-            <TextClock
-                android:id="@+id/clock"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="end|center_vertical"
-                android:format12Hour="h:mm"
-                android:format24Hour="HH:mm"
-                android:importantForAccessibility="no"
-                android:textColor="@color/tv_text_secondary"
-                android:textSize="18sp" />
-        </FrameLayout>
-        <TextView
-            android:id="@+id/page_title"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:fontFamily="sans-serif-medium"
-            android:maxLines="1"
-            android:paddingStart="48dp"
-            android:paddingTop="8dp"
-            android:paddingEnd="48dp"
-            android:paddingBottom="4dp"
-            android:textColor="@color/tv_text"
-            android:textSize="34sp"
-            android:visibility="gone" />
+        android:layout_height="match_parent">
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
+            android:layout_height="match_parent"
             android:orientation="horizontal">
             <LinearLayout
                 android:id="@+id/side_panel"
@@ -133,9 +78,73 @@
                 android:layout_weight="1"
                 android:clipChildren="false"
                 android:clipToPadding="false"
-                android:paddingTop="8dp"
+                android:paddingTop="88dp"
                 android:paddingBottom="56dp"
                 android:scrollbars="none" />
         </LinearLayout>
-    </LinearLayout>
+        <TextView
+            android:id="@+id/page_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:paddingStart="48dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="48dp"
+            android:paddingBottom="4dp"
+            android:textColor="@color/tv_text"
+            android:textSize="34sp"
+            android:visibility="gone" />
+        <FrameLayout
+            android:id="@+id/top_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="48dp"
+            android:paddingTop="20dp"
+            android:paddingEnd="48dp"
+            android:paddingBottom="8dp">
+            <ImageView
+                android:id="@+id/brand"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_gravity="start|center_vertical"
+                android:contentDescription="@string/app_name"
+                android:importantForAccessibility="yes"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_tv_tv"
+                android:tint="@color/tv_text" />
+            <LinearLayout
+                android:id="@+id/navigation"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:background="@drawable/tv_tabs"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:orientation="horizontal"
+                android:padding="4dp" />
+            <TextClock
+                android:id="@+id/clock"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end|center_vertical"
+                android:background="@drawable/tv_clock"
+                android:format12Hour="h:mm"
+                android:format24Hour="HH:mm"
+                android:importantForAccessibility="no"
+                android:fontFamily="sans-serif-medium"
+                android:paddingStart="12dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="6dp"
+                android:shadowColor="#CC000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="3"
+                android:textColor="@color/tv_text"
+                android:textSize="20sp" />
+        </FrameLayout>
+    </FrameLayout>
 </FrameLayout>

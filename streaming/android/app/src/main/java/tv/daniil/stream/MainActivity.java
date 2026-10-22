@@ -15,6 +15,7 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -162,6 +163,11 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         TextView title = findViewById(R.id.page_title);
         title.setText(page.title == null ? "" : page.title);
         title.setVisibility(page.title == null ? View.GONE : View.VISIBLE);
+        int headerHeight = findViewById(R.id.top_bar).getHeight();
+        if (headerHeight == 0) headerHeight = Tv.dp(this, 80);
+        FrameLayout.LayoutParams titlePosition = (FrameLayout.LayoutParams) title.getLayoutParams();
+        titlePosition.topMargin = headerHeight + Tv.dp(this, 8);
+        title.setLayoutParams(titlePosition);
         View panel = findViewById(R.id.side_panel);
         panel.setVisibility(page.hasPanel() ? View.VISIBLE : View.GONE);
         if (page.hasPanel()) {
@@ -172,6 +178,9 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         adapter.gutter(page.hasPanel() ? 8 : 48, 48);
         // Home's spotlight sets the artwork itself; clearing it first would flash the plain canvas.
         boolean spotlight = !page.items.isEmpty() && page.items.get(0).kind == Item.Kind.SPOTLIGHT;
+        int contentTop = spotlight ? Tv.dp(this, 8)
+                : headerHeight + Tv.dp(this, page.title == null ? 8 : 66);
+        list.setPadding(list.getPaddingLeft(), contentTop, list.getPaddingRight(), list.getPaddingBottom());
         if (!spotlight) backdrop.show(page.backdrop, true);
         // Restore the route's focus; otherwise start on the page's first choice, unless the user is on the tabs.
         String wanted = !route.focus.isEmpty() ? route.focus : page.initialFocus != null ? page.initialFocus : "";
