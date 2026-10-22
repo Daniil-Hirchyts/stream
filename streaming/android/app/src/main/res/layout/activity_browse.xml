@@ -1,90 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Artwork fills the screen behind a scrim; tabs float at the top. The content list scrolls under them. -->
+<!-- Artwork and page content fill the screen; the translucent header floats above both. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/browse_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/tv_canvas">
-    <ImageView
-        android:id="@+id/backdrop_back"
+    <eightbitlab.com.blurview.BlurTarget
+        android:id="@+id/blur_target"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:alpha="0"
-        android:importantForAccessibility="no"
-        android:scaleType="centerCrop" />
-    <ImageView
-        android:id="@+id/backdrop"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:alpha="0"
-        android:importantForAccessibility="no"
-        android:scaleType="centerCrop" />
-    <View
-        android:id="@+id/backdrop_scrim"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:alpha="0"
-        android:background="@drawable/tv_scrim" />
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical">
-        <FrameLayout
-            android:id="@+id/top_bar"
+        android:background="@drawable/tv_canvas">
+        <ImageView
+            android:id="@+id/backdrop_back"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingStart="48dp"
-            android:paddingTop="20dp"
-            android:paddingEnd="48dp"
-            android:paddingBottom="8dp">
-            <TextView
-                android:id="@+id/brand"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="start|center_vertical"
-                android:fontFamily="sans-serif-medium"
-                android:letterSpacing="0.02"
-                android:text="@string/app_name"
-                android:textColor="@color/tv_text"
-                android:textSize="18sp" />
-            <LinearLayout
-                android:id="@+id/navigation"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:background="@drawable/tv_tabs"
-                android:clipChildren="false"
-                android:orientation="horizontal"
-                android:padding="4dp" />
-            <TextClock
-                android:id="@+id/clock"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="end|center_vertical"
-                android:format12Hour="h:mm"
-                android:format24Hour="HH:mm"
-                android:importantForAccessibility="no"
-                android:textColor="@color/tv_text_secondary"
-                android:textSize="18sp" />
-        </FrameLayout>
-        <TextView
-            android:id="@+id/page_title"
+            android:layout_height="match_parent"
+            android:alpha="0"
+            android:importantForAccessibility="no"
+            android:scaleType="centerCrop" />
+        <ImageView
+            android:id="@+id/backdrop"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:fontFamily="sans-serif-medium"
-            android:maxLines="1"
-            android:paddingStart="48dp"
-            android:paddingTop="8dp"
-            android:paddingEnd="48dp"
-            android:paddingBottom="4dp"
-            android:textColor="@color/tv_text"
-            android:textSize="34sp"
-            android:visibility="gone" />
+            android:layout_height="match_parent"
+            android:alpha="0"
+            android:importantForAccessibility="no"
+            android:scaleType="centerCrop" />
+        <View
+            android:id="@+id/backdrop_scrim"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:alpha="0"
+            android:background="@drawable/tv_scrim" />
+    </eightbitlab.com.blurview.BlurTarget>
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
+            android:layout_height="match_parent"
             android:orientation="horizontal">
             <LinearLayout
                 android:id="@+id/side_panel"
@@ -132,9 +84,122 @@
                 android:layout_weight="1"
                 android:clipChildren="false"
                 android:clipToPadding="false"
-                android:paddingTop="8dp"
+                android:paddingTop="88dp"
                 android:paddingBottom="56dp"
                 android:scrollbars="none" />
         </LinearLayout>
-    </LinearLayout>
+        <TextView
+            android:id="@+id/page_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:paddingStart="48dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="48dp"
+            android:paddingBottom="4dp"
+            android:textColor="@color/tv_text"
+            android:textSize="34sp"
+            android:visibility="gone" />
+        <FrameLayout
+            android:id="@+id/top_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="48dp"
+            android:paddingTop="20dp"
+            android:paddingEnd="48dp"
+            android:paddingBottom="8dp">
+            <LinearLayout
+                android:id="@+id/top_bar_controls"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+                <tv.daniil.stream.ui.GlassView
+                    android:id="@+id/tab_cluster"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/tv_tabs"
+                    android:clipChildren="false"
+                    android:clipToPadding="false"
+                    android:paddingStart="4dp"
+                    android:paddingTop="6dp"
+                    android:paddingEnd="4dp"
+                    android:paddingBottom="6dp">
+                    <LinearLayout
+                        android:id="@+id/navigation"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:clipChildren="false"
+                        android:clipToPadding="false"
+                        android:orientation="horizontal" />
+                </tv.daniil.stream.ui.GlassView>
+                <tv.daniil.stream.ui.GlassView
+                    android:id="@+id/search_button"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/tv_button_round"
+                    android:contentDescription="Search"
+                    android:gravity="center">
+                    <ImageView
+                        android:layout_width="26dp"
+                        android:layout_height="26dp"
+                        android:layout_gravity="center"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_tv_search"
+                        android:tint="@color/tv_on_glass" />
+                </tv.daniil.stream.ui.GlassView>
+            </LinearLayout>
+            <tv.daniil.stream.ui.GlassView
+                android:id="@+id/search_expanded"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_gravity="center"
+                android:background="@drawable/tv_tabs"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:paddingStart="14dp"
+                android:paddingEnd="6dp"
+                android:visibility="gone">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+                    <ImageView
+                        android:layout_width="26dp"
+                        android:layout_height="26dp"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_tv_search"
+                        android:tint="@color/tv_text_secondary" />
+                    <TextView
+                        android:id="@+id/search_query"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="14dp"
+                        android:layout_weight="1"
+                        android:contentDescription="Search"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:text="Search films, series and imports"
+                        android:textColor="@color/tv_text_secondary"
+                        android:textSize="20sp" />
+                    <TextView
+                        android:id="@+id/search_close"
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:background="@drawable/tv_button_round"
+                        android:contentDescription="Close search"
+                        android:gravity="center"
+                        android:text="×"
+                        android:textColor="@color/tv_on_glass"
+                        android:textSize="28sp" />
+                </LinearLayout>
+            </tv.daniil.stream.ui.GlassView>
+        </FrameLayout>
+    </FrameLayout>
 </FrameLayout>

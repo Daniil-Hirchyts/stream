@@ -11,7 +11,7 @@ import tv.daniil.stream.data.InstalledAddon;
 /** Explains an empty source list: no source add-on, failing providers, only unsupported results, or none at all. */
 final class Availability {
     static final String NO_PROVIDER = "No source add-on installed";
-    static final String NO_PROVIDER_DETAIL = "Cinemeta and other catalogue add-ons describe titles but don't supply video. "
+    static final String NO_PROVIDER_DETAIL = "Catalogue add-ons describe titles but don't supply video. "
             + "Install a source add-on from Add-ons to find video for this title, or import a torrent yourself.";
 
     final String heading, detail;

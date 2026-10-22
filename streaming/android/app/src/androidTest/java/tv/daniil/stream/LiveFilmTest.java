@@ -2,6 +2,8 @@ package tv.daniil.stream;
 
 import static org.junit.Assert.*;
 import android.content.Context;
+import org.json.JSONObject;
+import tv.daniil.stream.addon.Title;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.junit.Before;
 import org.junit.Test;
@@ -20,18 +22,17 @@ public final class LiveFilmTest extends AppHarness {
         app.resetServices(); services = app.services();
         services.store.setPreference("onboardingDone", "true");
     }
-    private void install(String name) {
-        tap("Add-ons", true); tap(name, false); tap("Install", true);
-        waitUntil(name + " installed", 20_000, () -> services.store.addons().stream().anyMatch(a -> a.manifest.name.equals(name)));
-    }
-    private void search(String text) {
-        tap("Search", true); waitUntil("search field", 10_000, () -> visible("Search. Films, series and local imports"));
-        row("query", false); enter(text); tap("Continue", true);
+    /** Installs through the store's real rows and review page, then opens the film's details from that provider. */
+    private void installAndOpen(String addon, String imdb, String name) throws Exception {
+        tap("Add-ons", true); tap(addon, false); tap("Install", true);
+        waitUntil(addon + " installed", 20_000, () -> services.store.addons().stream().anyMatch(a -> a.manifest.name.equals(addon)));
+        String provider = services.store.addons().stream().filter(a -> a.manifest.name.equals(addon)).findFirst().get().id;
+        Title film = Title.parse(provider, new JSONObject().put("id", imdb).put("type", "movie").put("name", name));
+        browse.onActivity(activity -> activity.openTitle(film, ""));
     }
 
     @Test public void internetArchiveFilmPlaysFromTheStore() throws Exception {
-        launch(); install("Internet Archive");
-        search("Night of the Living Dead"); tap("Night of the Living Dead", false); tap("Play", true);
+        launch(); installAndOpen("Internet Archive", "tt0063350", "Night of the Living Dead"); tap("Play", true);
         waitUntil("Night of the Living Dead plays from archive.org", 120_000,
                 () -> state() != null && state().renderedFirstFrame && state().playing && state().positionMs >= 5000);
         WatchActivity activity = watch();
@@ -40,8 +41,7 @@ public final class LiveFilmTest extends AppHarness {
     }
 
     @Test public void publicDomainMoviesTorrentPlaysFromTheStore() throws Exception {
-        launch(); install("Public Domain Movies");
-        search("Night of the Living Dead"); tap("Night of the Living Dead", false); tap("Play", true);
+        launch(); installAndOpen("Public Domain Movies", "tt0063350", "Night of the Living Dead"); tap("Play", true);
         waitUntil("Night of the Living Dead plays from the public swarm", 300_000,
                 () -> state() != null && state().renderedFirstFrame && state().playing && state().positionMs >= 5000);
         assertTrue(diagnostics().toString(), diagnostics().optInt("peers") > 0);

@@ -184,9 +184,10 @@ timeline’s 48 dp touch target; changing control sizes must keep captions above
 
 ## Git, cleanup and privacy
 
-Use a `codex/` branch for changes. Inspect existing dirty work before staging;
-never overwrite another agent's/user's edits. Commit coherent source/docs changes
-and push when requested. Never commit generated APKs, Rust target/build folders,
+Work directly on the repository's primary branch (`main` in this checkout); do
+not create a `codex/` branch. Inspect existing dirty work before staging; never
+overwrite another agent's/user's edits. Commit coherent source/docs changes and
+push when requested. Never commit generated APKs, Rust target/build folders,
 node_modules, simulator caches, local.properties, devices.json, pairing tokens,
 conversion control secrets, Chrome profiles, private logs or new device backups.
 The generated extension assets are committed because Chrome loads them directly.

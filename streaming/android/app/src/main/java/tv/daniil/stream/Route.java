@@ -16,6 +16,7 @@ final class Route {
     String focus = "";
     /** Screen-specific: search text, add-on id or catalogue identity. */
     String value = "";
+    boolean searchSubmitted;
     /** Selected provider video (episode) ID on Details and Sources. */
     String video = "";
     @Nullable Title title;
@@ -30,14 +31,14 @@ final class Route {
 
     JSONObject save() throws JSONException {
         JSONObject data = new JSONObject().put("screen", screen).put("value", value).put("video", video).put("season", season)
-                .put("page", page).put("focus", focus).put("extras", new JSONObject(extras));
+                .put("page", page).put("focus", focus).put("searchSubmitted", searchSubmitted).put("extras", new JSONObject(extras));
         if (title != null) data.put("title", new JSONObject().put("provider", title.provider).put("id", title.id).put("type", title.type).put("name", title.name));
         return data;
     }
     static Route restore(JSONObject data) throws JSONException {
         Route route = new Route(data.getString("screen"));
         route.value = data.optString("value"); route.video = data.optString("video"); route.focus = data.optString("focus");
-        route.season = data.optInt("season", -1); route.page = data.optInt("page");
+        route.season = data.optInt("season", -1); route.page = data.optInt("page"); route.searchSubmitted = data.optBoolean("searchSubmitted");
         JSONObject extras = data.optJSONObject("extras");
         if (extras != null) for (Iterator<String> keys = extras.keys(); keys.hasNext(); ) { String key = keys.next(); route.extras.put(key, extras.getString(key)); }
         JSONObject title = data.optJSONObject("title");

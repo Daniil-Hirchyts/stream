@@ -369,7 +369,8 @@ The older API 28 emulator may be used for additional offline compatibility check
 
 ## 5. Execution, deliverables, and completion criteria
 
-Implement on a `codex/` branch after checking for intervening user changes.
+Implement directly on the repository's primary branch (`main` in this checkout)
+after checking for intervening user changes.
 
 Perform the work in dependency order—shared playback extraction, native streaming/cache integration, providers/persistence, complete application UI, then full verification—but deliver the entire defined scope together.
 

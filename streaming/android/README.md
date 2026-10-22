@@ -19,8 +19,9 @@ Android SDK/NDK/CMake versions pinned in `streaming/native/deps.lock`.
 Welcome offers Cinemeta for explicit review/acceptance, the add-on store,
 manual imports and language preferences. Skipping providers leaves
 imports available, and a profile that already has an add-on or import goes
-straight to Home. Home, Search, Library, History, Imports, Add-ons and Settings
-are tabs in a floating bar at the top. Details provide Play/Resume, Sources,
+straight to Home. Home, Library, Add-ons and Settings are tabs in a floating
+bar at the top; search opens from the header, and Imports and add-on
+management live under Settings. Details provide Play/Resume, Sources,
 watched/favourite controls and seasons/episodes. Settings manage add-ons,
 catalogue visibility, languages, subtitle style, cache size (128/256/512 MiB),
 autoplay and app-cache cleanup. Versions, statistics and license texts live in
