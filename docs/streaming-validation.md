@@ -296,3 +296,58 @@ Local results on `emulator-5556` / `DaniilCast_Local_TV`:
 - **Release and lint:** `:app:assembleRelease`, `:app:lintDebug` and `:app:lintRelease` pass with 0 errors and 16 warnings (previously 22).
 - **Evidence:** screenshots and the runner log are in ignored `streaming/simulator/.cache/evidence/redesign/`.
 - **Not re-run:** the soak, process-death and release-probe runs were not repeated for this UI-only change.
+
+## Add-on store, Internet Archive and real films, 2026-10-22
+
+Cinemeta supplies catalogues and metadata only, so a profile holding just
+Cinemeta has nothing to play. This change adds the Add-ons tab (store), an
+opt-in built-in Internet Archive add-on and discovery fixes for public
+torrents; see the [app README](../streaming/android/README.md#store).
+
+This work was done in a Linux cloud container without KVM, so **no emulator
+suite ran here**: `./streaming/simulator.sh test`, `smoke`, `live-film` and the
+new instrumentation (`AddonTest` store test, `AppFlowTest` store flow,
+`LiveFilmTest`) are written but unexecuted. The container also has no
+BitTorrent egress, so a public torrent swarm was not exercised. No physical TV
+was contacted.
+
+Executed here:
+
+- `:app:compileDebugJavaWithJavac`, `:app:compileReleaseJavaWithJavac` and
+  `:app:compileDebugAndroidTestJavaWithJavac` pass.
+- `:app:testDebugUnitTest`: 6 offline JVM tests pass (store protocol, listing
+  rules, built-in add-on, torrent fallback trackers, Archive file selection).
+- `:app:testDebugUnitTest -PliveAddons=true`: all 10 pass, including the 4
+  live `RealFilmsLiveTest` cases against Stremio's directory, Cinemeta, Public
+  Domain Movies, OpenSubtitles v3, archive.org and Wikidata.
+- `node --test streaming/simulator/tests/*.test.mjs` (2) and
+  `streaming/simulator/tests/identity.sh` (11) pass; the fixture service's new
+  `addon_catalog` routes answer as the instrumentation expects.
+
+Live results (FFmpeg seeks to 30:00 over HTTPS and decodes a frame from the URL
+the app's add-on code resolved):
+
+| Film | Internet Archive (direct HTTPS) | FFmpeg | Public Domain Movies (torrent) |
+| --- | --- | --- | --- |
+| Night of the Living Dead (tt0063350) | 360p, 271 MB | H.264 Baseline 496×360, 97 min | 1080p, 1.51 GB |
+| The Kid (tt0012349) | none linked | — | 1080p, 859 MB |
+| Nosferatu (tt0013442) | 240p, 384 MB | H.264 Baseline 320×240, 93 min | — |
+| The General (tt0017925) | 480p, 933 MB | H.264 Main 720×480, 107 min | — |
+| His Girl Friday (tt0032599) | 480p, 548 MB | H.264 Baseline 640×480, 92 min | — |
+| Charade (tt0056923) | linked item withdrawn | — | — |
+| The Last Man on Earth (tt0058700) | 720p, 3.7 GB | H.264 Main 1686×720, 87 min | 1080p, 1.23 GB |
+| House on Haunted Hill (tt0051744) | 720p, 3.5 GB | H.264 High 1280×720, 119 min | 1080p, 1.24 GB |
+
+Night of the Living Dead also resolved from Cinemeta search and metadata to
+the Public Domain Movies torrent (info hash, file 0, no tracker hints, so
+playback adds the public trackers) and to 69 OpenSubtitles v3 tracks; the
+English one has 1,035 SubRip cues. The Twilight Zone's 218 Cinemeta episodes
+keep IDs such as `tt0052520:1:1`, encoded as one path segment.
+
+Problems the real data exposed, now handled: Archive items that split a film
+into 20-minute parts or include trailers (complete copies rank first);
+11 GB masters near 15 Mbit/s (dropped when a lighter copy exists);
+withdrawn items linked from Wikidata (skipped); Wikimedia refusing a
+User-Agent sent after `Accept`/`Accept-Encoding` (caller headers now come
+first) and throttling bursts (one retry); archive.org answering 5xx under load
+(the live test retries FFmpeg once).
