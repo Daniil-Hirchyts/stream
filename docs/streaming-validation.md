@@ -313,8 +313,12 @@ was contacted.
 
 Executed here:
 
-- `:app:compileDebugJavaWithJavac`, `:app:compileReleaseJavaWithJavac` and
-  `:app:compileDebugAndroidTestJavaWithJavac` pass.
+- With the pinned NDK 29.0.14206865 and CMake 3.31.6 (native OpenSSL and
+  libtorrent built for all three ABIs), `:app:assembleDebug`,
+  `:app:assembleDebugAndroidTest`, `:app:assembleRelease`, `:app:lintDebug` and
+  `:app:lintRelease` pass. Each lint variant reports 0 errors and the same 16
+  advisory warnings as before; none is in new code. The unsigned release APK
+  is 28,805,651 bytes.
 - `:app:testDebugUnitTest`: 6 offline JVM tests pass (store protocol, listing
   rules, built-in add-on, torrent fallback trackers, Archive file selection).
 - `:app:testDebugUnitTest -PliveAddons=true`: all 10 pass, including the 4
