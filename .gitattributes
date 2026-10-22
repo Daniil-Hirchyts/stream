@@ -1,2 +1,4 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Unified diff context prefixes intentionally precede upstream tab indentation.
+streaming/native/patches/libtorrent/*.patch whitespace=-space-before-tab

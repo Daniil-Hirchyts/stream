@@ -21,7 +21,11 @@ Paths are relative to `.deps/`. Build tools, not shipped: Android NDK
 `patches/libtorrent/0001-evict-pieces.patch` adds piece eviction
 (`torrent_handle::evict_pieces`); its header explains the change. It is applied
 to a clean checkout by `fetch-deps.sh`, and the build refuses a libtorrent
-without it. Moving to another libtorrent version means re-porting the patch and
+without it. `0002-pending-adjacent-hash.patch` preserves a v2 piece's download
+state while its own hash callback is pending, even when another piece's hashes
+also validate it. A deterministic callback-order regression reproduces the
+original assertion and verifies completion without weakening hash checks.
+Moving to another libtorrent version means re-porting the patches and
 passing the regressions in `tests/test_eviction.cpp` under every
 `build-host.sh` variant first.
 
