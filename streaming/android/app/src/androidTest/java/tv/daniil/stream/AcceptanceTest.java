@@ -48,12 +48,19 @@ public final class AcceptanceTest extends AppHarness {
         assertEquals(2, field(activity, "attempts"));
         instrumentation.runOnMainSync(activity::finish); instrumentation.waitForIdleSync(); browse.close(); browse = null;
         launch(); tap("Generated Film", false); tap("Sources", true); tap("Unavailable source", false);
-        waitUntil("manual source failure", 20_000, () -> state() != null && state().error != null && state().error.code.equals("opening"));
+        waitUntil("manual source failure", 20_000, () -> {
+            tv.daniil.playback.PlaybackSnapshot snapshot = state();
+            return snapshot != null && snapshot.error != null && snapshot.error.code.equals("opening");
+        });
         assertEquals(1, field(watch(), "attempts")); assertFalse(state().renderedFirstFrame);
         instrumentation.runOnMainSync(watch()::finish); instrumentation.waitForIdleSync(); browse.close(); browse = null;
         for (InstalledAddon addon : services.store.addons()) services.addons.remove(addon.id);
         readyLibrary("failover-all"); launch(); tap("Generated Film", true); tap("Play", false);
-        waitUntil("bounded failure", 40_000, () -> state() != null && state().error != null && state().error.code.equals("opening"));
+        waitUntil("bounded failure", 40_000, () -> {
+            tv.daniil.playback.PlaybackSnapshot snapshot = state();
+            return snapshot != null && snapshot.error != null && snapshot.error.code.equals("opening")
+                    && Integer.valueOf(3).equals(field(watch(), "attempts"));
+        });
         assertEquals(3, field(watch(), "attempts")); assertFalse(state().renderedFirstFrame);
         assertTrue(visible("Choose source"));
     }
@@ -75,7 +82,14 @@ public final class AcceptanceTest extends AppHarness {
         tap("Content file", true); tap("Play", false); waitUntil("file metadata chooser", 30_000, () -> visible("Choose a video file"));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN); instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
         waitUntil("copied file plays", 30_000, () -> state() != null && state().renderedFirstFrame && state().playing);
-        instrumentation.runOnMainSync(watch()::finish); tap("Imports", true); tap("Add magnet or torrent URL", false);
+        instrumentation.runOnMainSync(watch()::finish);
+        waitUntil("import details regain window focus", 10_000, () -> {
+            java.util.concurrent.atomic.AtomicBoolean focused = new java.util.concurrent.atomic.AtomicBoolean();
+            browse.onActivity(activity -> focused.set(activity.hasWindowFocus()));
+            return watch() == null && focused.get() && visible("Rename import");
+        });
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); // Imported title details return to the Imports list.
+        tap("Add magnet or torrent URL", false);
         String hash = null;
         try (AddonClient client = new AddonClient(); Cancellation request = new Cancellation()) {
             byte[] bytes = client.fetch(origin + "/streaming/index.json", 2 << 20, request, AddonClient.deadline());
@@ -134,7 +148,8 @@ public final class AcceptanceTest extends AppHarness {
         waitUntil("Card focus restored", 10_000, () -> { java.util.concurrent.atomic.AtomicBoolean focused = new java.util.concurrent.atomic.AtomicBoolean(); browse.onActivity(activity -> focused.set(activity.getCurrentFocus() != null && String.valueOf(activity.getCurrentFocus().getTag()).contains("fixture:film"))); return focused.get(); });
         tap("Search", true); waitUntil("search keyboard", 5000, () -> visible("Type g"));
         for (char c : "generated".toCharArray()) tap("Type " + c, c % 2 == 0);
-        waitUntil("search results", 10_000, () -> visible("Generated Film")); tap("Home", false); tap("Browse catalogues", true); tap("Generated films", false);
+        waitUntil("search results", 10_000, () -> visible("Generated Film")); tap("Close search", false);
+        tap("Browse catalogues", true); tap("Generated films", false);
         tap("genre", true); tap("Generated", false); tap("Next page", true);
         waitUntil("next page", 10_000, () -> visible("Previous page")); tap("Previous page", false);
     }

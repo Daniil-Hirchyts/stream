@@ -139,7 +139,7 @@ extern "C" {
 
 JNIEXPORT jlong JNICALL Java_tv_daniil_torrent_TorrentEngine_nativeCreate(JNIEnv* env, jclass, jstring cache_dir
 	, jlong cache_bytes, jlong reserve_bytes, jstring listen, jboolean dht, jboolean lsd, jboolean upnp
-	, jboolean natpmp, jboolean pex, jboolean multiple_per_ip, jstring ca_file, jint read_ahead_seconds)
+	, jboolean natpmp, jboolean pex, jboolean multiple_per_ip, jboolean public_network_only, jstring ca_file, jint read_ahead_seconds)
 {
 	return guarded<jlong>(env, 0, [&] {
 		auto entry = std::make_shared<engine_entry>();
@@ -154,6 +154,7 @@ JNIEXPORT jlong JNICALL Java_tv_daniil_torrent_TorrentEngine_nativeCreate(JNIEnv
 		cfg.natpmp = natpmp;
 		cfg.pex = pex;
 		cfg.multiple_connections_per_ip = multiple_per_ip;
+		cfg.public_network_only = public_network_only;
 		cfg.ca_file = string(env, ca_file);
 		if (read_ahead_seconds > 0) cfg.read_ahead_seconds = read_ahead_seconds;
 		std::weak_ptr<engine_entry> weak = entry;

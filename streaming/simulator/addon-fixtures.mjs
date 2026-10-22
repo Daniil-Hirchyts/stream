@@ -50,6 +50,7 @@ export function addonFixtures(index, origin) {
     const [, variant, configuration, route] = match;
     if (route === 'manifest.json') {
       json(res, configuration === 'directory' ? directory : configuration === 'needs-setup' ? setup
+        : configuration === 'empty-setup' ? { ...setup, resources: [], catalogs: [], behaviorHints: { configurable: true, configurationRequired: false } }
         : configuration.startsWith('configured-setup') ? { ...setup, behaviorHints: { p2p: true, configurable: true, configurationRequired: false } }
         : configuration === 'community' ? community : manifest);
       return true;

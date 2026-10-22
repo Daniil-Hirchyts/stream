@@ -1,4 +1,5 @@
 #include "engine.hpp"
+#include "network_policy.hpp"
 
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/alert_types.hpp>
@@ -102,9 +103,10 @@ engine::engine(engine_config cfg)
 	sp.set_str(lt::settings_pack::listen_interfaces, m_config.listen_interfaces);
 	sp.set_bool(lt::settings_pack::enable_dht, m_config.dht);
 	if (!m_config.dht) sp.set_str(lt::settings_pack::dht_bootstrap_nodes, "");
-	sp.set_bool(lt::settings_pack::enable_lsd, m_config.lsd);
-	sp.set_bool(lt::settings_pack::enable_upnp, m_config.upnp);
-	sp.set_bool(lt::settings_pack::enable_natpmp, m_config.natpmp);
+	sp.set_bool(lt::settings_pack::enable_lsd, m_config.lsd && !m_config.public_network_only);
+	sp.set_bool(lt::settings_pack::enable_upnp, m_config.upnp && !m_config.public_network_only);
+	sp.set_bool(lt::settings_pack::enable_natpmp, m_config.natpmp && !m_config.public_network_only);
+	sp.set_bool(lt::settings_pack::apply_ip_filter_to_trackers, m_config.public_network_only);
 	sp.set_bool(lt::settings_pack::allow_multiple_connections_per_ip, m_config.multiple_connections_per_ip);
 	sp.set_bool(lt::settings_pack::validate_https_trackers, true);
 	sp.set_str(lt::settings_pack::user_agent, m_config.user_agent);
@@ -114,6 +116,7 @@ engine::engine(engine_config cfg)
 	sp.set_int(lt::settings_pack::min_reconnect_time, 5);
 
 	lt::session_params params(std::move(sp));
+	if (m_config.public_network_only) params.ip_filter = public_network_filter();
 	cache_config cc;
 	cc.directory = m_config.cache_dir;
 	cc.cache_bytes = m_config.cache_bytes;

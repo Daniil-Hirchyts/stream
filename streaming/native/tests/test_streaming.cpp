@@ -5,6 +5,7 @@
 
 #include "engine.hpp"
 #include "fixtures.hpp"
+#include "network_policy.hpp"
 
 #include <libtorrent/hex.hpp>
 #include <libtorrent/load_torrent.hpp>
@@ -80,6 +81,37 @@ std::string read_file(std::string const& path)
 }
 
 } // namespace
+
+TEST(public_network_filter_blocks_private_reserved_and_mapped_addresses)
+{
+	auto const filter = dtv::public_network_filter();
+	for (char const* address : {"0.0.0.0", "10.0.2.2", "100.64.0.1", "127.0.0.1", "169.254.1.1",
+		"172.16.0.1", "172.31.255.255", "192.0.0.1", "192.0.2.1", "192.168.1.1", "198.18.0.1",
+		"198.51.100.1", "203.0.113.1", "224.0.0.1", "255.255.255.255", "::", "::1", "::ffff:10.0.2.2",
+		"::ffff:8.8.8.8", "fc00::1", "fe80::1", "ff02::1", "2001:db8::1"})
+		CHECK_EQ(filter.access(lt::make_address(address)), std::uint32_t(lt::ip_filter::blocked));
+	for (char const* address : {"1.1.1.1", "8.8.8.8", "100.128.0.1", "172.15.255.255", "172.32.0.1",
+		"2001:4860:4860::8888", "2606:4700:4700::1111"})
+		CHECK_EQ(filter.access(lt::make_address(address)), std::uint32_t(0));
+}
+
+TEST(public_network_sessions_reject_an_explicit_loopback_seeder)
+{
+	fx::temp_dir dir("dtv-public-network");
+	fx::write_content(dir.file("movie.bin"), 1 << 20, 4);
+	auto const torrent = fx::make_torrent(dir.file("movie.bin"), 256 << 10, fx::version::v1);
+	fx::seeder seed(torrent, dir.path());
+	auto config = local_config(dir.file("cache"), 4 << 20);
+	config.public_network_only = true;
+	dtv::engine e(config);
+	dtv::source source;
+	auto const info = lt::load_torrent_buffer({torrent.data(), std::ptrdiff_t(torrent.size())}).ti;
+	source.info_hash = lt::aux::to_hex(info->info_hashes().v1);
+	source.peers = {seed.address()};
+	auto const t = e.add(source);
+	CHECK_THROWS_KIND(e.wait_metadata(t, 1500ms), dtv::error_kind::timeout);
+	CHECK_EQ(e.stats(t).peers, 0);
+}
 
 TEST(sequential_read_turns_the_cache_over_within_its_bound)
 {

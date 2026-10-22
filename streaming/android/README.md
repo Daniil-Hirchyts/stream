@@ -309,6 +309,7 @@ separate and is never an import descriptor or library asset.
 ./streaming/simulator.sh process-death # real process termination and resumed playback
 ./streaming/simulator.sh release-test  # shrunk release JNI probe; restores debug app/test APKs
 ./streaming/simulator.sh live-film     # optional: real public-domain films through the store (internet)
+./streaming/simulator.sh live-addons   # optional: current store + earlier Nuvio list, manifests/resources/reviews
 cd streaming/android
 ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:testDebugUnitTest :app:lintDebug :app:lintRelease
 ./gradlew :app:testDebugUnitTest -PliveAddons=true  # optional: real films via live add-ons, archive.org and FFmpeg
@@ -343,6 +344,29 @@ Wikidata with eight public-domain films; FFmpeg (when installed) checks codec,
 resolution and running time and decodes a frame 30 minutes into each film.
 Frames and a results table go to `app/build/live-evidence/`. Neither live suite
 is required: public services and swarms change.
+
+`live-addons` audits every entry returned by the current store on the verified
+emulator, supplemented by the earlier Nuvio list in the test-only asset
+`app/src/androidTest/assets/nuvio-addon-audit.json`. Personal-manifest services,
+upstream indexes and unverified names have explicit coverage records. This
+asset does not add providers to the production store.
+The audit previews real manifests, samples up to two usable catalogue/search
+resources per provider, and requests supported movie metadata, streams and
+subtitles for the public-domain 1968 *Night of the Living Dead*.
+It then opens each actual review screen and presses Install where setup is not
+required, using an isolated database and removing each accepted provider before
+the next. The report in `streaming/simulator/.cache/evidence/live-addons.json`
+records external HTTP/certificate/network failures, setup requirements and
+source counts separately from successful review installation. Source discovery
+does not establish video playback; `live-film` supplies that separate check.
+Neither command supplies paid accounts or credentials.
+
+The live torrent test uses an instrumentation-only public-network setting:
+LAN discovery and port mapping are off, and native peers, trackers and DHT nodes
+on private, loopback, link-local or other reserved addresses are filtered.
+Host and JNI regressions verify that even an explicitly supplied loopback
+seeder cannot be contacted in that mode. Release configuration does not read
+this instrumentation setting. Required suites retain their loopback-only mode.
 
 Tests use generated loopback fixtures on 58133, the real seeder on 58134, and a
 deliberately untrusted TLS fixture on 58135. The TLS test must fail certificate

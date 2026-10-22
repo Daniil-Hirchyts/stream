@@ -159,9 +159,26 @@ public abstract class AppHarness {
         pointer(bounds.centerX(), bounds.centerY(), mouse);
     }
     private AccessibilityNodeInfo targetNode(String label) {
-        // Click the visible label itself. Its parent handles the real event; recycled accessibility parents
-        // can disappear between snapshots even while the label has valid on-screen bounds.
-        return findWindow(label);
+        // A shelf heading can have the same text as its card. Only match labels inside an actual click target,
+        // carrying the ancestor from this snapshot instead of following potentially recycled parent pointers.
+        for (android.view.accessibility.AccessibilityWindowInfo window : instrumentation.getUiAutomation().getWindows()) {
+            if (!window.isFocused()) continue;
+            AccessibilityNodeInfo target = clickableLabel(window.getRoot(), label, null);
+            if (target != null) return target;
+        }
+        return null;
+    }
+    private AccessibilityNodeInfo clickableLabel(AccessibilityNodeInfo node, String label, AccessibilityNodeInfo ancestor) {
+        if (node == null || !node.isVisibleToUser()) return null;
+        AccessibilityNodeInfo target = node.isClickable() ? node : ancestor;
+        boolean matches = label.equalsIgnoreCase(node.getText() == null ? "" : node.getText().toString())
+                || label.equalsIgnoreCase(node.getContentDescription() == null ? "" : node.getContentDescription().toString());
+        if (matches && target != null && target.isEnabled()) return target;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo found = clickableLabel(node.getChild(i), label, target);
+            if (found != null) return found;
+        }
+        return null;
     }
     private void swipeBrowse() {
         if (browse == null) return; Rect bounds = new Rect();

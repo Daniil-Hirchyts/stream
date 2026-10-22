@@ -10,6 +10,32 @@ import org.junit.runner.RunWith;
 
 @RunWith(AndroidJUnit4.class)
 public final class AppFlowTest extends AppHarness {
+    @Test public void emptyResourceSetupRootRequiresConfiguredAddressBeforeInstallation() throws Exception {
+        launch(); tap("Settings", true); tap("Add add-on", false);
+        enter(origin + "/addon/good/empty-setup/manifest.json"); tap("Continue", true);
+        waitUntil("empty descriptor offers setup", 10_000, () -> visible("Enter configured address"));
+        assertFalse(visible("Install")); assertTrue(services.store.addons().isEmpty());
+        tap("Enter configured address", false);
+        enter(origin + "/addon/good/configured-setup-empty/manifest.json"); tap("Continue", true);
+        tap("Install", false);
+        waitUntil("configured resources accepted", 10_000, () -> services.store.addons().size() == 1 && visible("Manage add-on"));
+    }
+
+    @Test public void starterReviewRequiresAcceptanceAndKeepsSuccessfulInstallsWhenOneFails() throws Exception {
+        context.getSharedPreferences("instrumentation", android.content.Context.MODE_PRIVATE).edit()
+                .putString("starterAddons", origin + "/addon/good/starter/manifest.json " + origin + "/missing-addon/manifest.json").commit();
+        app.resetServices(); services = app.services();
+        launch(); tap("Get add-ons", true);
+        waitUntil("starter review", 10_000, () -> visible("Install"));
+        assertTrue("Opening the review does not install providers", services.store.addons().isEmpty());
+        tap("Install", false);
+        waitUntil("partial starter install is explained", 15_000, () -> visible("Some add-ons weren't added"));
+        assertEquals(1, services.store.addons().size());
+        assertEquals(origin + "/addon/good/starter/manifest.json", services.store.addons().get(0).address.manifest);
+        tap("Close", true);
+        waitUntil("installed catalogue appears on Home", 10_000, () -> visible("Generated Film"));
+    }
+
     @Test public void firstRunCanSkipProvidersAndNavigateWithPointerAndRemote() throws Exception {
         launch(); waitUntil("empty home", 10_000, () -> visible("Make yourself at home"));
         assertTrue(services.store.addons().isEmpty()); tap("Settings", true); tap("Languages", false); tap("Audio language", false); tap("English", true);
@@ -24,7 +50,8 @@ public final class AppFlowTest extends AppHarness {
         // Stream's player has no transport row: a pointer pauses with the centre glyph, the remote skips.
         control(tv.daniil.playback.R.id.player_view, false); control(tv.daniil.playback.R.id.center_icon, true);
         waitUntil("paused by mouse", 5000, () -> state() != null && !state().playWhenReady);
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT); waitUntil("seek forward", 20_000, () -> state().positionMs >= 10_000);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
+        waitUntil("first remote key seeks after mouse input", 20_000, () -> state().positionMs >= 10_000);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PLAY);
         WatchActivity activity = watch();
         instrumentation.runOnMainSync(() -> { tv.daniil.playback.PlaybackSession s = session(activity); s.seekTo(36_000); });

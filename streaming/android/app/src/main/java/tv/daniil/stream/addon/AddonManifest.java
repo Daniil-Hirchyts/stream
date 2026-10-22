@@ -103,7 +103,8 @@ public final class AddonManifest {
         this.addonCatalogs = addonCatalogs;
         JSONObject hints = o.optJSONObject("behaviorHints");
         configurable = Json.bool(hints, "configurable");
-        configurationRequired = Json.bool(hints, "configurationRequired");
+        // Some setup roots, including AIOMetadata, omit the required flag until a profile exposes resources.
+        configurationRequired = Json.bool(hints, "configurationRequired") || configurable && resources.isEmpty();
         adult = Json.bool(hints, "adult");
         p2p = Json.bool(hints, "p2p");
         json = o.toString();
@@ -132,7 +133,8 @@ public final class AddonManifest {
                 resources.add(new Resource(name, rTypes, rPrefixes));
             }
         }
-        if (resources.isEmpty()) throw new AddonException(AddonException.Kind.MALFORMED, "The manifest lists no usable resources");
+        // An explicit empty array is a valid setup descriptor; a nonempty but unreadable declaration isn't.
+        if (resources.isEmpty() && raw.length() > 0) throw new AddonException(AddonException.Kind.MALFORMED, "The manifest lists no usable resources");
         List<Catalog> catalogs = new ArrayList<>();
         for (JSONObject c : Json.objects(o, "catalogs")) {
             String type = Json.string(c, "type"), id = Json.string(c, "id");

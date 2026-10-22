@@ -27,11 +27,13 @@ public final class RuntimeOptions {
         return fixtures.isEmpty() ? java.util.Collections.emptyList() : java.util.Arrays.asList(fixtures.split(" "));
     }
     public final boolean localOnly;
+    public final boolean publicNetworkOnly;
     public final String peer;
     public final long cacheBytes;
     RuntimeOptions(Context context, long configuredCache) {
         android.content.SharedPreferences test = context.getSharedPreferences("instrumentation", Context.MODE_PRIVATE);
         localOnly = test.getBoolean("localOnly", false);
+        publicNetworkOnly = !localOnly && databaseName(context).startsWith("test-") && test.getBoolean("publicNetworkOnly", false);
         peer = localOnly ? test.getString("peer", "127.0.0.1:58134") : "";
         cacheBytes = localOnly ? test.getLong("cacheBytes", configuredCache) : configuredCache;
     }

@@ -66,6 +66,8 @@ struct engine_config
 	bool upnp = false;
 	bool natpmp = false;
 	bool pex = true;
+	// Optional live-test networking: disable LAN discovery and reject non-public peer/tracker/DHT addresses.
+	bool public_network_only = false;
 	// Tests run several local peers on one address.
 	bool multiple_connections_per_ip = false;
 	// PEM file with the trust roots for HTTPS trackers and web seeds; empty uses OpenSSL's defaults.

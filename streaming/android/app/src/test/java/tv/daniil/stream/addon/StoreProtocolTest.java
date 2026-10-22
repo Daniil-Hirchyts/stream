@@ -11,6 +11,25 @@ import tv.daniil.torrent.TorrentEngine;
 
 /** Store listings, addon_catalog addresses, the built-in add-on and torrent discovery, without a device or network. */
 public final class StoreProtocolTest {
+    @Test public void configurableEmptyResourcesRequireSetupUntilConfigured() throws Exception {
+        JSONObject root = manifest("setup", "Setup root", "").put("resources", new JSONArray())
+                .put("behaviorHints", new JSONObject().put("configurable", true).put("configurationRequired", false));
+        AddonManifest setup = AddonManifest.parse(root);
+        assertTrue(setup.configurationRequired); assertTrue(setup.resources.isEmpty());
+        assertFalse(setup.handles(AddonManifest.STREAM, "movie", "tt0063350"));
+        root.put("resources", new JSONArray().put("stream"));
+        assertFalse(AddonManifest.parse(root).configurationRequired);
+    }
+
+    @Test public void explicitEmptyResourcesAreValidButMissingOrUnreadableDeclarationsAreNot() throws Exception {
+        JSONObject root = manifest("empty", "Empty", "").put("resources", new JSONArray());
+        assertTrue(AddonManifest.parse(root).resources.isEmpty());
+        root.remove("resources");
+        try { AddonManifest.parse(root); fail(); } catch (AddonException e) { assertEquals(AddonException.Kind.MALFORMED, e.kind); }
+        root.put("resources", new JSONArray().put(JSONObject.NULL).put(new JSONObject().put("wrong", true)));
+        try { AddonManifest.parse(root); fail(); } catch (AddonException e) { assertEquals(AddonException.Kind.MALFORMED, e.kind); }
+    }
+
     private static JSONObject manifest(String id, String name, String extra) throws Exception {
         return new JSONObject("{\"id\":\"" + id + "\",\"name\":\"" + name + "\",\"version\":\"1.0.0\",\"types\":[\"movie\"],\"resources\":[\"stream\"]" + extra + "}");
     }

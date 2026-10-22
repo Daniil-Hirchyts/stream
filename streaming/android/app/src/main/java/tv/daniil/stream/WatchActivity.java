@@ -104,6 +104,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                         }
                     });
                     screen = new PlayerScreen(this, session, this); screen.setTitle(title.name);
+                    bindRemoteFocus();
                     resolve(true); main.post(tick);
                 });
             } catch (Exception e) { main.post(() -> { if (current(mine)) {
@@ -113,6 +114,26 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         });
     }
     private boolean current(int mine) { return visible && !releasing && mine == generation && !isFinishing(); }
+    /** Keep the first remote key usable after a pointer action; focus is taken before View handles the click. */
+    @android.annotation.SuppressLint("ClickableViewAccessibility") // Returning false preserves each view's normal click/drag handling.
+    private void bindRemoteFocus() {
+        View surface = findViewById(R.id.player_root);
+        surface.requestFocus();
+        for (int id : new int[]{R.id.player_root, tv.daniil.playback.R.id.player_view, R.id.controls, R.id.center_icon,
+                R.id.control_options, R.id.control_stop, R.id.progress}) {
+            findViewById(id).setOnTouchListener((view, event) -> {
+                if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) surface.requestFocus();
+                return false;
+            });
+        }
+        for (int id : ERROR_BUTTONS) {
+            View button = findViewById(id); button.setFocusableInTouchMode(true);
+            button.setOnTouchListener((view, event) -> {
+                if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) view.requestFocus();
+                return false;
+            });
+        }
+    }
     private void cancelPreparation() {
         generation++; if (scope != null) scope.close(); if (preparation != null) preparation.cancel(true);
         if (choiceDialog != null) { choiceDialog.dismiss(); choiceDialog = null; }
@@ -198,6 +219,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                         File payload = new File(getCacheDir(), "payload");
                         TorrentEngine.Config config = options.localOnly ? TorrentEngine.Config.localOnly(payload.getPath()) : new TorrentEngine.Config(payload.getPath());
                         config.cacheBytes = options.cacheBytes; config.reserveBytes = options.localOnly ? 0 : 512L << 20;
+                        config.publicNetworkOnly = options.publicNetworkOnly;
                         File roots = new File(getNoBackupFilesDir(), "native-trust.pem"); TrustRoots.writePem(roots); config.trustRootsFile = roots.getPath();
                         engine = TorrentEngine.create(config);
                         TorrentEngine.Source torrentSource;

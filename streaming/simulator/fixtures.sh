@@ -16,7 +16,10 @@ fi
 [ -n "$ffmpeg_bin" ] || { echo 'FFmpeg is needed to generate the test media (set DANIILTV_FFMPEG).' >&2; exit 1; }
 ff() { "$ffmpeg_bin" -hide_banner -loglevel error -y "$@"; }
 
-"$here/../native/build-host.sh" dev --no-test >/dev/null
+if ! "$here/../native/build-host.sh" dev --no-test >"$cache/native-build.log" 2>&1; then
+  cat "$cache/native-build.log" >&2
+  exit 1
+fi
 fixture="$here/../native/build/host-dev/dtv-fixture"
 
 # A subtitle file both the MKV and the series embed.

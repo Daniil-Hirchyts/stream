@@ -9,6 +9,7 @@ public final class RuntimeOptions {
     static java.util.List<String> addonDirectory(Context context) { return java.util.Collections.singletonList(tv.daniil.stream.addon.AddonRepository.DIRECTORY); }
     static java.util.List<String> starterAddons(Context context) { return StarterAddons.ALL; }
     public final boolean localOnly = false;
+    public final boolean publicNetworkOnly = false;
     public final String peer = "";
     public final long cacheBytes;
     RuntimeOptions(Context context, long configuredCache) { cacheBytes = configuredCache; }

@@ -1,4 +1,6 @@
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/player_root" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#000000">
+<!-- Keep focus after pointer input so Android delivers the very first D-pad seek to the player. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/player_root" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#000000"
+    android:focusable="true" android:focusableInTouchMode="true">
     <include layout="@layout/playback_video" />
     <include layout="@layout/playback_layers" />
     <include layout="@layout/playback_menu" />

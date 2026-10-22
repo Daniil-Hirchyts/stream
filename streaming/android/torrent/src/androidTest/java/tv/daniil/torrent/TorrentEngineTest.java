@@ -82,6 +82,17 @@ public final class TorrentEngineTest {
         assertFiles(t, files);
     }
 
+    @Test public void internetOnlyValidationRejectsLoopbackPeersThroughJni() throws Exception {
+        engine.close();
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        TorrentEngine.Config config = TorrentEngine.Config.localOnly(new File(context.getCacheDir(), "torrent").getPath());
+        config.cacheBytes = CACHE; config.reserveBytes = 0; config.publicNetworkOnly = true;
+        engine = TorrentEngine.create(config);
+        long torrent = engine.add(TorrentEngine.Source.infoHash(fixtures.torrent("film-v1").v1).withPeers(fixtures.seeder));
+        expect(TorrentException.TIMEOUT, () -> engine.awaitMetadata(torrent, 2000));
+        assertEquals(0, engine.stats(torrent).getInt("peers"));
+    }
+
     @Test public void unusableTorrentsAndHandlesAreRefused() throws Exception {
         expect(TorrentException.PIECE_TOO_LARGE, () -> add(fixtures.torrent("film-huge-pieces")));
         expect(TorrentException.BAD_SOURCE, () -> engine.add(TorrentEngine.Source.metainfo(new byte[] {'d', 'e'})));

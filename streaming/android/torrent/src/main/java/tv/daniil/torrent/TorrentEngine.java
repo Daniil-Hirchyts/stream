@@ -39,6 +39,8 @@ public final class TorrentEngine implements AutoCloseable {
         public boolean natpmp;
         public boolean peerExchange = true;
         public boolean multipleConnectionsPerIp;
+        /** Internet peers only: no LAN discovery, port mapping, or non-public peer/tracker/DHT addresses. */
+        public boolean publicNetworkOnly;
         /** PEM trust roots for HTTPS trackers and web seeds; see {@link TrustRoots}. */
         public String trustRootsFile = "";
         public int readAheadSeconds = 45;
@@ -111,7 +113,7 @@ public final class TorrentEngine implements AutoCloseable {
 
     public static TorrentEngine create(Config c) throws TorrentException {
         return new TorrentEngine(nativeCreate(c.cacheDirectory, c.cacheBytes, c.reserveBytes, c.listenInterfaces,
-                c.dht, c.localDiscovery, c.upnp, c.natpmp, c.peerExchange, c.multipleConnectionsPerIp,
+                c.dht, c.localDiscovery, c.upnp, c.natpmp, c.peerExchange, c.multipleConnectionsPerIp, c.publicNetworkOnly,
                 c.trustRootsFile, c.readAheadSeconds));
     }
 
@@ -223,7 +225,7 @@ public final class TorrentEngine implements AutoCloseable {
     }
 
     private static native long nativeCreate(String cacheDir, long cacheBytes, long reserveBytes, String listen,
-            boolean dht, boolean lsd, boolean upnp, boolean natpmp, boolean pex, boolean multiplePerIp, String caFile,
+            boolean dht, boolean lsd, boolean upnp, boolean natpmp, boolean pex, boolean multiplePerIp, boolean publicNetworkOnly, String caFile,
             int readAheadSeconds) throws TorrentException;
     private static native void nativeDestroy(long id);
     private static native long nativeAdd(long id, @Nullable byte[] metainfo, @Nullable String magnet,

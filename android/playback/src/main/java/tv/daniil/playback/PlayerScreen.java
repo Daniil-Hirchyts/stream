@@ -266,7 +266,7 @@ public final class PlayerScreen implements PlaybackSession.Listener, MenuPanel.L
         Ui.fade(errorView, failed);
         bufferingView.setVisibility(!failed && !preparing && session.started()
                 && player.getPlaybackState() == Player.STATE_BUFFERING ? View.VISIBLE : View.GONE);
-        if (failed || preparing || !session.started()) controls.hide();
+        if (failed || preparing || !session.started() || menu.isOpen()) controls.hide();
         if (preparing) {
             loadingTitle.setText(title);
             loadingStep.setText(loading.overline);
@@ -301,7 +301,7 @@ public final class PlayerScreen implements PlaybackSession.Listener, MenuPanel.L
         lastState = state;
         lastPlayWhenReady = playWhenReady;
         // The up-next card replaces the overlay at the end of an episode.
-        if (changed && session.started() && upNext == null) controls.onPlaybackChanged();
+        if (changed && session.started() && upNext == null && !menu.isOpen()) controls.onPlaybackChanged();
         render();
     }
 

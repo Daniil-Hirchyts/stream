@@ -18,6 +18,7 @@ import org.junit.runner.RunWith;
 public final class LiveFilmTest extends AppHarness {
     @Before public void internet() {
         context.getSharedPreferences("instrumentation", Context.MODE_PRIVATE).edit().putBoolean("localOnly", false)
+                .putBoolean("publicNetworkOnly", true)
                 .remove("peer").remove("cacheBytes").remove("addonDirectory").commit();
         app.resetServices(); services = app.services();
     }

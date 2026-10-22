@@ -7,6 +7,7 @@
 #   ./streaming/simulator.sh test            Engine/playback and add-on/persistence tests (verified emulator only)
 #   ./streaming/simulator.sh engine-test | data-test
 #   ./streaming/simulator.sh live-film       Optional: real public-domain films from the internet through the store
+#   ./streaming/simulator.sh live-addons     Optional: current public store manifests/resources/review installs
 #   ./streaming/simulator.sh status | logs | stop-services
 set -u
 
@@ -129,6 +130,8 @@ run_tests() {
 }
 
 run_data_tests() {
+  test_classes=${1:-tv.daniil.stream.AddonTest,tv.daniil.stream.StoreTest,tv.daniil.stream.SourcePolicyTest}
+  [ $# -eq 0 ] || shift
   start_services || return 1
   tls_dir="$SIM_DIR/.cache/tls"
   mkdir -p "$tls_dir" || return 1
@@ -143,9 +146,9 @@ run_data_tests() {
   (cd "$ANDROID_DIR" && ./gradlew -q :app:assembleDebug :app:assembleDebugAndroidTest) || return 1
   device install -r "$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk" || return 1
   device install -r -t "$ANDROID_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" || return 1
-  instrument tv.daniil.stream.test -e class "${1:-tv.daniil.stream.AddonTest,tv.daniil.stream.StoreTest,tv.daniil.stream.SourcePolicyTest}" \
-    -e fixtures "$FIXTURE_URL" -e seeder "127.0.0.1:$SEEDER_PORT" -e badCertificate https://127.0.0.1:58135/manifest.json || return 1
-  case "${1:-}" in *ProfileTest*)
+  instrument tv.daniil.stream.test -e class "$test_classes" \
+    -e fixtures "$FIXTURE_URL" -e seeder "127.0.0.1:$SEEDER_PORT" -e badCertificate https://127.0.0.1:58135/manifest.json "$@" || return 1
+  case "$test_classes" in *ProfileTest*)
     device exec-out run-as tv.daniil.stream cat files/validation-profile.json >"$SIM_DIR/.cache/evidence/playback-profile.json" || return 1
     device exec-out run-as tv.daniil.stream cat files/validation-profile.png >"$SIM_DIR/.cache/evidence/playback-profile.png" || return 1
     ;; esac
@@ -208,13 +211,26 @@ case "${1:-up}" in
   site) start_services && printf 'Live test room: %s/\n' "$FIXTURE_URL" ;;
   fixtures) "$SIM_DIR/fixtures.sh" ;;
   services) start_services ;;
-  test) run_tests && run_data_tests && run_data_tests tv.daniil.stream.AppFlowTest,tv.daniil.stream.AcceptanceTest,tv.daniil.stream.ProfileTest ;;
+  test) run_tests && run_data_tests && run_data_tests tv.daniil.stream.AppFlowTest,tv.daniil.stream.AcceptanceTest,tv.daniil.stream.PlayerInteractionTest,tv.daniil.stream.ProfileTest ;;
   engine-test) run_tests ;;
   data-test) run_data_tests ;;
   smoke) run_data_tests tv.daniil.stream.AppFlowTest ;;
   # Not a required suite: public services and swarms change. Uses the internet, never the LAN or a physical TV.
   live-film) run_data_tests tv.daniil.stream.LiveFilmTest ;;
-  acceptance) run_data_tests "${2:-tv.daniil.stream.AppFlowTest,tv.daniil.stream.AcceptanceTest,tv.daniil.stream.ProfileTest}" ;;
+  live-addons)
+    run_data_tests tv.daniil.stream.LiveAddonTest
+    result=$?
+    device exec-out run-as tv.daniil.stream cat files/validation-addons.json >"$SIM_DIR/.cache/evidence/live-addons.json" || exit 1
+    exit "$result"
+    ;;
+  live-torrents)
+    case "${2:-}" in *[!A-Za-z0-9,]*) fail 'Use comma-separated provider names without spaces.'; exit 2 ;; esac
+    run_data_tests tv.daniil.stream.LiveTorrentProvidersTest -e providers "${2:-}"
+    result=$?
+    device exec-out run-as tv.daniil.stream cat files/validation-torrents.json >"$SIM_DIR/.cache/evidence/live-torrents.json" || exit 1
+    exit "$result"
+    ;;
+  acceptance) run_data_tests "${2:-tv.daniil.stream.AppFlowTest,tv.daniil.stream.AcceptanceTest,tv.daniil.stream.PlayerInteractionTest,tv.daniil.stream.ProfileTest}" ;;
   process-death)
     start_services && install_app && (prepare_java; cd "$ANDROID_DIR"; ./gradlew -q :app:assembleDebugAndroidTest) && \
       device install -r -t "$ANDROID_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" && "$SIM_DIR/process-death.sh"

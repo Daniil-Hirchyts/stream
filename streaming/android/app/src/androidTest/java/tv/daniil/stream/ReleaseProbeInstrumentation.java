@@ -58,8 +58,8 @@ public final class ReleaseProbeInstrumentation extends Instrumentation {
             byte[] metainfo = fetch(fixture.getString("torrent"));
             check(((String) call("nativeVersion", new Class<?>[]{})).contains("2.1.2"));
             long engine = (Long) call("nativeCreate", new Class<?>[]{String.class, long.class, long.class, String.class,
-                    boolean.class, boolean.class, boolean.class, boolean.class, boolean.class, boolean.class, String.class, int.class},
-                    directory.getPath(), 16L << 20, 0L, "127.0.0.1:0", false, false, false, false, false, true, "", 45);
+                    boolean.class, boolean.class, boolean.class, boolean.class, boolean.class, boolean.class, boolean.class, String.class, int.class},
+                    directory.getPath(), 16L << 20, 0L, "127.0.0.1:0", false, false, false, false, false, true, false, "", 45);
             try {
                 long torrent = (Long) call("nativeAdd", new Class<?>[]{long.class, byte[].class, String.class, String.class, String[].class, String[].class},
                         engine, metainfo, null, null, new String[0], new String[]{peer});
