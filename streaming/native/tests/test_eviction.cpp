@@ -10,6 +10,9 @@
 
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/alert_types.hpp>
+#include <libtorrent/aux_/torrent.hpp>
+#include <libtorrent/aux_/session_interface.hpp>
+#include <libtorrent/hasher.hpp>
 #include <libtorrent/load_torrent.hpp>
 #include <libtorrent/peer_info.hpp>
 #include <libtorrent/session.hpp>
@@ -17,11 +20,13 @@
 #include <libtorrent/torrent_status.hpp>
 
 #include <arpa/inet.h>
+#include <boost/asio/post.hpp>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <filesystem>
+#include <future>
 #include <mutex>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -83,9 +88,10 @@ struct client
 		session = std::make_unique<lt::session>(std::move(params));
 	}
 
-	void add(std::string const& torrent, std::vector<lt::tcp::endpoint> const& peers, lt::torrent_flags_t flags = {})
+	void add(std::string const& torrent, std::vector<lt::tcp::endpoint> const& peers, lt::torrent_flags_t flags = {}, bool roots_only = false)
 	{
 		lt::add_torrent_params p = lt::load_torrent_buffer({torrent.data(), std::ptrdiff_t(torrent.size())});
+		if (roots_only) { p.merkle_trees.clear(); p.merkle_tree_mask.clear(); p.verified_leaf_hashes.clear(); }
 		info_hash = p.ti->info_hashes().get_best();
 		p.save_path = ".";
 		p.flags = (p.flags & ~(lt::torrent_flags::auto_managed | lt::torrent_flags::paused)) | flags
@@ -180,6 +186,61 @@ void seed_evicts_and_downloads_again(fx::version v)
 TEST(eviction_v1_seed_downloads_evicted_pieces_again) { seed_evicts_and_downloads_again(fx::version::v1); }
 TEST(eviction_v2_seed_downloads_evicted_pieces_again) { seed_evicts_and_downloads_again(fx::version::v2); }
 TEST(eviction_hybrid_seed_downloads_evicted_pieces_again) { seed_evicts_and_downloads_again(fx::version::hybrid); }
+
+TEST(eviction_v2_adjacent_hash_completion_keeps_pending_callback_alive)
+{
+	// Reproduce the callback order exposed by repeated emulator seeks. Root-only
+	// metadata can validate adjacent pieces together, including one whose own
+	// re-hash is still pending. That piece must wait for its own completion.
+	fx::temp_dir dir("dtv-adjacent-hash");
+	fx::write_content(dir.file("movie.bin"), 64 << 10, 31);
+	std::string const metainfo = fx::make_torrent(dir.file("movie.bin"), 32 << 10, fx::version::v2);
+	client c(dir.file("cache"));
+	c.add(metainfo, {}, {}, true);
+	CHECK(c.pump([&] { return c.cache && c.handle.status().state == lt::torrent_status::downloading; }));
+	auto native = c.handle.native_handle();
+	std::promise<void> completed;
+	auto result = completed.get_future();
+	boost::asio::post(native->session().get_context(), [&] {
+		try
+		{
+			lt::aux::vector<lt::sha256_hash> hashes[2];
+			for (int p = 0; p < 2; ++p)
+			{
+				piece_index_t const piece(p);
+				std::vector<char> bytes(32 << 10);
+				fx::fill_content(31, p * (32 << 10), bytes.data(), bytes.size());
+				CHECK(c.cache->reserve(piece));
+				lt::storage_error error;
+				CHECK(c.cache->write(piece, 0, {bytes.data(), int(bytes.size())}, error));
+				CHECK(!error);
+				for (int b = 0; b < 2; ++b)
+				{
+					lt::piece_block const block(piece, b);
+					CHECK(native->picker().mark_as_writing(block, nullptr));
+					native->picker().mark_as_finished(block, nullptr);
+					hashes[p].push_back(lt::hasher256(lt::span<char const>{bytes.data() + b * (16 << 10), 16 << 10}).final());
+				}
+				native->picker().started_hash_job(piece);
+			}
+			auto const generation = native->picker_generation();
+			native->on_piece_verified(hashes[0], piece_index_t(0), {}, {}, generation);
+			CHECK(!native->have_piece(piece_index_t(0)));
+			native->picker().started_hash_job(piece_index_t(0));
+			native->on_piece_verified(hashes[1], piece_index_t(1), {}, {}, generation);
+			CHECK(native->picker().is_hashing(piece_index_t(0)));
+			CHECK(!native->have_piece(piece_index_t(0)));
+			CHECK(native->have_piece(piece_index_t(1)));
+			native->on_piece_verified(hashes[0], piece_index_t(0), {}, {}, generation);
+			CHECK(native->have_piece(piece_index_t(0)));
+			CHECK(native->have_piece(piece_index_t(1)));
+			completed.set_value();
+		}
+		catch (...) { completed.set_exception(std::current_exception()); }
+	});
+	CHECK(result.wait_for(10s) == std::future_status::ready);
+	result.get();
+}
 
 TEST(eviction_of_unwanted_pieces_keeps_a_finished_torrent_finished)
 {
