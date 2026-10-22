@@ -141,11 +141,9 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         work(() -> app.services(), value -> {
             services = value;
             browse = new BrowseScreens(this, services); titles = new TitleScreens(this, services); setup = new SetupScreens(this, this, services); store = new StoreScreens(this, services);
-            if (route().screen.equals("Starting")) {
-                // Someone who already added a provider or an import has finished onboarding in practice.
-                work(() -> services.store.preference("onboardingDone", "false").equals("true") || !services.store.addons().isEmpty() || !services.store.importIds().isEmpty(),
-                        done -> { root(done ? "Home" : "Welcome"); offerIncomingFile(); });
-            } else { render(); offerIncomingFile(); }
+            // No onboarding: the app opens on Home, which offers the starter add-ons while it has nothing to show.
+            if (route().screen.equals("Starting")) root("Home"); else render();
+            offerIncomingFile();
         });
     }
 
@@ -231,13 +229,12 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     }
     private Page build(Route route, Cancellation request) throws Exception {
         switch (route.screen) {
-            case "Welcome": return setup.welcome();
             case "Home": return browse.home(request);
             case "Search": return browse.search(route, request);
             case "Library": return browse.library();
             case "History": return browse.library();
             case "Imports": return setup.imports();
-            case "Settings": return setup.settings();
+            case "Settings": return setup.settings(route);
             case "Add-on": return setup.addon(route);
             case "Add-ons": return store.store(route, request);
             case "Add-on review": return store.review(route, request);
@@ -251,7 +248,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     }
     /** Tabs are hidden during onboarding; the active tab follows the bottom of the stack. */
     private void chrome(String screen) {
-        boolean tabs = !screen.equals("Welcome") && !screen.equals("Starting");
+        boolean tabs = !screen.equals("Starting");
         boolean expanded = tabs && searchExpanded;
         topBarControls.setVisibility(tabs && !expanded ? View.VISIBLE : View.INVISIBLE);
         searchExpandedView.setVisibility(expanded ? View.VISIBLE : View.GONE);
@@ -277,9 +274,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         if (page.title != null) { items = new ArrayList<>(page.items); items.add(0, Item.pageTitle(page.title)); }
         int headerHeight = topBar.getHeight();
         if (headerHeight == 0) headerHeight = Tv.dp(this, 76);
-        float widthDp = getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density;
-        int side = page.narrow ? Math.max(48, Math.round((widthDp - COLUMN) / 2)) : 48;
-        adapter.gutter(side, side);
+        gutters(page.narrow);
         // Home's spotlight sets the artwork itself; clearing it first would flash the plain canvas.
         boolean spotlight = !page.items.isEmpty() && page.items.get(0).kind == Item.Kind.SPOTLIGHT;
         int contentTop = spotlight ? 0 : headerHeight + Tv.dp(this, 2);
@@ -340,11 +335,25 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
                 return;
             }
             if (hasPageSkeleton(current.screen)) {
+                // The skeleton takes the width its page will have, so nothing jumps sideways when the page arrives.
+                gutters(isNarrow(current.screen));
                 adapter.set(java.util.Collections.singletonList(Item.skeleton(current.screen)), "");
                 return;
             }
         }
         adapter.set(java.util.Collections.singletonList(Item.loading()), "");
+    }
+    /** Screens built as lists and forms (Page.narrow): their skeletons use the same centred column. */
+    private static boolean isNarrow(String screen) {
+        switch (screen) {
+            case "Imports": case "Add-on": case "Developer": case "Add-ons": case "Add-on review": case "Sources": return true;
+            default: return false;
+        }
+    }
+    private void gutters(boolean narrow) {
+        float widthDp = getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density;
+        int side = narrow ? Math.max(48, Math.round((widthDp - COLUMN) / 2)) : 48;
+        adapter.gutter(side, side);
     }
     private static boolean hasPageSkeleton(String screen) {
         switch (screen) {
@@ -459,23 +468,23 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         } catch (AddonException invalid) { alert("Unable to open setup", "This add-on supplied an invalid setup address."); }
     }
     /**
-     * Onboarding's single choice: installs the starter add-ons it lists, then opens Home. Each install reads the
-     * add-on's current manifest first; one that can't be reached is skipped and named, and can be added later.
+     * The starter page's Install: adds each listed add-on that isn't installed yet, reading its current manifest
+     * first. One that can't be reached is skipped and named, and can be added later.
      */
-    @Override public void startWatching(List<String> addons) {
+    @Override public void installStarters(List<String> addons) {
         loading();
         work(() -> {
             List<String> missed = new ArrayList<>();
             for (String url : addons) {
+                if (StoreScreens.installed(url, "", services.store.addons()) != null) continue;
                 // Installing cancels open requests, so each add-on is read with a request of its own.
                 try (Cancellation request = services.addons.newRequest()) { services.addons.install(url, services.addons.preview(url, request)); }
                 catch (AddonException e) { missed.add(StarterAddons.describe(url)[0]); }
             }
-            services.store.setPreference("onboardingDone", "true");
             return missed;
         }, missed -> {
             root("Home");
-            if (!missed.isEmpty()) alert("Some add-ons weren't added", String.join(", ", missed) + " didn't respond. Add them later in Settings.");
+            if (!missed.isEmpty()) alert("Some add-ons weren't added", String.join(", ", missed) + " didn't respond. Try again from the add-on store.");
         });
     }
     @Override public void addAddon() { edit("Add add-on", "https://… or stremio://…/manifest.json", "", this::previewAddon); }
@@ -506,7 +515,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);
         try { startActivityForResult(intent, PICK_TORRENT); }
         catch (android.content.ActivityNotFoundException unavailable) {
-            alert("Open a torrent file", "This TV has no system file picker. Open or share a .torrent file from a TV file manager and choose Daniil TV. "
+            alert("Open a torrent file", "This TV has no system file picker. Open or share a .torrent file from a TV file manager and choose " + getString(R.string.app_name) + ". "
                     + "You can also add a magnet link or torrent URL here.");
         }
     }

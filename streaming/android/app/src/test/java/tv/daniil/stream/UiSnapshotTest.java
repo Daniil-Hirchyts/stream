@@ -15,6 +15,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -57,9 +58,11 @@ public final class UiSnapshotTest {
         ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup();
         activity = controller.get();
         settle(3000);
-        snap("00-welcome");
-        // The real first run: Start watching installs the listed starter add-ons from their live manifests.
-        click("Start watching");
+        snap("00-home-empty"); reachable("00-home-empty");
+        // The real first run: an empty Home leads to the store's starter page, whose Install adds them from live manifests.
+        click("Get add-ons"); settle(2000);
+        snap("00b-starters"); reachable("00b-starters");
+        click("Install");
         waitFor(() -> services.store.addons().size() >= 3, 30_000);
         settle(2000);
         StringBuilder names = new StringBuilder();
@@ -77,7 +80,7 @@ public final class UiSnapshotTest {
         services.store.favourite(film, true);
 
         activity.root("Home"); settle(9000);
-        snap("01-home");
+        snap("01-home"); reachable("01-home");
         key(KeyEvent.KEYCODE_DPAD_RIGHT); key(KeyEvent.KEYCODE_DPAD_RIGHT); settle(2500);
         snap("02-home-focus-moved");
         key(KeyEvent.KEYCODE_DPAD_DOWN); key(KeyEvent.KEYCODE_DPAD_DOWN); settle(3000);
@@ -87,33 +90,36 @@ public final class UiSnapshotTest {
         snap("03b-home-bottom");
 
         activity.openTitle(film, ""); settle(6000);
-        snap("04-details-film");
+        snap("04-details-film"); reachable("04-details-film");
         for (int i = 0; i < 2; i++) key(KeyEvent.KEYCODE_DPAD_RIGHT);
         settle(1000);
         snap("04b-details-buttons");
         activity.openTitle(series, ""); settle(6000);
-        snap("05-details-series");
+        snap("05-details-series"); reachable("05-details-series");
         for (int i = 0; i < 3; i++) key(KeyEvent.KEYCODE_DPAD_DOWN);
         settle(3000);
         snap("05b-series-episodes");
-        activity.sources(film, film.id); settle(9000);
-        snap("06-sources");
+        activity.sources(film, film.id); settle(3000);
+        waitFor(() -> activity.getWindow().getDecorView().findFocus() != null, 40_000); settle(1000);
+        snap("06-sources"); reachable("06-sources");
 
         activity.root("Library"); settle(4000);
-        snap("07-library");
+        snap("07-library"); reachable("07-library");
         for (int i = 0; i < 3; i++) key(KeyEvent.KEYCODE_DPAD_DOWN);
         settle(2000);
         snap("07b-library-scrolled");
         activity.root("Add-ons"); settle(9000);
-        snap("08-store");
+        snap("08-store"); reachable("08-store");
         for (int i = 0; i < 8; i++) key(KeyEvent.KEYCODE_DPAD_DOWN);
         settle(2000);
         snap("08b-store-scrolled");
         Route review = new Route("Add-on review"); review.value = BuiltinAddons.INTERNET_ARCHIVE;
         activity.push(review); settle(3000);
-        snap("09-store-review");
+        snap("09-store-review"); reachable("09-store-review");
         activity.root("Settings"); settle(3000);
-        snap("10-settings");
+        snap("10-settings"); reachable("10-settings");
+        click("Languages"); settle(800);
+        snap("10a-settings-languages");
         click("Audio language"); settle(1500);
         snapDialog("10b-settings-choice");
         ShadowDialog.getLatestDialog().dismiss(); settle(500);
@@ -121,11 +127,13 @@ public final class UiSnapshotTest {
         settle(1000);
         snapDialog("10c-long-alert");
         ShadowDialog.getLatestDialog().dismiss(); settle(500);
-        for (int i = 0; i < 12; i++) key(KeyEvent.KEYCODE_DPAD_DOWN);
-        settle(2000);
-        snap("10d-settings-scrolled");
+        // Left returns to the lit category; Down walks the categories and the pane follows.
+        key(KeyEvent.KEYCODE_DPAD_LEFT);
+        for (int i = 0; i < 2; i++) key(KeyEvent.KEYCODE_DPAD_DOWN);
+        settle(1200);
+        snap("10d-settings-playback"); reachable("10d-settings-playback");
         activity.search(); settle(2000);
-        snap("11-search");
+        snap("11-search"); reachable("11-search");
         click("Show 123 keys"); settle(800);
         snap("11b-search-symbols");
         click("Show àéü keys"); settle(800);
@@ -135,14 +143,118 @@ public final class UiSnapshotTest {
         if (activity.getWindow().getDecorView().findViewWithTag("keyboard:é") == null) throw new AssertionError("Keyboard left the accents page");
         click("Clear search"); click("Show abc keys"); settle(800);
         activity.searchInput("night"); settle(7000);
-        snap("12-search-results");
+        snap("12-search-results"); reachable("12-search-results");
         for (int i = 0; i < 7; i++) key(KeyEvent.KEYCODE_DPAD_RIGHT);
         for (int i = 0; i < 3; i++) key(KeyEvent.KEYCODE_DPAD_DOWN);
         settle(1500);
         snap("12b-search-results-scrolled");
         activity.openImports(); settle(2500);
-        snap("14-imports");
+        snap("14-imports"); reachable("14-imports");
         controller.pause().stop().destroy();
+        if (!unreachable.isEmpty()) throw new AssertionError("Controls the remote can't reach:\n" + String.join("\n", unreachable));
+    }
+
+    private final List<String> unreachable = new ArrayList<>();
+    /**
+     * Every control on screen must be reachable with the D-pad alone: a breadth-first walk of focus search in the four
+     * directions from the current focus must arrive at each visible clickable view, and each one must be focusable.
+     */
+    private void reachable(String page) {
+        View decor = activity.getWindow().getDecorView();
+        View start = decor.findFocus();
+        if (start == null) { unreachable.add(page + ": nothing has focus"); return; }
+        java.util.Set<View> seen = new java.util.HashSet<>();
+        java.util.ArrayDeque<View> queue = new java.util.ArrayDeque<>();
+        seen.add(start); queue.add(start);
+        int[] directions = {View.FOCUS_LEFT, View.FOCUS_RIGHT, View.FOCUS_UP, View.FOCUS_DOWN};
+        while (!queue.isEmpty() && seen.size() < 800) {
+            View view = queue.poll();
+            for (int direction : directions) { View next = view.focusSearch(direction); if (next != null && seen.add(next)) queue.add(next); }
+        }
+        int before = unreachable.size(), controls = check(page, decor, seen);
+        System.out.println("remote " + page + ": " + controls + " controls, " + seen.size() + " reached, " + (unreachable.size() - before) + " problems");
+    }
+    private int check(String page, View view, java.util.Set<View> seen) {
+        if (!view.isShown()) return 0;
+        int count = 0;
+        android.graphics.Rect visible = new android.graphics.Rect();
+        // The Home spotlight is a touch shortcut to the card that already has focus; everything else must take focus.
+        if (view.isClickable() && !"spotlight".equals(view.getTag()) && view.getGlobalVisibleRect(visible) && !visible.isEmpty()) {
+            count++;
+            String name = view.getTag() + " / " + view.getContentDescription();
+            if (!view.isFocusable()) unreachable.add(page + ": touch only: " + name);
+            else if (!seen.contains(view)) unreachable.add(page + ": unreachable: " + name);
+        }
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) count += check(page, group.getChildAt(i), seen);
+        }
+        return count;
+    }
+
+    /**
+     * The player overlay (Stream's override of the shared player's layers) over a real film still: playing with the
+     * controls up and Play/Pause focused, then the error card. Inflated directly with the same views WatchActivity uses.
+     */
+    @Test public void playerOverlay() throws Exception {
+        android.app.Activity host = Robolectric.buildActivity(android.app.Activity.class).setup().get();
+        host.setTheme(R.style.TvTheme);
+        android.widget.FrameLayout root = new android.widget.FrameLayout(host);
+        root.setBackgroundColor(0xFF000000);
+        android.widget.ImageView still = new android.widget.ImageView(host);
+        still.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+        try (tv.daniil.stream.addon.AddonClient client = new tv.daniil.stream.addon.AddonClient()) {
+            byte[] image = client.fetch("https://images.metahub.space/background/medium/tt0063350/img", 8 << 20, new Cancellation(),
+                    tv.daniil.stream.addon.AddonClient.deadline());
+            still.setImageBitmap(android.graphics.BitmapFactory.decodeByteArray(image, 0, image.length));
+        }
+        root.addView(still, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        android.view.LayoutInflater.from(host).inflate(R.layout.playback_layers, root, true);
+        host.setContentView(root);
+        root.findViewById(R.id.controls).setVisibility(View.VISIBLE);
+        ((android.widget.TextView) root.findViewById(R.id.controls_title)).setText("Night of the Living Dead");
+        android.widget.TextView details = root.findViewById(R.id.controls_details);
+        details.setText("English  ·  Subtitles: English"); details.setVisibility(View.VISIBLE);
+        android.widget.ImageView centre = root.findViewById(R.id.center_icon);
+        centre.setImageResource(tv.daniil.playback.R.drawable.ic_pause); centre.setVisibility(View.VISIBLE);
+        android.widget.SeekBar progress = root.findViewById(R.id.progress);
+        progress.setProgress(428); progress.setSecondaryProgress(520);
+        ((android.widget.TextView) root.findViewById(R.id.elapsed)).setText("41:02");
+        ((android.widget.TextView) root.findViewById(R.id.remaining)).setText("−55:21");
+        android.widget.TextView play = root.findViewById(R.id.control_play);
+        play.setText(tv.daniil.playback.R.string.control_pause);
+        for (int id : new int[]{R.id.control_play, R.id.control_rewind, R.id.control_forward, R.id.control_options, R.id.control_stop}) {
+            View control = root.findViewById(id); control.setFocusable(true); control.setClickable(true);
+        }
+        play.requestFocus();
+        settle(1500);
+        snap("15-player", host.getWindow());
+        root.findViewById(R.id.controls).setVisibility(View.GONE);
+        root.findViewById(R.id.error).setVisibility(View.VISIBLE);
+        ((android.widget.TextView) root.findViewById(R.id.error_title)).setText("This source didn't open");
+        ((android.widget.TextView) root.findViewById(R.id.error_message)).setText("The provider didn't answer in time. Try again, or choose another source.");
+        root.findViewById(R.id.error_sources).setVisibility(View.VISIBLE);
+        root.findViewById(R.id.error_retry).requestFocus();
+        settle(800);
+        snap("15b-player-error", host.getWindow());
+        // The options menu, built with the same row layout the player's menu inflates; the first row has focus.
+        root.findViewById(R.id.error).setVisibility(View.GONE);
+        root.findViewById(R.id.controls).setVisibility(View.VISIBLE);
+        android.view.LayoutInflater.from(host).inflate(tv.daniil.playback.R.layout.playback_menu, root, true);
+        root.findViewById(tv.daniil.playback.R.id.menu).setVisibility(View.VISIBLE);
+        ((android.widget.TextView) root.findViewById(tv.daniil.playback.R.id.menu_title)).setText(tv.daniil.playback.R.string.menu_options);
+        android.view.ViewGroup rows = root.findViewById(tv.daniil.playback.R.id.menu_rows);
+        String[][] items = {{"Audio", "English"}, {"Subtitles", "English"}, {"Quality", "Auto (1080p)"}, {"Speed", "Normal"}, {"Subtitle style", ""}};
+        for (int i = 0; i < items.length; i++) {
+            View row = android.view.LayoutInflater.from(host).inflate(tv.daniil.playback.R.layout.row_menu, rows, false);
+            ((android.widget.TextView) row.findViewById(tv.daniil.playback.R.id.row_label)).setText(items[i][0]);
+            ((android.widget.TextView) row.findViewById(tv.daniil.playback.R.id.row_value)).setText(items[i][1]);
+            ((android.widget.ImageView) row.findViewById(tv.daniil.playback.R.id.row_icon)).setImageResource(tv.daniil.playback.R.drawable.ic_chevron_right);
+            row.setSelected(i == 1);
+            rows.addView(row);
+        }
+        settle(800);
+        snap("15c-player-menu", host.getWindow());
     }
 
     /** Settles until {@code done} holds or {@code ms} pass. */

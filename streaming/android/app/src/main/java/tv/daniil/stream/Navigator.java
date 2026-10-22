@@ -25,8 +25,8 @@ interface Navigator {
     void mutate(Callable<?> task);
     /** Runs {@code task} on a worker, then {@code after} on the main thread. */
     void then(Callable<?> task, Runnable after);
-    /** Installs the starter add-ons onboarding listed (the viewer's acceptance), then opens Home. */
-    void startWatching(java.util.List<String> addons);
+    /** Installs the starter add-ons the store's starter page listed (the viewer's acceptance), then opens Home. */
+    void installStarters(java.util.List<String> addons);
     void addAddon();
     void previewAddon(String address);
     void importAddress();

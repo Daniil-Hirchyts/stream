@@ -36,6 +36,8 @@ final class StoreScreens {
 
     /** Opens the store on one kind of add-on, such as Sources from a title that has none. */
     static Route route(String filter) { Route r = new Route("Add-ons"); r.extras.put("filter", filter); return r; }
+    /** The starter pack's review page: the store's page for installing Cinemeta, Internet Archive and OpenSubtitles together. */
+    static Route starters() { Route r = new Route("Add-on review"); r.value = StarterAddons.PACK; return r; }
 
     Page store(Route route, Cancellation scope) throws Exception {
         String filter = route.extras.getOrDefault("filter", "All");
@@ -48,6 +50,11 @@ final class StoreScreens {
         page.initialFocus = "filter:" + filter;
         // Installed add-ons are managed in Settings; here they show as Installed in their list.
         List<InstalledAddon> installed = services.store.addons();
+        if (filter.equals("All") && missingStarters(installed) > 0) {
+            page.add(Item.header("Start here"));
+            page.add(Item.source("store:starters", "Starter add-ons", "Films and series · free classic films · subtitles", "", "", true,
+                    () -> nav.push(starters())).status(-1));
+        }
 
         // A filter changes what is displayed, not the directory request. Keep the lists briefly between renders,
         // invalidating them when installed providers change or the user explicitly refreshes.
@@ -97,9 +104,33 @@ final class StoreScreens {
                 .status(present ? R.drawable.ic_tv_check : l.manifest.configurationRequired ? R.drawable.ic_tv_info : -1);
     }
 
+    private int missingStarters(List<InstalledAddon> installed) {
+        int missing = 0;
+        for (String url : services.starters) if (installed(url, "", installed) == null) missing++;
+        return missing;
+    }
+    /** What the starter pack adds, then one Install for all of it (each add-on's manifest is read when it installs). */
+    private Page starterReview() {
+        Page page = new Page().title("Starter add-ons").narrow();
+        List<InstalledAddon> installed = services.store.addons();
+        for (String url : services.starters) {
+            String[] about = StarterAddons.describe(url);
+            boolean present = installed(url, "", installed) != null;
+            page.add(Item.row("starter:" + url, present ? R.drawable.ic_tv_check : R.drawable.ic_tv_extension, about[0], present ? "Installed" : about[1], null));
+        }
+        if (missingStarters(installed) > 0) {
+            page.add(Item.actions("starter-actions", new Action("install-starters", Action.Style.PRIMARY, "Install", () -> nav.installStarters(services.starters))
+                    .icon(R.drawable.ic_tv_add)));
+            page.initialFocus = "install-starters";
+        }
+        page.add(Item.text("", "Each provider receives the titles you open and your searches."));
+        return page;
+    }
+
     /** The add-on's own current manifest, what it supplies and what it receives, then Install. */
     Page review(Route route, Cancellation scope) throws Exception {
         String url = route.value;
+        if (url.equals(StarterAddons.PACK)) return starterReview();
         TorrentAddons.Entry curated = TorrentAddons.find(url);
         AddonManifest manifest;
         try { manifest = services.addons.preview(url, scope); }
@@ -121,7 +152,7 @@ final class StoreScreens {
         Page page = new Page().title(manifest.name).narrow();
         if (!manifest.description.isEmpty()) page.add(Item.text("", manifest.description));
         page.add(Item.text("", kinds(manifest) + (torrents ? " · Torrent" : "") + (types(manifest.types).isEmpty() ? "" : "  ·  " + types(manifest.types))
-                + "\n" + (builtin ? "Built into Daniil TV" : AddonUrl.redacted(url)) + (manifest.version.isEmpty() ? "" : "  ·  Version " + manifest.version)));
+                + "\n" + (builtin ? "Built in" : AddonUrl.redacted(url)) + (manifest.version.isEmpty() ? "" : "  ·  Version " + manifest.version)));
         List<Action> actions = new ArrayList<>();
         if (present != null) {
             actions.add(new Action("manage", Action.Style.PRIMARY, "Manage add-on", () -> { Route r = new Route("Add-on"); r.value = present.id; nav.push(r); }).icon(R.drawable.ic_tv_settings)

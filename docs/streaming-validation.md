@@ -483,3 +483,57 @@ store and types searches on the on-screen keyboard ("Type g", …).
   Internet Archive and OpenSubtitles v3.
 - **Not run:** emulator instrumentation, smoke and soak. They need the
   verified AVD.
+
+## Stream: no onboarding, split Settings, player, contrast and remote checks, 2026-10-22
+
+**What changed:**
+- **Name and onboarding:** the TV now shows the app as Stream: launcher
+  label, new adaptive icon, and a banner at five densities from
+  `branding/make_brand.py`. Onboarding is gone. An empty Home offers Get
+  add-ons, which opens the store's starter page; its Install adds Cinemeta,
+  Internet Archive and OpenSubtitles. Explicit acceptance still happens on a
+  store page (AGENTS.md updated to say so).
+- **Settings:** a split view, with categories on the left and the focused
+  category's rows on the right. Row labels are unchanged; the instrumentation
+  now opens the category first.
+- **Search:** the results area has no heading or count, and its empty and
+  no-results states are centred.
+- **Corners:** one radius scale in `dimens.xml`: 8/10/16/24 dp, capsules
+  and circles. Buttons and rows went from 12 to 10 dp, about tvOS's
+  proportion; the unused tile-button style was removed.
+- **Contrast:** tertiary text rose from 40% to 60% white (3.4:1 → 6.3:1 on
+  the canvas). Facts over artwork use 86% white, text over artwork has a soft
+  shadow, and the scrim is a little stronger where text sits.
+- **Player:** restyled through app overrides of `playback_layers.xml` and
+  `row_menu.xml`, with the same IDs and the view types the library reads.
+  - The "Now playing" label is gone.
+  - Audio & subtitles and Close are round buttons at the top right.
+  - Rewind, a fixed-width Play/Pause and Forward sit between the times.
+  - The centre glyph is a smaller glass disc.
+  - The options menu's focused row is a white platter with dark text.
+  - The casting receiver keeps the library's own layouts.
+
+**Problems found and fixed:**
+- **Up on Home:** the spotlight was clickable for touch, which also made it
+  focusable, so Up from the first shelf moved focus onto it invisibly. It
+  could never reach the tab bar. The spotlight no longer takes focus, and Up
+  from the first control of any page goes to the tab bar.
+- **Opening a Settings category:** a tap or OK on a category whose pane
+  wasn't showing yet lost focus. The pane now takes focus once its rows are
+  laid out.
+- **Skeletons:** loading placeholders now take their page's final width, so
+  nothing jumps sideways when the page arrives.
+
+**Remote check.** `UiSnapshotTest` walks D-pad focus on 14 pages and fails if
+a visible control can't be reached or works only by touch. Every page passes.
+It also renders the player overlay, its error card and its options menu over
+a real film still.
+
+**Results here** (Linux container, no emulator or device):
+- **Builds:** `:app:assembleDebug`, `:app:assembleRelease` and
+  `:app:assembleDebugAndroidTest` pass.
+- **Unit tests:** `:app:testDebugUnitTest` passes 14 tests, plus 2 render
+  tests with `-PuiSnapshots=true`.
+- **Lint:** both variants report 0 errors and 18 warnings (previously 20).
+- **Not run:** instrumentation on the emulator, so the updated Settings and
+  search flows in `AcceptanceTest` and `AppFlowTest` are unverified.

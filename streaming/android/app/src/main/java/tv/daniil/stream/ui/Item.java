@@ -10,7 +10,7 @@ import tv.daniil.stream.addon.Title;
 
 /** One block of a page. Screens build these on workers; {@link PageAdapter} turns them into views. */
 public final class Item {
-    public enum Kind { SPOTLIGHT, DETAILS, INTRO, TITLE, HEADER, SHELF, GRID, ACTIONS, CHIPS, LIST, SOURCE, FIELD, KEYBOARD, SKELETON, MESSAGE, NOTICE, TEXT, LOADING }
+    public enum Kind { SPOTLIGHT, DETAILS, INTRO, TITLE, HEADER, SHELF, GRID, ACTIONS, CHIPS, LIST, SOURCE, FIELD, KEYBOARD, SPLIT, SKELETON, MESSAGE, NOTICE, TEXT, LOADING }
 
     /** A poster, landscape thumbnail or catalogue card. */
     public static final class Tile {
@@ -35,7 +35,7 @@ public final class Item {
 
     /** A focusable button. Icon-only buttons are described by their label. */
     public static final class Action {
-        public enum Style { PRIMARY, SECONDARY, ICON, TILE, CHIP }
+        public enum Style { PRIMARY, SECONDARY, ICON, CHIP }
         public final String key, label;
         public final Style style;
         public final Runnable action;
@@ -111,6 +111,15 @@ public final class Item {
     public static Item field(String key, String label, String value, Runnable action) {
         Item i = new Item(Kind.FIELD, key); i.title = label; i.value = value; i.action = action; return i;
     }
+    /**
+     * Categories on the left, the focused one's rows on the right (Settings). {@code categories} are rows keyed like
+     * {@code panes}; {@code selected} is the category shown first, and {@code select} hears each change.
+     */
+    public static Item split(String key, List<Item> categories, java.util.Map<String, List<Item>> panes, String selected, Consumer<String> select) {
+        Item i = new Item(Kind.SPLIT, key); i.children = categories; i.panes = panes; i.value = selected; i.keyboardInput = select; return i;
+    }
+    @Nullable public List<Item> children;
+    @Nullable public java.util.Map<String, List<Item>> panes;
     public static Item keyboard(String key, String value, Consumer<String> input) {
         Item i = new Item(Kind.KEYBOARD, key); i.value = value; i.keyboardInput = input; return i;
     }

@@ -74,7 +74,6 @@ public abstract class AppHarness {
         readyLibrary("ui");
     }
     void readyLibrary(String configuration) throws Exception {
-        services.store.setPreference("onboardingDone", "true");
         try (Cancellation scope = services.addons.newRequest()) {
             String url = origin + "/addon/good/" + configuration + "/manifest.json"; services.addons.install(url, services.addons.preview(url, scope));
         }

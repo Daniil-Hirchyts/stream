@@ -20,7 +20,6 @@ public final class LiveFilmTest extends AppHarness {
         context.getSharedPreferences("instrumentation", Context.MODE_PRIVATE).edit().putBoolean("localOnly", false)
                 .remove("peer").remove("cacheBytes").remove("addonDirectory").commit();
         app.resetServices(); services = app.services();
-        services.store.setPreference("onboardingDone", "true");
     }
     /** Installs through the store's real rows and review page, then opens the film's details from that provider. */
     private void installAndOpen(String addon, String imdb, String name) throws Exception {

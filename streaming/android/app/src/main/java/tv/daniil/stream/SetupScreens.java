@@ -3,9 +3,12 @@ package tv.daniil.stream;
 import android.content.Context;
 import org.json.JSONObject;
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import tv.daniil.stream.addon.AddonManifest;
 import tv.daniil.stream.addon.AddonUrl;
 import tv.daniil.stream.addon.Title;
@@ -27,24 +30,6 @@ final class SetupScreens {
 
     SetupScreens(Context context, Navigator nav, TvApplication.Services services) { this.context = context; this.nav = nav; this.services = services; }
 
-    /** One screen and one choice: Start watching adds the listed starter add-ons and opens Home. */
-    Page welcome() {
-        Page page = new Page().narrow();
-        page.add(Item.intro("", "Daniil TV", "Films and series, ready to watch."));
-        List<String> starters = RuntimeOptions.starterAddons(context);
-        if (!starters.isEmpty()) {
-            page.add(Item.header("Included"));
-            for (String url : starters) {
-                String[] about = StarterAddons.describe(url);
-                page.add(Item.row("starter:" + url, R.drawable.ic_tv_check, about[0], about[1], null));
-            }
-        }
-        page.add(Item.actions("welcome-start", new Action("continue", Action.Style.PRIMARY, "Start watching", () -> nav.startWatching(starters))
-                .icon(R.drawable.ic_tv_play)).centered());
-        page.initialFocus = "continue";
-        return page;
-    }
-
     Page imports() throws Exception {
         Page page = new Page().title("Imports").narrow();
         page.add(Item.row("import-address", 0, "Add magnet or torrent URL", "", nav::importAddress));
@@ -59,31 +44,40 @@ final class SetupScreens {
         return page;
     }
 
-    /** tvOS Settings: plain rows in a centred column, grouped under small headings. Installed add-ons come first. */
-    Page settings() {
-        Page page = new Page().narrow();
-        page.add(Item.header("Add-ons"));
+    /**
+     * Settings as a split view: six categories on the left, the focused one's rows on the right. Each row keeps its
+     * label; the categories only group them. The category shown is remembered on the route.
+     */
+    Page settings(Route route) {
+        Map<String, List<Item>> panes = new LinkedHashMap<>();
+        List<Item> categories = new ArrayList<>();
+
+        List<Item> addons = new ArrayList<>();
         for (InstalledAddon a : services.store.addons()) {
-            page.add(Item.row("addon:" + a.id, 0, a.manifest.name, a.enabled ? "" : "Off", () -> {
+            addons.add(Item.row("addon:" + a.id, 0, a.manifest.name, a.enabled ? "" : "Off", () -> {
                 Route r = new Route("Add-on"); r.value = a.id; nav.push(r);
             }));
         }
-        page.add(Item.row("addon-store", 0, "Add-on store", "", () -> nav.push(StoreScreens.route("All"))));
-        page.add(Item.row("add-addon", 0, "Add add-on", "By address", nav::addAddon));
+        addons.add(Item.row("addon-store", 0, "Add-on store", "", () -> nav.push(StoreScreens.route("All"))));
+        addons.add(Item.row("add-addon", 0, "Add add-on", "By address", nav::addAddon));
+        category(categories, panes, "settings:addons", R.drawable.ic_tv_extension, "Add-ons", addons);
+
         int importCount = services.store.importIds().size();
-        page.add(Item.header("Library"));
-        page.add(Item.row("manage-imports", 0, "Imports", importCount == 0 ? "" : Integer.toString(importCount), nav::openImports));
-        page.add(Item.header("Languages"));
-        page.add(Item.row("audio-language", 0, "Audio language", languageName(services.store.preference("audioLanguage", "")),
-                () -> language("audioLanguage", "Audio language")));
-        page.add(Item.row("subtitle-language", 0, "Subtitle language", languageName(services.store.preference("subtitleLanguage", "")),
-                () -> language("subtitleLanguage", "Subtitle language")));
-        page.add(Item.header("Subtitles"));
+        category(categories, panes, "settings:torrents", R.drawable.ic_tv_download, "Torrents", Collections.singletonList(
+                Item.row("manage-imports", 0, "Imports", importCount == 0 ? "" : Integer.toString(importCount), nav::openImports)));
+
+        category(categories, panes, "settings:languages", R.drawable.ic_tv_audio, "Languages", Arrays.asList(
+                Item.row("audio-language", 0, "Audio language", languageName(services.store.preference("audioLanguage", "")),
+                        () -> language("audioLanguage", "Audio language")),
+                Item.row("subtitle-language", 0, "Subtitle language", languageName(services.store.preference("subtitleLanguage", "")),
+                        () -> language("subtitleLanguage", "Subtitle language"))));
+
+        List<Item> subtitles = new ArrayList<>();
         for (String[] style : SUBTITLE_STYLES) {
             String setting = style[0];
             String[] values = Arrays.copyOfRange(style, 1, style.length);
             String current = services.playerPreferences.getString("subtitle_" + setting, "");
-            page.add(Item.row("subtitle-" + setting, 0, "Subtitle " + setting, current.isEmpty() ? "Default" : label(current), () -> {
+            subtitles.add(Item.row("subtitle-" + setting, 0, "Subtitle " + setting, current.isEmpty() ? "Default" : label(current), () -> {
                 String[] labels = new String[values.length];
                 for (int i = 0; i < values.length; i++) labels[i] = label(values[i]);
                 nav.choose("Subtitle " + setting, labels, i -> nav.mutate(() -> {
@@ -93,19 +87,28 @@ final class SetupScreens {
                 }));
             }));
         }
-        page.add(Item.header("Playback"));
-        page.add(Item.row("cache-size", 0, "Playback cache", services.store.preference("cacheMiB", "256") + " MiB",
-                () -> nav.choose("Playback cache", new String[]{"128 MiB", "256 MiB", "512 MiB"},
-                        i -> nav.mutate(() -> { services.store.setPreference("cacheMiB", new String[]{"128", "256", "512"}[i]); return null; }))));
+        category(categories, panes, "settings:subtitles", R.drawable.ic_tv_subtitles, "Subtitles", subtitles);
+
         boolean autoplay = services.store.preference("autoplay", "true").equals("true");
-        page.add(Item.row("autoplay", 0, "Play next episode", autoplay ? "On" : "Off",
-                () -> nav.mutate(() -> { services.store.setPreference("autoplay", autoplay ? "false" : "true"); return null; })));
-        // Clearing keeps imports, favourites and watch history.
-        page.add(Item.row("clear-cache", 0, "Clear app playback and metadata cache", "",
-                () -> nav.mutate(() -> { clearCaches(context, services); return null; })));
-        page.add(Item.header("About"));
-        page.add(Item.row("developer", 0, "Developer", "", () -> nav.push(new Route("Developer"))));
-        return page;
+        category(categories, panes, "settings:playback", R.drawable.ic_tv_play, "Playback", Arrays.asList(
+                Item.row("cache-size", 0, "Playback cache", services.store.preference("cacheMiB", "256") + " MiB",
+                        () -> nav.choose("Playback cache", new String[]{"128 MiB", "256 MiB", "512 MiB"},
+                                i -> nav.mutate(() -> { services.store.setPreference("cacheMiB", new String[]{"128", "256", "512"}[i]); return null; }))),
+                Item.row("autoplay", 0, "Play next episode", autoplay ? "On" : "Off",
+                        () -> nav.mutate(() -> { services.store.setPreference("autoplay", autoplay ? "false" : "true"); return null; })),
+                // Clearing keeps imports, favourites and watch history.
+                Item.row("clear-cache", 0, "Clear app playback and metadata cache", "",
+                        () -> nav.mutate(() -> { clearCaches(context, services); return null; }))));
+
+        category(categories, panes, "settings:about", R.drawable.ic_tv_info, "About", Collections.singletonList(
+                Item.row("developer", 0, "Developer", "", () -> nav.push(new Route("Developer")))));
+
+        return new Page().add(Item.split("settings", categories, panes, route.extras.getOrDefault("category", ""),
+                key -> route.extras.put("category", key)));
+    }
+    private static void category(List<Item> categories, Map<String, List<Item>> panes, String key, int icon, String title, List<Item> rows) {
+        categories.add(Item.row(key, icon, title, "", null));
+        panes.put(key, rows);
     }
     /** Removes only this app's disposable payload/subtitle files and cached metadata. */
     static void clearCaches(Context context, TvApplication.Services services) {
@@ -149,7 +152,7 @@ final class SetupScreens {
 
     Page developer() throws Exception {
         Page page = new Page().title("Developer").narrow();
-        page.add(Item.text("Version", "Daniil TV " + context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName
+        page.add(Item.text("Version", context.getString(R.string.app_name) + " " + context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName
                 + "\n" + tv.daniil.torrent.TorrentEngine.version()));
         page.add(Item.text("Device", android.os.Build.MODEL + " · Android API " + android.os.Build.VERSION.SDK_INT + " · " + String.join(", ", android.os.Build.SUPPORTED_ABIS)));
         page.add(Item.text("Storage", context.getFilesDir().getUsableSpace() / (1 << 20) + " MiB free · " + services.cacheBytes() / (1 << 20)

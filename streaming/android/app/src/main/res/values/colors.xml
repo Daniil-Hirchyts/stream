@@ -6,7 +6,10 @@
     <color name="tv_hairline">#1FFFFFFF</color>
     <color name="tv_text">#FFF5F5F7</color>
     <color name="tv_text_secondary">#A6EBEBF5</color>
-    <color name="tv_text_tertiary">#66EBEBF5</color>
+    <!-- 60%, not tvOS's 30%: at least 4.5:1 on the canvas for small text read from across a room. -->
+    <color name="tv_text_tertiary">#99EBEBF5</color>
+    <!-- Secondary text over artwork (spotlight and details facts): brighter, as the scrim there can be light. -->
+    <color name="tv_text_on_artwork">#DBEBEBF5</color>
     <color name="tv_on_focus">#FF111113</color>
     <color name="tv_on_focus_secondary">#99111113</color>
     <color name="tv_focus">#FFFFFFFF</color>
@@ -29,7 +32,7 @@
     <color name="line" tools:ignore="UnusedResources">#1FFFFFFF</color>
     <color name="text_primary" tools:ignore="UnusedResources">#FFF5F5F7</color>
     <color name="text_secondary" tools:ignore="UnusedResources">#A6EBEBF5</color>
-    <color name="text_tertiary" tools:ignore="UnusedResources">#66EBEBF5</color>
+    <color name="text_tertiary" tools:ignore="UnusedResources">#99EBEBF5</color>
     <color name="accent" tools:ignore="UnusedResources">#FFFFFFFF</color>
     <color name="accent_soft" tools:ignore="UnusedResources">#33FFFFFF</color>
 </resources>

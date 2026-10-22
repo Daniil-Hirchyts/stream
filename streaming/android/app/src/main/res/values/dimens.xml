@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Corner radii, one scale for the whole app (dp on the 960 dp canvas, half of tvOS points). Rectangular controls
+         and artwork share one radius; floating and filter controls are capsules; icon buttons are circles. -->
+    <dimen name="tv_radius_key">8dp</dimen>
+    <dimen name="tv_radius_control">10dp</dimen>
+    <dimen name="tv_radius_card">16dp</dimen>
+    <dimen name="tv_radius_sheet">24dp</dimen>
+    <!-- Larger than half of any capsule's height, so the ends are fully round. -->
+    <dimen name="tv_radius_capsule">100dp</dimen>
+</resources>

@@ -58,14 +58,16 @@ final class BrowseScreens {
         if (shelves.isEmpty()) {
             page.add(Item.message(R.drawable.ic_tv_tv, "Make yourself at home",
                     catalogues.isEmpty() ? "Add a catalogue to fill this page." : "Your catalogues are empty right now.",
-                    new Item.Action("home-add-addon", Item.Action.Style.PRIMARY, "Browse add-ons", () -> nav.root("Add-ons")).icon(R.drawable.ic_tv_extension),
+                    new Item.Action("home-add-addon", Item.Action.Style.PRIMARY, "Get add-ons",
+                            () -> { if (services.starters.isEmpty()) nav.root("Add-ons"); else nav.push(StoreScreens.starters()); }).icon(R.drawable.ic_tv_extension),
                     new Item.Action("home-import", Item.Action.Style.SECONDARY, "Import a torrent", nav::openImports).icon(R.drawable.ic_tv_download)));
         } else {
             page.add(Item.spotlight(null));
             page.addAll(shelves);
         }
         if (failed) page.add(Item.notice(R.drawable.ic_tv_offline, stale ? "Showing saved catalogues" : "Some providers are unavailable", ""));
-        page.add(Item.actions("home-actions",
+        // Browsing and refreshing need a catalogue; an empty Home shows only the way to add one.
+        if (!catalogues.isEmpty()) page.add(Item.actions("home-actions",
                 new Item.Action("browse", Item.Action.Style.SECONDARY, "Browse catalogues", () -> nav.push(new Route("Catalogues"))).icon(R.drawable.ic_tv_list),
                 new Item.Action("refresh", Item.Action.Style.ICON, "Refresh", nav::refresh).icon(R.drawable.ic_tv_refresh)));
         return page;
@@ -90,7 +92,7 @@ final class BrowseScreens {
         }
         for (Title t : found.items) tiles.add(poster("search", t));
         search.tiles = tiles;
-        search.detail = tiles.isEmpty() ? "No results" : tiles.size() + (tiles.size() == 1 ? " result" : " results");
+        search.detail = tiles.isEmpty() ? "No results" : "";
         if (!found.failures.isEmpty()) search.meta = "Some providers could not answer";
         return page;
     }

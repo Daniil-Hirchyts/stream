@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Overrides the shared player's menu label: dark on the white platter of the focused row, as everywhere in Stream. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/tv_on_focus" android:state_selected="true" />
+    <item android:color="@color/tv_text" />
+</selector>

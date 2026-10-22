@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A player menu row's current value: secondary grey, dark grey on the focused row's white platter. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/tv_on_focus_secondary" android:state_selected="true" />
+    <item android:color="@color/tv_text_secondary" />
+</selector>

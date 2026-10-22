@@ -16,9 +16,11 @@ installs/opens it. No helper, extension, pairing, debrid account or home server
 is needed. Development requires Java 21/17, Node, FFmpeg, a C++ toolchain and
 Android SDK/NDK/CMake versions pinned in `streaming/native/deps.lock`.
 
-Welcome lists the starter add-ons and installs them when the viewer chooses
-Start watching; a profile that already has an add-on or import goes straight to
-Home. Home, Library and Settings are tabs in a floating bar at the top; search
+The app is called Stream on the TV (launcher label, icon and banner); the project
+and package keep the Daniil TV name. It opens straight on Home, with no
+onboarding. While Home has nothing to show, it offers the store's starter page:
+Cinemeta, Internet Archive and OpenSubtitles, installed together by its Install
+button. Home, Library and Settings are tabs in a floating bar at the top; search
 opens from the same bar, and the add-on store, add-on management and Imports
 live under Settings. Details provide Play/Resume, Sources,
 watched/favourite controls and seasons/episodes. Settings manage add-ons,
@@ -34,24 +36,41 @@ description, and the backdrop cross-fades to its art once focus settles.
 Shelves scroll horizontally. Page titles scroll with their page.
 
 
-- **First run:** one screen lists the starter add-ons (Cinemeta, Internet
-  Archive, OpenSubtitles) and one button, Start watching, which installs them
-  from their current manifests and opens Home. Local-only instrumentation lists
-  none, so tests never reach public providers.
+- **First run:** no onboarding. An empty Home offers Get add-ons, which opens
+  the store's starter page; its Install adds the starter add-ons from their
+  current manifests. Local-only instrumentation lists none, so tests never
+  reach public providers.
 - **Tab bar:** Search, Home, Library and Settings sit in one floating pill. It
   slides away once content scrolls under it and returns when focus reaches it
   or the page is back at its top. Content scrolling up fades into the top edge.
-- **Settings:** installed add-ons come first, then the add-on store, imports,
-  languages, subtitles and playback, as plain rows in a centred column. Lists
-  and forms (Settings, Imports, the store, add-on pages, Sources) use that
-  column; shelves and grids use the full width.
+- **Settings:** a split view. Six categories sit on the left: Add-ons,
+  Torrents, Languages, Subtitles, Playback and About.
+  - The focused category's rows show on the right and change as focus moves.
+  - Right enters the pane at its first row, and Left returns to the lit
+    category. The route remembers which category was open.
+  - Other lists and forms (Imports, the store, add-on pages, Sources) sit in a
+    centred column; shelves and grids use the full width.
 - **Details:** every button is labelled: Play or Resume (with the episode),
   Sources, Favourite, Mark watched, and More for refresh and removal.
 - **Sources:** only sources this TV can play, best first. When none can, the
   page says how many were found and why.
 - **Search keyboard:** a six-column grid with no gaps, on three pages
   (letters, digits and punctuation, accented letters); Space, Delete, the page
-  switches and Clear each span exactly two keys. Results update as you type.
+  switches and Clear each span exactly two keys. Results update as you type,
+  with no heading or count. Before a search, and when nothing matches, a quiet
+  line sits centred in the results area.
+- **Corners:** one scale in `res/values/dimens.xml`, on this 960 dp canvas
+  (half of tvOS points):
+  - 10 dp for buttons, rows, fields and artwork; 8 dp for keys.
+  - 16 dp for cards and 24 dp for sheets.
+  - Capsules for floating and filter controls (tab bar, tabs, chips, search
+    field); circles for icon buttons.
+- **Contrast:** small text is at least 4.5:1 on the canvas; tertiary grey is
+  60% white. Facts over artwork use a brighter grey, and all text that can sit
+  over artwork carries a soft shadow.
+- **Remote:** every control is reachable with the D-pad. Up from the first
+  row of any page reaches the tab bar, and the Home spotlight is a touch-only
+  shortcut that never takes focus.
 - **Focus:** the focused control turns white with dark text. Artwork grows,
   gains a white rim and a deep shadow while its caption keeps its size; buttons
   grow slightly; list rows and tabs don't grow, so their text never shifts.
@@ -76,9 +95,20 @@ Artwork is cached on disk (40 MiB, least recently shown evicted) as well as in
 memory. Off-screen shelves keep their views, so scrolling back neither rebuilds
 a row nor reloads its art.
 
-The shared player gets the same neutral palette through app resource overrides
-(`res/values/colors.xml`, `bg_panel`, `pill`, `bg_card_soft`), so Daniil Cast
-keeps its own look.
+The shared player is restyled only through app resource overrides, so Daniil
+Cast keeps its own look:
+- **Palette:** `res/values/colors.xml`, `bg_panel`, `pill` and `bg_card_soft`.
+- **Overlay:** `layout/playback_layers.xml`, with the same IDs and the view
+  types the library reads:
+  - The title and track details sit at the top, with round Audio & subtitles
+    and Close buttons beside them; there is no "Now playing" label.
+  - The timeline has the elapsed and remaining times at its ends. Rewind,
+    Play/Pause (a fixed width, so nothing moves when it toggles) and Forward
+    sit centred between them.
+  - The centre play/pause glyph is a small glass disc.
+- **Options menu:** `layout/row_menu.xml`, `bg_option_row`, `option_label`
+  and `menu_icon`. The focused row turns white with dark text, as everywhere
+  else.
 
 Screens are built off the main thread as `ui.Page` lists of `ui.Item` blocks
 (`BrowseScreens`, `TitleScreens`, `SetupScreens`), and `ui.PageAdapter` turns
@@ -253,11 +283,19 @@ cd streaming/android
 ./gradlew :app:testDebugUnitTest --tests '*UiSnapshotTest' -PuiSnapshots=true  # optional: screen renders (internet)
 ```
 
-`UiSnapshotTest` renders the real browse screens at 1920×1080 with Robolectric
-into `app/build/ui-snapshots/` for design review: Home, details, Sources,
-Library, store, Settings with an alert, Search, Welcome and Imports. It uses
-live Cinemeta and Internet Archive data. It asserts nothing; it does not
-replace instrumentation on the emulator, and it cannot show live blur.
+`UiSnapshotTest` renders the real screens at 1920×1080 with Robolectric into
+`app/build/ui-snapshots/` for design review. It uses live Cinemeta and
+Internet Archive data.
+- **Screens:** the empty Home and the starter install, Home, details,
+  Sources, Library, the store, Settings with an alert, Search, Imports, and
+  the player overlay, error card and options menu.
+- **Remote check:** on each page it walks D-pad focus from the focused
+  control and fails if a visible control is unreachable or touch-only.
+- **Limits:** it doesn't replace instrumentation on the emulator, and it
+  can't show live blur.
+
+`branding/make_brand.py` regenerates the launcher icon (an adaptive vector)
+and the TV banner (PNGs at three densities) from one geometry.
 
 `:app:testDebugUnitTest` runs JVM tests of the store protocol, listing rules,
 built-in add-on and torrent discovery without a device or network. With

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Overrides the shared player's menu marks: dark on the focused row's white platter, white ticks elsewhere. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/tv_on_focus" android:state_selected="true" />
+    <item android:color="@color/tv_text" android:state_activated="true" />
+    <item android:color="@color/tv_text_tertiary" />
+</selector>

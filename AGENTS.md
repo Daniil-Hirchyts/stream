@@ -138,7 +138,7 @@ patch or moving libtorrent.
 The new app's data APIs block and belong on application workers. Each navigation
 or search owns a cancellable provider scope; configuration changes cancel older
 work. Never install Cinemeta or a source provider without an explicit acceptance
-in onboarding/settings or the store's review page. The Add-ons store lists
+in Settings or the store's review page (its starter page included). The Add-ons store lists
 built-in add-ons (`daniiltv://`), lists published through `addon_catalog` and
 Stremio's directory; under local-only instrumentation it uses only the fixture
 directory, never Stremio's. Never cache playable stream addresses for resume or log
@@ -151,7 +151,7 @@ providers, test content URIs and test configuration belong only to debug/tests.
 Its tvOS-style screens are `ui.Page`/`ui.Item` blocks built off the main thread
 and drawn by `ui.PageAdapter`. App instrumentation finds controls by their
 visible label or content description (for example Play, Resume, Sources, Add
-favourite, Start watching, the tab names), so keep those labels exact when
+favourite, Install, the tab names), so keep those labels exact when
 restyling. Restyle the shared player for Daniil TV through app resource
 overrides, not by editing `android/playback`.
 

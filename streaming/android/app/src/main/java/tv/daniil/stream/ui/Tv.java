@@ -54,6 +54,15 @@ public final class Tv {
         view.setLetterSpacing(-0.015f);
         return view;
     }
+    /**
+     * Text that can sit over artwork gets a soft dark shadow, so it stays readable on light frames the scrim doesn't
+     * fully darken. On the plain canvas the shadow is invisible.
+     */
+    public static TextView onArtwork(TextView view) {
+        Context context = view.getContext();
+        view.setShadowLayer(dp(context, 5), 0, dp(context, 1), 0xB3000000);
+        return view;
+    }
     public static TextView oneLine(TextView view) { view.setSingleLine(true); view.setEllipsize(TextUtils.TruncateAt.END); return view; }
     public static TextView lines(TextView view, int lines) {
         view.setMaxLines(lines); view.setEllipsize(TextUtils.TruncateAt.END); view.setLineSpacing(0, 1.18f); return view;
@@ -115,30 +124,6 @@ public final class Tv {
                 button.addView(content, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                 break;
             }
-            case TILE: {
-                content.setOrientation(LinearLayout.VERTICAL);
-                content.setGravity(Gravity.START | Gravity.TOP);
-                button.setBackgroundResource(R.drawable.tv_tile_button);
-                int pad = dp(context, 18);
-                content.setPadding(pad, pad, pad, pad);
-                if (action.icon != 0) {
-                    ImageView icon = icon(context, action.icon, 28, R.color.tv_on_glass);
-                    ((LinearLayout.LayoutParams) icon.getLayoutParams()).bottomMargin = dp(context, 12);
-                    content.addView(icon);
-                }
-                TextView label = oneLine(heading(context, action.shown(), 17, R.color.tv_on_glass));
-                label.setDuplicateParentStateEnabled(true);
-                content.addView(label);
-                if (!action.detail.isEmpty()) {
-                    TextView detail = lines(text(context, action.detail, 13, R.color.tv_on_glass_secondary), 3);
-                    detail.setDuplicateParentStateEnabled(true);
-                    detail.setPadding(0, dp(context, 6), 0, 0);
-                    content.addView(detail);
-                }
-                button.setLayoutParams(new LinearLayout.LayoutParams(dp(context, 236), dp(context, 154)));
-                button.addView(content, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-                break;
-            }
             default: {
                 boolean chip = action.style == Item.Action.Style.CHIP;
                 content.setOrientation(LinearLayout.HORIZONTAL);
@@ -167,7 +152,7 @@ public final class Tv {
             }
         }
         button.setActivated(action.selected);
-        control(button, action.key, action.action, focused, action.style == Item.Action.Style.TILE ? 1.05f : LIFT_BUTTON);
+        control(button, action.key, action.action, focused, LIFT_BUTTON);
         return button;
     }
 

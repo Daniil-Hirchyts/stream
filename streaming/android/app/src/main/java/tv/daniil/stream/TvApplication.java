@@ -27,6 +27,8 @@ public final class TvApplication extends Application {
         public final AddonRepository addons;
         public final ImportRepository imports;
         public final SharedPreferences playerPreferences;
+        /** The starter add-ons the store and an empty Home offer (none under local-only instrumentation). */
+        public final java.util.List<String> starters;
         Services(TvApplication app, String database) {
             // A new process owns no playback session yet. Recover only our disposable playback directories.
             clear(new java.io.File(app.getCacheDir(), "payload"));
@@ -35,6 +37,7 @@ public final class TvApplication extends Application {
             addons = new AddonRepository(store, RuntimeOptions.addonDirectory(app));
             imports = new ImportRepository(app, store);
             playerPreferences = app.getSharedPreferences(RuntimeOptions.playerPreferences(database), MODE_PRIVATE);
+            starters = RuntimeOptions.starterAddons(app);
             tv.daniil.playback.Capabilities.load(app);
         }
         private static void clear(java.io.File file) {

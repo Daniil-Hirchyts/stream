@@ -95,7 +95,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 main.post(() -> {
                     if (!current(mine)) return;
                     services = data; title = chosen;
-                    session = new PlaybackSession(this, data.playerPreferences, "Daniil TV", "DaniilTV/0.1", this, 24 << 20);
+                    session = new PlaybackSession(this, data.playerPreferences, getString(R.string.app_name), "DaniilTV/0.1", this, 24 << 20);
                     session.player().setTrackSelectionParameters(session.player().getTrackSelectionParameters().buildUpon().setMaxVideoSize(1920, 1080).build());
                     session.player().addAnalyticsListener(new AnalyticsListener() {
                         @Override public void onDroppedVideoFrames(EventTime time, int count, long elapsedMs) { droppedFrames += count; }

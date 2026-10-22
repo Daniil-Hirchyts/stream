@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stream's mark: a rounded play symbol sending out two waves. Inside the adaptive icon's 66 dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M30.00,40.00 L30.00,68.00 Q30.00,74.00 35.17,70.96 L58.83,57.04 Q64.00,54.00 58.83,50.96 L35.17,37.04 Q30.00,34.00 30.00,40.00 Z" />
+    <path android:pathData="M67.97,42.30 A19,19 0 0,1 67.97,65.70"
+        android:strokeColor="#FFFFFFFF" android:strokeAlpha="1.0" android:strokeWidth="5.0" android:strokeLineCap="round" />
+    <path android:pathData="M74.28,37.38 A27,27 0 0,1 74.28,70.62"
+        android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.55" android:strokeWidth="5.0" android:strokeLineCap="round" />
+</vector>

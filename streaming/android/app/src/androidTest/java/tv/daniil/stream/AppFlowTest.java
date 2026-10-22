@@ -11,11 +11,11 @@ import org.junit.runner.RunWith;
 @RunWith(AndroidJUnit4.class)
 public final class AppFlowTest extends AppHarness {
     @Test public void firstRunCanSkipProvidersAndNavigateWithPointerAndRemote() throws Exception {
-        launch(); tap("Start watching", false); waitUntil("empty home", 10_000, () -> visible("Make yourself at home"));
-        assertTrue(services.store.addons().isEmpty()); tap("Settings", true); tap("Audio language", false); tap("English", true);
+        launch(); waitUntil("empty home", 10_000, () -> visible("Make yourself at home"));
+        assertTrue(services.store.addons().isEmpty()); tap("Settings", true); tap("Languages", false); tap("Audio language", false); tap("English", true);
         waitUntil("language saved", 5000, () -> services.store.preference("audioLanguage", "").equals("eng"));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
-        tap("Imports", false); waitUntil("imports screen", 5000, () -> visible("Add magnet or torrent URL"));
+        tap("Torrents", true); tap("Imports", false); waitUntil("imports screen", 5000, () -> visible("Add magnet or torrent URL"));
     }
     @Test public void catalogueFavouritesPlaybackControlsAndEvictedRewindWork() throws Exception {
         playFilm();
@@ -55,7 +55,7 @@ public final class AppFlowTest extends AppHarness {
         assertTrue(services.store.history(false).stream().anyMatch(p -> p.video.equals("fixture:episode/custom?part=2")));
     }
     @Test public void addonStoreReviewsInstallsAndFiltersListedAddons() throws Exception {
-        services.store.setPreference("onboardingDone", "true"); launch();
+        launch();
         tap("Settings", true); tap("Add-on store", false); waitUntil("store lists", 15_000, () -> visible("Setup fixture") || visible("Local fixtures"));
         assertTrue(visible("Internet Archive"));
         assertFalse(visible("Torrentio")); // Local-only instrumentation must never offer public scraper endpoints.

@@ -1,5 +1,6 @@
 <resources>
-    <string name="app_name">Daniil TV</string>
+    <string name="app_name">Stream</string>
+    <string name="player_audio_subtitles">Audio and subtitles</string>
     <style name="TvTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
         <item name="android:windowActionModeOverlay">true</item>

@@ -63,7 +63,6 @@ public final class AcceptanceTest extends AppHarness {
     }
 
     @Test public void contentFileAndMagnetImportsUseRealMetadataAndPlayback() throws Exception {
-        services.store.setPreference("onboardingDone", "true");
         android.content.Intent file = new android.content.Intent(android.content.Intent.ACTION_VIEW,
                 android.net.Uri.parse("content://tv.daniil.stream.test.files/series.torrent"), context, MainActivity.class)
                 .setType("application/x-bittorrent").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -89,7 +88,7 @@ public final class AcceptanceTest extends AppHarness {
     }
 
     @Test public void importsChooseAFileRenameAndRemoveWithoutStartingDuringBrowse() throws Exception {
-        services.store.setPreference("onboardingDone", "true"); launch(); tap("Imports", true); tap("Add magnet or torrent URL", false);
+        launch(); tap("Settings", true); tap("Torrents", false); tap("Imports", true); tap("Add magnet or torrent URL", false);
         enter(origin + "/streaming/torrents/series.torrent"); tap("Continue", true); enter("Three episodes"); tap("Continue", false);
         waitUntil("descriptor saved", 5000, () -> services.store.importIds().size() == 1);
         java.io.File[] payload = new java.io.File(context.getCacheDir(), "payload").listFiles(); assertTrue(payload == null || payload.length == 0);
@@ -104,7 +103,7 @@ public final class AcceptanceTest extends AppHarness {
     }
 
     @Test public void addonSettingsAndPlaybackPreferencesWorkThroughRealRows() throws Exception {
-        services.store.setPreference("onboardingDone", "true"); launch(); tap("Settings", true); tap("Add add-on", false);
+        launch(); tap("Settings", true); tap("Add add-on", false);
         enter(origin + "/addon/good/settings/manifest.json"); tap("Continue", true); tap("Install", false);
         waitUntil("addon installed", 5000, () -> services.store.addons().size() == 1);
         tap("Local fixtures", true); tap("Disable add-on", false);
@@ -113,14 +112,15 @@ public final class AcceptanceTest extends AppHarness {
         tap("Move earlier", false); tap("Move later", true); tap("Generated films", false);
         waitUntil("catalogue hidden", 5000, () -> { InstalledAddon a = services.store.addons().get(0); return !services.store.catalogVisible(a.id, "movie", "films/list"); });
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); tap("Settings", true);
-        tap("Audio language", false); tap("Russian", true); tap("Subtitle language", false); tap("English", true);
+        tap("Languages", false); tap("Audio language", false); tap("Russian", true); tap("Subtitle language", false); tap("English", true);
+        tap("Subtitles", true);
         for (String[] setting : new String[][]{{"size", "large"}, {"color", "yellow"}, {"edge", "outline"}, {"position", "raised"}}) {
             tap("Subtitle " + setting[0], false); tap(setting[1], true);
             waitUntil("style saved", 5000, () -> setting[1].equals(services.playerPreferences.getString("subtitle_" + setting[0], "")));
         }
-        tap("Playback cache", false); tap("128 MiB", true); waitUntil("cache preference", 5000, () -> services.cacheBytes() == (128L << 20));
+        tap("Playback", false); tap("Playback cache", false); tap("128 MiB", true); waitUntil("cache preference", 5000, () -> services.cacheBytes() == (128L << 20));
         tap("Play next episode", false); waitUntil("autoplay preference", 5000, () -> services.store.preference("autoplay", "true").equals("false"));
-        tap("Clear app playback and metadata cache", true); tap("Developer", false); tap("Open source notices", true); tap("libtorrent", false);
+        tap("Clear app playback and metadata cache", true); tap("About", false); tap("Developer", false); tap("Open source notices", true); tap("libtorrent", false);
         waitUntil("license text", 5000, () -> visible("Open source notices")); tap("Close", true);
         tap("Settings", false); tap("Local fixtures", true); tap("Remove add-on", false);
         waitUntil("addon removed", 5000, () -> services.store.addons().isEmpty());
