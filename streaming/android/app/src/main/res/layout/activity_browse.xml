@@ -114,7 +114,10 @@
                 android:clipChildren="false"
                 android:clipToPadding="false"
                 android:orientation="horizontal"
-                android:padding="4dp" />
+                android:paddingStart="8dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="4dp" />
         </FrameLayout>
     </FrameLayout>
 </FrameLayout>

@@ -95,9 +95,13 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private TextView tab(String screen) {
         TextView tab = Tv.heading(this, screen, 17, R.color.tv_tab_text);
         tab.setGravity(Gravity.CENTER); tab.setBackgroundResource(R.drawable.tv_tab); tab.setContentDescription(screen);
-        tab.setPadding(Tv.dp(this, 22), 0, Tv.dp(this, 22), 0);
-        tab.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, Tv.dp(this, 44)));
-        Tv.control(tab, "nav:" + screen, () -> { stayOnTabs = true; root(screen); }, key -> {}, 1.06f);
+        tab.setDefaultFocusHighlightEnabled(false);
+        tab.setPadding(Tv.dp(this, 20), 0, Tv.dp(this, 20), 0);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, Tv.dp(this, 44));
+        params.setMarginStart(Tv.dp(this, 3)); params.setMarginEnd(Tv.dp(this, 3));
+        tab.setLayoutParams(params);
+        Tv.control(tab, "nav:" + screen, () -> { stayOnTabs = true; root(screen); }, key -> {}, 1.06f, false);
         return tab;
     }
     private void initialize() {

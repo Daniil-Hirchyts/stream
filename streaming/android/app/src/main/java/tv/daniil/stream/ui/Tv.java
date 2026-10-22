@@ -49,19 +49,28 @@ public final class Tv {
      * focus by key. Touch requests focus on press so the first tap both focuses and activates.
      */
     public static void control(View view, String key, Runnable action, Consumer<String> focused, float lift) {
+        control(view, key, action, focused, lift, true);
+    }
+
+    public static void control(View view, String key, Runnable action, Consumer<String> focused, float lift, boolean raise) {
         view.setTag(key);
         view.setFocusable(true); view.setFocusableInTouchMode(true); view.setClickable(true);
         view.setOnTouchListener((v, event) -> { if (event.getActionMasked() == MotionEvent.ACTION_DOWN && !v.isFocused()) v.requestFocus(); return false; });
         view.setOnClickListener(v -> { focused.accept(key); action.run(); });
-        view.setOnFocusChangeListener((v, has) -> { if (has) focused.accept(key); animate(v, has, lift); });
-        animate(view, view.isFocused(), lift);
+        view.setOnFocusChangeListener((v, has) -> { if (has) focused.accept(key); animate(v, has, lift, raise); });
+        animate(view, view.isFocused(), lift, raise);
     }
 
     /** tvOS focus: the focused control grows and floats above its neighbours. */
     public static void animate(View view, boolean focused, float lift) {
+        animate(view, focused, lift, true);
+    }
+
+    /** Some controls have enough layout clearance to grow without an elevation shadow. */
+    public static void animate(View view, boolean focused, float lift, boolean raise) {
         float scale = focused ? lift : 1f;
         view.animate().cancel();
-        view.animate().scaleX(scale).scaleY(scale).translationZ(focused ? dp(view.getContext(), 14) : 0)
+        view.animate().scaleX(scale).scaleY(scale).translationZ(focused && raise ? dp(view.getContext(), 14) : 0)
                 .setDuration(focused ? 180 : 140).setInterpolator(EASE).start();
     }
 
