@@ -13,6 +13,11 @@
         <item name="android:alertDialogTheme">@style/TvDialog</item>
     </style>
     <!-- Dark, rounded sheets. Lists and buttons keep the platform's focus and touch behaviour. -->
+    <style name="Spinner">
+        <item name="android:indeterminateDrawable">@drawable/tv_loading_indicator</item>
+        <item name="android:indeterminateTint">@color/tv_text</item>
+        <item name="android:indeterminateTintMode">src_in</item>
+    </style>
     <style name="TvDialog" parent="android:style/Theme.Material.Dialog.Alert">
         <item name="android:windowBackground">@drawable/tv_dialog</item>
         <item name="android:colorBackground">@color/tv_surface</item>

@@ -8,6 +8,9 @@ import tv.daniil.stream.addon.Title;
 interface Navigator {
     void push(Route next);
     void root(String screen);
+    void search();
+    void searchInput(String value);
+    void openImports();
     void back();
     /** Rebuilds the current route. */
     void refresh();

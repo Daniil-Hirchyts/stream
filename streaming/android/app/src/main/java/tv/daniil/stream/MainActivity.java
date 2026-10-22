@@ -47,7 +47,7 @@ import tv.daniil.stream.ui.Tv;
  * route render owns a cancellable provider scope and a generation, so late results never reach a newer screen.
  */
 public final class MainActivity extends Activity implements Navigator, PageAdapter.Listener {
-    private static final String[] TABS = {"Home", "Search", "Library", "History", "Imports", "Settings"};
+    private static final String[] TABS = {"Home", "Library", "Settings"};
     private static final int PICK_TORRENT = 21;
     private TvApplication app;
     private TvApplication.Services services;
@@ -56,6 +56,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private Artwork artwork;
     private Backdrop backdrop;
     private LinearLayout navigation;
+    private View topBarControls, searchButton, searchExpandedView, searchClose;
+    private TextView searchQuery;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Route> stack = new ArrayList<>();
     private final Set<Dialog> dialogs = new HashSet<>();
@@ -66,6 +68,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private Future<?> pending;
     private int generation;
     private boolean stopped, contentReady, incomingHandled;
+    private boolean searchExpanded;
+    private String searchReturnTab = "Home";
     /** A tab was chosen: leave focus on the tab bar rather than jumping into the new page. */
     private boolean stayOnTabs;
     @Nullable private Uri incomingFile;
@@ -84,11 +88,25 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         adapter = new PageAdapter(this, artwork, this);
         list.setAdapter(adapter);
         navigation = findViewById(R.id.navigation);
+        topBarControls = findViewById(R.id.top_bar_controls);
+        searchButton = findViewById(R.id.search_button);
+        searchExpandedView = findViewById(R.id.search_expanded);
+        searchQuery = findViewById(R.id.search_query);
+        searchClose = findViewById(R.id.search_close);
+        searchButton.setDefaultFocusHighlightEnabled(false);
+        searchClose.setDefaultFocusHighlightEnabled(false);
         for (String screen : TABS) navigation.addView(tab(screen));
+        Tv.control(searchButton, "nav:search", this::search, key -> {}, 1.06f, false);
+        Tv.control(searchClose, "search:close", this::closeSearch, key -> {}, 1.04f, false);
         if (android.os.Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackPressed);
-        if (saved != null) restore(saved.getString("routes", ""));
+        if (saved != null) {
+            searchReturnTab = saved.getString("searchReturnTab", "Home");
+            restore(saved.getString("routes", ""));
+        }
         if (stack.isEmpty()) stack.add(new Route("Starting"));
+        if (stack.get(0).screen.equals("Search")) searchExpanded = true;
+        searchReturnTab = primaryTab(searchReturnTab);
         loading();
         initialize();
     }
@@ -96,7 +114,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         TextView tab = Tv.heading(this, screen, 17, R.color.tv_tab_text);
         tab.setGravity(Gravity.CENTER); tab.setBackgroundResource(R.drawable.tv_tab); tab.setContentDescription(screen);
         tab.setDefaultFocusHighlightEnabled(false);
-        tab.setPadding(Tv.dp(this, 20), 0, Tv.dp(this, 20), 0);
+        tab.setPadding(Tv.dp(this, 14), 0, Tv.dp(this, 14), 0);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, Tv.dp(this, 44));
         params.setMarginStart(Tv.dp(this, 3)); params.setMarginEnd(Tv.dp(this, 3));
@@ -120,8 +138,54 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private Route route() { return stack.get(stack.size() - 1); }
     private void rememberFocus() { if (!stack.isEmpty()) route().scroll = list.getLayoutManager().onSaveInstanceState(); }
     @Override public void root(String screen) {
+        if (screen.equals("Search")) { search(); return; }
         if (services == null) return;
+        searchExpanded = false;
+        if (isPrimaryTab(screen)) searchReturnTab = screen;
         rememberFocus(); stack.clear(); stack.add(new Route(screen)); render();
+    }
+    @Override public void search() {
+        if (services == null) return;
+        if (!stack.isEmpty() && stack.get(0).screen.equals("Search")) {
+            searchExpanded = true; syncSearchQuery(); chrome(route().screen); return;
+        }
+        searchReturnTab = stack.isEmpty() ? "Home" : primaryTab(stack.get(0).screen);
+        searchExpanded = true;
+        rememberFocus(); stack.clear(); stack.add(new Route("Search")); render();
+    }
+    @Override public void searchInput(String value) {
+        for (Route saved : stack) if (saved.screen.equals("Search")) {
+            saved.value = value; saved.searchSubmitted = false;
+        }
+        syncSearchQuery();
+    }
+    @Override public void openImports() {
+        if (services == null) return;
+        if (stack.size() == 1 && stack.get(0).screen.equals("Settings")) push(new Route("Imports"));
+        else { root("Settings"); push(new Route("Imports")); }
+    }
+    private void closeSearch() {
+        if (!searchExpanded) return;
+        searchExpanded = false;
+        root(primaryTab(searchReturnTab));
+    }
+    private boolean isPrimaryTab(String screen) {
+        for (String tab : TABS) if (tab.equals(screen)) return true;
+        return false;
+    }
+    private String primaryTab(String screen) {
+        if (screen.equals("History")) return "Library";
+        if (screen.equals("Imports") || screen.equals("Add-on") || screen.equals("Developer")) return "Settings";
+        if (screen.equals("Search")) return isPrimaryTab(searchReturnTab) ? searchReturnTab : "Home";
+        return isPrimaryTab(screen) ? screen : "Home";
+    }
+    private void syncSearchQuery() {
+        if (searchQuery == null) return;
+        String value = "";
+        for (Route saved : stack) if (saved.screen.equals("Search")) value = saved.value;
+        boolean empty = value.isEmpty();
+        searchQuery.setText(empty ? "Search films, series and imports" : value);
+        searchQuery.setTextColor(getColor(empty ? R.color.tv_text_secondary : R.color.tv_text));
     }
     @Override public void push(Route next) { rememberFocus(); stack.add(next); render(); }
     @Override public void back() { onBackPressed(); }
@@ -142,7 +206,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             case "Home": return browse.home(request);
             case "Search": return browse.search(route, request);
             case "Library": return browse.library();
-            case "History": return browse.history();
+            case "History": return browse.library();
             case "Imports": return setup.imports();
             case "Settings": return setup.settings();
             case "Add-on": return setup.addon(route);
@@ -157,9 +221,12 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     /** Tabs are hidden during onboarding; the active tab follows the bottom of the stack. */
     private void chrome(String screen) {
         boolean tabs = !screen.equals("Welcome") && !screen.equals("Starting");
-        findViewById(R.id.navigation).setVisibility(tabs ? View.VISIBLE : View.INVISIBLE);
-        String rootScreen = stack.get(0).screen;
+        boolean expanded = tabs && searchExpanded;
+        topBarControls.setVisibility(tabs && !expanded ? View.VISIBLE : View.INVISIBLE);
+        searchExpandedView.setVisibility(expanded ? View.VISIBLE : View.GONE);
+        String rootScreen = stack.isEmpty() ? "Home" : primaryTab(stack.get(0).screen);
         for (int i = 0; i < navigation.getChildCount(); i++) navigation.getChildAt(i).setActivated(TABS[i].equals(rootScreen));
+        syncSearchQuery();
     }
     private void show(Page page) {
         contentReady = false;
@@ -168,7 +235,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         title.setText(page.title == null ? "" : page.title);
         title.setVisibility(page.title == null ? View.GONE : View.VISIBLE);
         int headerHeight = findViewById(R.id.top_bar).getHeight();
-        if (headerHeight == 0) headerHeight = Tv.dp(this, 80);
+        if (headerHeight == 0) headerHeight = Tv.dp(this, 84);
         FrameLayout.LayoutParams titlePosition = (FrameLayout.LayoutParams) title.getLayoutParams();
         titlePosition.topMargin = headerHeight + Tv.dp(this, 8);
         title.setLayoutParams(titlePosition);
@@ -226,13 +293,13 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         return null;
     }
     private View currentTab() {
-        String rootScreen = stack.get(0).screen;
+        String rootScreen = stack.isEmpty() ? "Home" : primaryTab(stack.get(0).screen);
         for (int i = 0; i < TABS.length; i++) if (TABS[i].equals(rootScreen)) return navigation.getChildAt(i);
         return navigation.getChildAt(0);
     }
     private void loading() {
         contentReady = false;
-        adapter.set(java.util.Collections.singletonList(Item.loading(new Item.Action("cancel", Item.Action.Style.SECONDARY, "Cancel", this::onBackPressed))), "");
+        adapter.set(java.util.Collections.singletonList(Item.loading()), "");
     }
     private void failed(Throwable e) {
         Page page = new Page().add(Item.message(e instanceof AddonException && ((AddonException) e).kind == AddonException.Kind.CERTIFICATE ? R.drawable.ic_tv_info : R.drawable.ic_tv_offline,
@@ -338,7 +405,9 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         }
     }
     private void importFile(Uri uri) {
-        edit("Name this import", "Title", "Imported torrent", name -> then(() -> services.imports.addFile(name, uri, scope), () -> root("Imports")));
+        edit("Name this import", "Title", "Imported torrent", name -> then(() -> services.imports.addFile(name, uri, scope), () -> {
+            if (!stack.isEmpty() && route().screen.equals("Imports")) render(); else openImports();
+        }));
     }
     @Override public void notices() {
         String[] files = {"androidx.txt", "libtorrent.txt", "boost.txt", "openssl.txt", "ed25519.txt", "try-signal.txt"};
@@ -385,7 +454,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     /** tvOS order: Back leaves a pushed screen, then moves to the tab bar, then Home, then exits. */
     @Override public void onBackPressed() {
         if (stack.size() > 1) { cancelWork(); stack.remove(stack.size() - 1); render(); return; }
-        boolean tabs = navigation.getVisibility() == View.VISIBLE && services != null;
+        if (searchExpanded && !stack.isEmpty() && stack.get(0).screen.equals("Search")) { closeSearch(); return; }
+        boolean tabs = topBarControls.getVisibility() == View.VISIBLE && services != null;
         if (tabs && !navigation.hasFocus()) { currentTab().requestFocus(); return; }
         if (tabs && !route().screen.equals("Home")) { root("Home"); return; }
         finish();
@@ -405,6 +475,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out); rememberFocus();
         out.putBoolean("incomingHandled", incomingHandled);
+        out.putString("searchReturnTab", searchReturnTab);
         try {
             JSONArray routes = new JSONArray();
             for (Route r : stack) routes.put(r.save());

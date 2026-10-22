@@ -67,7 +67,7 @@ final class SetupScreens {
     }
 
     Page settings() {
-        Page page = new Page().panel(R.drawable.ic_tv_settings, "Settings", "Add-ons, languages, subtitles, playback and storage.");
+        Page page = new Page().panel(R.drawable.ic_tv_settings, "Settings", "Imports, add-ons, languages, subtitles, playback and storage.");
         page.add(Item.header("Add-ons"));
         page.add(Item.row("add-addon", R.drawable.ic_tv_add, "Add add-on", "", nav::addAddon));
         for (InstalledAddon a : services.store.addons()) {
@@ -75,6 +75,10 @@ final class SetupScreens {
                 Route r = new Route("Add-on"); r.value = a.id; nav.push(r);
             }));
         }
+        int importCount = services.store.importIds().size();
+        page.add(Item.header("Imports"));
+        page.add(Item.row("manage-imports", R.drawable.ic_tv_download, "Imports",
+                importCount == 0 ? "No imports" : importCount + (importCount == 1 ? " title" : " titles"), nav::openImports));
         page.add(Item.header("Languages"));
         page.add(Item.row("audio-language", R.drawable.ic_tv_audio, "Audio language", languageName(services.store.preference("audioLanguage", "")),
                 () -> language("audioLanguage", "Audio language")));

@@ -5,11 +5,12 @@ import androidx.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Consumer;
 import tv.daniil.stream.addon.Title;
 
 /** One block of a page. Screens build these on workers; {@link PageAdapter} turns them into views. */
 public final class Item {
-    public enum Kind { SPOTLIGHT, DETAILS, INTRO, HEADER, SHELF, GRID, ACTIONS, CHIPS, LIST, SOURCE, FIELD, MESSAGE, NOTICE, TEXT, LOADING }
+    public enum Kind { SPOTLIGHT, DETAILS, INTRO, HEADER, SHELF, GRID, ACTIONS, CHIPS, LIST, SOURCE, FIELD, KEYBOARD, MESSAGE, NOTICE, TEXT, LOADING }
 
     /** A poster, landscape thumbnail or catalogue card. */
     public static final class Tile {
@@ -63,6 +64,8 @@ public final class Item {
     public Tile.Style style = Tile.Style.POSTER;
     public List<Tile> tiles = Collections.emptyList();
     public List<Action> actions = Collections.emptyList();
+    @Nullable public Consumer<String> keyboardInput;
+    @Nullable public Runnable keyboardSubmit;
 
     private Item(Kind kind, String key) { this.kind = kind; this.key = key; }
 
@@ -99,6 +102,9 @@ public final class Item {
     public static Item field(String key, String label, String value, Runnable action) {
         Item i = new Item(Kind.FIELD, key); i.title = label; i.value = value; i.action = action; return i;
     }
+    public static Item keyboard(String key, String value, Consumer<String> input, Runnable submit) {
+        Item i = new Item(Kind.KEYBOARD, key); i.value = value; i.keyboardInput = input; i.keyboardSubmit = submit; return i;
+    }
     /** A centred empty, error or loading state with its next steps. */
     public static Item message(@DrawableRes int icon, String title, String detail, Action... actions) {
         Item i = new Item(Kind.MESSAGE, "message:" + title); i.icon = icon; i.title = title; i.detail = detail; i.actions = list(actions); return i;
@@ -108,7 +114,7 @@ public final class Item {
         Item i = new Item(Kind.NOTICE, "notice:" + title); i.icon = icon; i.title = title; i.detail = detail; i.actions = list(actions); return i;
     }
     public static Item text(String title, String detail) { Item i = new Item(Kind.TEXT, "text:" + title); i.title = title; i.detail = detail; return i; }
-    public static Item loading(Action cancel) { Item i = new Item(Kind.LOADING, "loading"); i.actions = Collections.singletonList(cancel); return i; }
+    public static Item loading() { return new Item(Kind.LOADING, "loading"); }
 
     private static <T> List<T> list(T[] values) {
         List<T> out = new ArrayList<>(); for (T v : values) out.add(v); return out;

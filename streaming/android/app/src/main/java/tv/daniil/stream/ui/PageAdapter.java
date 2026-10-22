@@ -67,6 +67,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     }
     private static boolean contains(Item item, String key) {
         if (item.key.equals(key)) return true;
+        if (item.kind == Item.Kind.KEYBOARD && key.startsWith(item.key + ":")) return true;
         for (Item.Tile t : item.tiles) if (t.key.equals(key)) return true;
         for (Item.Action a : item.actions) if (a.key.equals(key)) return true;
         return false;
@@ -105,10 +106,12 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             case LIST: return row(item);
             case SOURCE: return source(item);
             case FIELD: return field(item);
+            case KEYBOARD: return keyboard(item);
             case MESSAGE: return message(item);
             case NOTICE: return notice(item);
             case TEXT: return text(item);
-            default: return loading(item);
+            case LOADING: return loading();
+            default: return loading();
         }
     }
 
@@ -534,12 +537,104 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         root.setLayoutParams(fill());
         return root;
     }
-    private View loading(Item item) {
-        LinearLayout root = column(); root.setGravity(Gravity.CENTER_HORIZONTAL); root.setPadding(gutterStart, dp(96), gutterEnd, 0);
-        ProgressBar spinner = new ProgressBar(context); spinner.setIndeterminateTintList(Tv.colors(context, R.color.tv_text));
-        root.addView(spinner, new LinearLayout.LayoutParams(dp(44), dp(44)));
-        TextView label = Tv.text(context, "Loading…", 17, R.color.tv_text_secondary); label.setPadding(0, dp(16), 0, dp(8)); root.addView(label, wrap());
-        root.addView(actions(item, Gravity.CENTER_HORIZONTAL));
+    private View keyboard(Item item) {
+        LinearLayout root = column();
+        root.setGravity(Gravity.CENTER_HORIZONTAL);
+        root.setPadding(gutterStart, dp(10), gutterEnd, dp(12));
+        TextView label = Tv.heading(context, "On-screen keyboard", 14, R.color.tv_text_secondary);
+        label.setLetterSpacing(0.12f);
+        label.setGravity(Gravity.CENTER);
+        label.setPadding(0, 0, 0, dp(10));
+        root.addView(label, wrap());
+
+        LinearLayout keys = new LinearLayout(context);
+        keys.setOrientation(LinearLayout.VERTICAL);
+        keys.setGravity(Gravity.CENTER_HORIZONTAL);
+        root.addView(keys, wrap());
+
+        StringBuilder query = new StringBuilder(item.value);
+        boolean[] symbols = {false};
+        Runnable[] rebuild = new Runnable[1];
+        rebuild[0] = () -> {
+            keys.removeAllViews();
+            String[] first = symbols[0] ? new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0"}
+                    : new String[]{"Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"};
+            String[] second = symbols[0] ? new String[]{"@", "#", "$", "%", "&", "-", "+", "(", ")"}
+                    : new String[]{"A", "S", "D", "F", "G", "H", "J", "K", "L"};
+            String[] third = symbols[0] ? new String[]{".", ",", "?", "!", "'", ":", ";", "/"}
+                    : new String[]{"Z", "X", "C", "V", "B", "N", "M"};
+            addKeyboardRow(keys, item, first, 58, query);
+            addKeyboardRow(keys, item, second, 58, query);
+            String[] last = new String[third.length + 1];
+            System.arraycopy(third, 0, last, 0, third.length); last[last.length - 1] = "⌫";
+            addKeyboardRow(keys, item, last, 58, query);
+            LinearLayout row = new LinearLayout(context); row.setGravity(Gravity.CENTER);
+            keys.addView(row, wrap());
+            addKeyboardButton(row, item, symbols[0] ? "ABC" : "123", symbols[0] ? "Switch to letters" : "Switch to numbers and symbols", 76,
+                    () -> {
+                        symbols[0] = !symbols[0]; rebuild[0].run();
+                        keys.post(() -> {
+                            View firstKey = keys.findViewWithTag(item.key + ":" + (symbols[0] ? "1" : "Q"));
+                            if (firstKey != null) firstKey.requestFocus();
+                        });
+                    });
+            addKeyboardButton(row, item, "Space", "Insert a space", 180, () -> {
+                if (query.length() < 120) query.append(' ');
+                if (item.keyboardInput != null) item.keyboardInput.accept(query.toString());
+            });
+            addKeyboardButton(row, item, "Clear", "Clear search", 92, () -> {
+                query.setLength(0);
+                if (item.keyboardInput != null) item.keyboardInput.accept("");
+            });
+            addKeyboardButton(row, item, "Search", "Search", 124, () -> {
+                if (item.keyboardSubmit != null) item.keyboardSubmit.run();
+            });
+        };
+        rebuild[0].run();
+        root.setLayoutParams(fill());
+        return root;
+    }
+
+    private void addKeyboardRow(LinearLayout keys, Item item, String[] labels, int width, StringBuilder query) {
+        LinearLayout row = new LinearLayout(context); row.setGravity(Gravity.CENTER);
+        keys.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(56)));
+        for (String label : labels) {
+            boolean backspace = label.equals("⌫");
+            addKeyboardButton(row, item, label, backspace ? "Delete last character" : "Type " + label,
+                    backspace ? 76 : width, () -> {
+                        if (backspace) {
+                            if (query.length() > 0) query.deleteCharAt(query.length() - 1);
+                        } else if (query.length() < 120) query.append(label);
+                        if (item.keyboardInput != null) item.keyboardInput.accept(query.toString());
+                    });
+        }
+    }
+
+    private void addKeyboardButton(LinearLayout row, Item item, String label, String description, int width, Runnable action) {
+        TextView key = Tv.heading(context, label, label.length() == 1 ? 21 : 16, R.color.tv_on_glass);
+        key.setGravity(Gravity.CENTER);
+        key.setSingleLine(true);
+        key.setContentDescription(description);
+        key.setBackgroundResource(label.equals("Search") ? R.drawable.tv_chip : R.drawable.tv_button);
+        key.setDefaultFocusHighlightEnabled(false);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(width), dp(48));
+        params.setMargins(dp(3), dp(3), dp(3), dp(3));
+        row.addView(key, params);
+        Tv.control(key, item.key + ":" + label, action, this::focused, 1.04f, false);
+    }
+
+    private View loading() {
+        LinearLayout root = column(); root.setGravity(Gravity.CENTER);
+        root.setMinimumHeight(dp(260));
+        root.setPadding(gutterStart, dp(24), gutterEnd, dp(24));
+        ProgressBar spinner = new ProgressBar(context);
+        spinner.setIndeterminateDrawable(context.getDrawable(R.drawable.tv_loading_indicator));
+        spinner.setContentDescription("Loading");
+        root.addView(spinner, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        TextView label = Tv.heading(context, "Loading", 14, R.color.tv_text_secondary);
+        label.setLetterSpacing(0.14f);
+        label.setPadding(0, dp(18), 0, 0);
+        root.addView(label, wrap());
         root.setLayoutParams(fill());
         return root;
     }
