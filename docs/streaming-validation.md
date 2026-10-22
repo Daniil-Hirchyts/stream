@@ -319,6 +319,12 @@ Executed here:
   `:app:lintRelease` pass. Each lint variant reports 0 errors and the same 16
   advisory warnings as before; none is in new code. The unsigned release APK
   is 28,805,651 bytes.
+- After merging main's navigation, search and loading-state work (the store
+  becomes the fourth tab beside Home, Library and Settings), the same builds,
+  offline JVM tests and both lint variants pass again: 0 errors, 24 warnings,
+  none in the store, listing or built-in add-on code. Main's existing
+  instrumentation still taps the removed Imports, History and Search tabs and
+  needs updating before `./streaming/simulator.sh test` can pass.
 - `:app:testDebugUnitTest`: 6 offline JVM tests pass (store protocol, listing
   rules, built-in add-on, torrent fallback trackers, Archive file selection).
 - `:app:testDebugUnitTest -PliveAddons=true`: all 10 pass, including the 4
