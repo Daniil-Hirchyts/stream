@@ -105,16 +105,6 @@
             android:paddingTop="20dp"
             android:paddingEnd="48dp"
             android:paddingBottom="8dp">
-            <ImageView
-                android:id="@+id/brand"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_gravity="start|center_vertical"
-                android:contentDescription="@string/app_name"
-                android:importantForAccessibility="yes"
-                android:scaleType="centerInside"
-                android:src="@drawable/ic_tv_tv"
-                android:tint="@color/tv_text" />
             <LinearLayout
                 android:id="@+id/navigation"
                 android:layout_width="wrap_content"
@@ -125,26 +115,6 @@
                 android:clipToPadding="false"
                 android:orientation="horizontal"
                 android:padding="4dp" />
-            <TextClock
-                android:id="@+id/clock"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="end|center_vertical"
-                android:background="@drawable/tv_clock"
-                android:format12Hour="h:mm"
-                android:format24Hour="HH:mm"
-                android:importantForAccessibility="no"
-                android:fontFamily="sans-serif-medium"
-                android:paddingStart="12dp"
-                android:paddingTop="6dp"
-                android:paddingEnd="12dp"
-                android:paddingBottom="6dp"
-                android:shadowColor="#CC000000"
-                android:shadowDx="0"
-                android:shadowDy="1"
-                android:shadowRadius="3"
-                android:textColor="@color/tv_text"
-                android:textSize="20sp" />
         </FrameLayout>
     </FrameLayout>
 </FrameLayout>
