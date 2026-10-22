@@ -18,11 +18,39 @@ Android SDK/NDK/CMake versions pinned in `streaming/native/deps.lock`.
 
 Welcome offers Cinemeta for explicit review/acceptance, a configured source
 add-on, manual imports and language preferences. Skipping providers leaves
-imports available. Home, Search, Library, History, Imports and Settings are in
-the left navigation. Details provide Play/Resume, Sources, watched/favourite
-controls and seasons/episodes. Settings manage add-ons, catalogue visibility,
-languages, subtitle style, cache size (128/256/512 MiB), autoplay and app-cache
-cleanup. Versions, statistics and license texts live in Developer views.
+imports available, and a profile that already has an add-on or import goes
+straight to Home. Home, Search, Library, History, Imports and Settings are tabs
+in a floating bar at the top. Details provide Play/Resume, Sources,
+watched/favourite controls and seasons/episodes. Settings manage add-ons,
+catalogue visibility, languages, subtitle style, cache size (128/256/512 MiB),
+autoplay and app-cache cleanup. Versions, statistics and license texts live in
+Developer views.
+
+### Design
+
+The browse UI follows tvOS. Artwork fills the screen behind a dark scrim. On
+Home, a spotlight shows the focused card's logo or title, facts and
+description, and the backdrop cross-fades to its art once focus settles.
+Shelves scroll horizontally. Focused cards, buttons and rows grow and lift,
+and buttons turn white with dark text. Settings, Imports and Developer use the
+tvOS split layout: a large icon on the left, rows on the right. Dialogs use the
+`TvDialog` sheet style. The shared player gets the same neutral palette through
+app resource overrides (`res/values/colors.xml`, `bg_panel`, `pill`,
+`bg_card_soft`), so Daniil Cast keeps its own look.
+
+Screens are built off the main thread as `ui.Page` lists of `ui.Item` blocks
+(`BrowseScreens`, `TitleScreens`, `SetupScreens`), and `ui.PageAdapter` turns
+them into views. Every focusable view is tagged with a stable key. That lets
+Back restore focus and lets the instrumentation find controls by label.
+`MainActivity` only owns the back stack, chrome, dialogs and worker
+generations.
+
+Catalogue add-ons such as Cinemeta describe titles but supply no video.
+Details and Sources say so ("No source add-on installed") and offer to add a
+source add-on. The player names the actual cause when nothing can play: no
+source add-on, failing providers (by name and reason), only unsupported
+results, or no results. The app never installs or suggests a specific source
+provider.
 
 `WatchActivity` re-resolves sources and uses the shared player. `SourcePolicy`
 checks advertised hints and actual Media3 formats against the 1080p profile.
@@ -31,6 +59,9 @@ choices are preserved. Ambiguous multi-file torrents require a file choice.
 Leaving/backgrounding playback saves progress and releases Media3, native
 sessions and payload files. Restart reconstructs playback from descriptors;
 startup recovers disposable payload/subtitle files left by a killed process.
+When the cache and the 512 MiB free-space reserve don't fit, the player offers
+two fixes and retries the same source: clearing this app's own payload,
+subtitle and metadata caches, or switching to a 128 MiB cache.
 
 File imports accept Android `content://` grants through Open/Share as well as
 `ACTION_OPEN_DOCUMENT`. This TV image has no system document picker; in that

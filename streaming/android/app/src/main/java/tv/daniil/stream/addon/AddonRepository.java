@@ -157,6 +157,12 @@ public final class AddonRepository implements AutoCloseable {
         }
         return collect(tasks, keys, scope, deadline);
     }
+    /** Enabled add-ons declaring {@code resource} for this type and ID. Catalogue-only add-ons such as Cinemeta have no streams. */
+    public List<InstalledAddon> providers(String resource, String type, String id) {
+        List<InstalledAddon> found = new ArrayList<>();
+        for (InstalledAddon a : store.addons()) if (a.enabled && a.manifest.handles(resource, type, id)) found.add(a);
+        return found;
+    }
     public Result<MediaSource> streams(String type, String videoId, Cancellation scope) throws AddonException {
         return resource("stream", type, videoId, Collections.emptyMap(), "streams", MediaSource::list, scope);
     }

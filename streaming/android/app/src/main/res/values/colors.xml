@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Daniil TV palette: near-black canvas, neutral glass surfaces and white focus, after tvOS. -->
+    <color name="tv_background">#FF0A0A0D</color>
+    <color name="tv_surface">#FF1C1C1E</color>
+    <color name="tv_glass">#2EFFFFFF</color>
+    <color name="tv_glass_low">#14FFFFFF</color>
+    <color name="tv_hairline">#1FFFFFFF</color>
+    <color name="tv_text">#FFF5F5F7</color>
+    <color name="tv_text_secondary">#A6EBEBF5</color>
+    <color name="tv_text_tertiary">#66EBEBF5</color>
+    <color name="tv_on_focus">#FF111113</color>
+    <color name="tv_on_focus_secondary">#99111113</color>
+    <color name="tv_focus">#FFFFFFFF</color>
+    <color name="tv_warning">#FFFFD60A</color>
+
+    <!-- The shared player takes the same neutral palette in this app only; Daniil Cast keeps its own. -->
+    <color name="ink" tools:ignore="UnusedResources">#FF000000</color>
+    <color name="surface" tools:ignore="UnusedResources">#FF1C1C1E</color>
+    <color name="surface_raised" tools:ignore="UnusedResources">#FF2C2C2E</color>
+    <color name="line" tools:ignore="UnusedResources">#1FFFFFFF</color>
+    <color name="text_primary" tools:ignore="UnusedResources">#FFF5F5F7</color>
+    <color name="text_secondary" tools:ignore="UnusedResources">#A6EBEBF5</color>
+    <color name="text_tertiary" tools:ignore="UnusedResources">#66EBEBF5</color>
+    <color name="accent" tools:ignore="UnusedResources">#FFFFFFFF</color>
+    <color name="accent_soft" tools:ignore="UnusedResources">#33FFFFFF</color>
+</resources>

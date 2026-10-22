@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Overrides the shared player's outlined keycaps with this app's borderless glass. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools" tools:ignore="UnusedResources">
+    <solid android:color="#2EFFFFFF" />
+    <corners android:radius="12dp" />
+</shape>
