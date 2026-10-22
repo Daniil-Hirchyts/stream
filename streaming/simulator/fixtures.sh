@@ -97,4 +97,15 @@ make late-index "$late" 262144 v1
 make matroska "$mkv" 524288 hybrid
 make series "$series" 262144 hybrid
 make unicode "$unicode" 65536 v1
+
+# Independent direct HTTP adaptive fixtures, generated from our own local film (no desktop helper required).
+mkdir -p "$media/hls" "$media/dash"
+if [ ! -s "$media/hls/stream.m3u8" ]; then
+  ff -i "$late" -map 0:v -map 0:a -c copy -hls_time 4 -hls_playlist_type vod \
+    -hls_segment_filename "$media/hls/segment-%03d.ts" "$media/hls/stream.m3u8"
+fi
+if [ ! -s "$media/dash/stream.mpd" ]; then
+  ff -i "$late" -map 0:v -map 0:v -map 0:a -c:v libx264 -preset veryfast -b:v:0 3M -b:v:1 600k -s:v:1 640x360 -g 60 \
+    -c:a copy -seg_duration 4 -use_template 1 -use_timeline 1 -adaptation_sets 'id=0,streams=v id=1,streams=a' -f dash "$media/dash/stream.mpd"
+fi
 printf 'Fixtures ready in %s.\n' "$cache"

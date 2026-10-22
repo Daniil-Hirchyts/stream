@@ -27,8 +27,14 @@ public final class AddonRepository implements AutoCloseable {
         /** Per-provider/catalogue errors, alongside surviving results. No URL/error body is exposed. */
         public final Map<String, AddonException.Kind> failures;
         public final boolean stale;
+        /** Catalogue/resource identity to results, preserving separate Home rows after concurrent requests. */
+        public final Map<String, List<T>> byResource;
         Result(List<T> items, Map<String, AddonException.Kind> failures, boolean stale) {
+            this(items, failures, stale, Collections.emptyMap());
+        }
+        Result(List<T> items, Map<String, AddonException.Kind> failures, boolean stale, Map<String, List<T>> byResource) {
             this.items = Collections.unmodifiableList(items); this.failures = Collections.unmodifiableMap(failures); this.stale = stale;
+            this.byResource = Collections.unmodifiableMap(byResource);
         }
     }
     public static final class CatalogQuery {
@@ -204,8 +210,9 @@ public final class AddonRepository implements AutoCloseable {
             for (Map.Entry<Future<Part<T>>, Integer> e : pending.entrySet()) finished.put(e.getValue(), new Part<>(keys.get(e.getValue()), Collections.emptyList(), AddonException.Kind.TIMEOUT, false));
             scope.check();
             List<T> items = new ArrayList<>(); Map<String, AddonException.Kind> failures = new LinkedHashMap<>(); boolean stale = false;
-            for (Part<T> part : finished.values()) { items.addAll(part.items); if (part.failure != null) failures.put(part.key, part.failure); stale |= part.stale; }
-            return new Result<>(items, failures, stale);
+            Map<String, List<T>> groups = new LinkedHashMap<>();
+            for (Part<T> part : finished.values()) { items.addAll(part.items); groups.put(part.key, Collections.unmodifiableList(part.items)); if (part.failure != null) failures.put(part.key, part.failure); stale |= part.stale; }
+            return new Result<>(items, failures, stale, groups);
         } catch (InterruptedException | java.util.concurrent.CancellationException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             throw new AddonException(AddonException.Kind.CANCELLED, "Request cancelled");

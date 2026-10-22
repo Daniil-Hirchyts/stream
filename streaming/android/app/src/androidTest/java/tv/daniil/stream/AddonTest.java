@@ -84,7 +84,7 @@ public final class AddonTest {
     @Test public void sourceTypesIndexesHeadersAndSubtitleHintsStaySeparate() throws Exception {
         InstalledAddon a = install("good");
         try (Cancellation scope = repository.newRequest()) {
-            List<MediaSource> sources = repository.streams("series", "fixture:episode/custom?part=2", scope).items;
+            List<MediaSource> sources = repository.streams("movie", "fixture:film", scope).items;
             assertEquals(5, sources.size()); assertEquals(MediaSource.Kind.TORRENT, sources.get(0).kind);
             assertEquals(0, sources.get(0).fileIndex); assertEquals(2, sources.get(0).discovery.size());
             assertNotNull(sources.get(0).torrentSource());
@@ -185,7 +185,8 @@ public final class AddonTest {
         try (Cancellation scope = repository.newRequest()) {
             AddonRepository.Result<Title> result = repository.search("Generated", scope);
             assertFalse(result.items.isEmpty()); assertFalse(result.failures.isEmpty());
-            assertTrue(SystemClock.elapsedRealtime() - start < 17_000);
+            long elapsed = SystemClock.elapsedRealtime() - start;
+            assertTrue("Aggregate discovery took " + elapsed + " ms", elapsed < 17_000);
             assertTrue(result.failures.containsValue(AddonException.Kind.TIMEOUT));
         }
     }

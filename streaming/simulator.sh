@@ -113,6 +113,7 @@ instrument() ( # test-package [extra args...]
   grep -Eq '^OK \([0-9]+ tests?\)' "$result" || status=1
   grep -q 'FAILURES!!!' "$result" && status=1
   grep -Eq 'INSTRUMENTATION_FAILED|INSTRUMENTATION_RESULT: shortMsg=' "$result" && status=1
+  cp "$result" "$SIM_DIR/.cache/evidence/$package-$(date +%Y%m%d-%H%M%S)-instrumentation.txt"
   return "$status"
 )
 
@@ -141,7 +142,52 @@ run_data_tests() {
   (cd "$ANDROID_DIR" && ./gradlew -q :app:assembleDebug :app:assembleDebugAndroidTest) || return 1
   device install -r "$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk" || return 1
   device install -r -t "$ANDROID_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" || return 1
-  instrument tv.daniil.stream.test -e fixtures "$FIXTURE_URL" -e badCertificate https://127.0.0.1:58135/manifest.json
+  instrument tv.daniil.stream.test -e class "${1:-tv.daniil.stream.AddonTest,tv.daniil.stream.StoreTest,tv.daniil.stream.SourcePolicyTest}" \
+    -e fixtures "$FIXTURE_URL" -e seeder "127.0.0.1:$SEEDER_PORT" -e badCertificate https://127.0.0.1:58135/manifest.json || return 1
+  case "${1:-}" in *ProfileTest*)
+    device exec-out run-as tv.daniil.stream cat files/validation-profile.json >"$SIM_DIR/.cache/evidence/playback-profile.json" || return 1
+    device exec-out run-as tv.daniil.stream cat files/validation-profile.png >"$SIM_DIR/.cache/evidence/playback-profile.png" || return 1
+    ;; esac
+}
+
+start_emulator() {
+  state=$("$ADB_BIN" -s "$SERIAL" get-state 2>/dev/null || true)
+  if [ "$state" = device ]; then require_emulator; return $?; fi
+  [ "$state" != offline ] || { fail "$SERIAL is offline; close its window before restarting it."; return 1; }
+  "$ROOT_DIR/casting/simulator/setup.sh" "$SDK_ROOT" "$AVD_NAME" || return 1
+  mkdir -p "$STATE_DIR" || return 1
+  node "$ROOT_DIR/casting/simulator/detach.mjs" "$STATE_DIR/emulator.log" "$SDK_ROOT/emulator/emulator" \
+    -avd "$AVD_NAME" -port "$PORT" -no-snapshot -gpu swiftshader -feature -Vulkan -no-metrics -crash-report-mode never || return 1
+  attempt=0
+  while [ "$attempt" -lt 180 ]; do
+    state=$("$ADB_BIN" -s "$SERIAL" get-state 2>/dev/null || true)
+    if [ "$state" = device ]; then
+      [ "$(emulator_property ro.kernel.qemu)" = 1 ] || fail 'Refusing a non-emulator device.' || return 1
+      name=$("$ADB_BIN" -s "$SERIAL" emu avd name | tr -d '\r' | head -n 1)
+      [ "$name" = "$AVD_NAME" ] || fail 'Unexpected AVD at this port.' || return 1
+      if [ "$(emulator_property sys.boot_completed)" = 1 ]; then require_emulator; return $?; fi
+    fi
+    attempt=$((attempt + 1)); sleep 1
+  done
+  fail 'The emulator did not finish booting.'
+}
+
+install_app() {
+  require_emulator || return 1
+  prepare_java
+  (cd "$ANDROID_DIR" && ./gradlew -q :app:assembleDebug) || return 1
+  device install -r "$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
+}
+open_app() { device shell am start -n tv.daniil.stream/.MainActivity; }
+profile_app() {
+  require_emulator || return 1
+  evidence="$SIM_DIR/.cache/evidence/profile"
+  mkdir -p "$evidence" || return 1
+  device shell dumpsys meminfo tv.daniil.stream >"$evidence/meminfo.txt" || return 1
+  device shell dumpsys gfxinfo tv.daniil.stream >"$evidence/gfxinfo.txt" || return 1
+  device exec-out screencap -p >"$evidence/screen.png" || return 1
+  printf '%s (%s), API %s, %s\n' "$AVD_NAME" "$SERIAL" "$(emulator_property ro.build.version.sdk)" "$(emulator_property ro.product.cpu.abi)" >"$evidence/device.txt"
+  printf 'Emulator measurements saved in %s\n' "$evidence"
 }
 
 show_status() {
@@ -150,18 +196,35 @@ show_status() {
     "$(emulator_property ro.build.version.sdk)"
   printf 'Fixture service: %s\n' "$(curl -fsS --max-time 2 "$FIXTURE_URL/health" 2>/dev/null || echo 'not running')"
   holder=$(listener_pid "$SEEDER_PORT")
-  printf 'Seeder: %s\n' "${holder:+running (PID $holder)}${holder:-not running}"
+  if [ -n "$holder" ]; then printf 'Seeder: running (PID %s)\n' "$holder"; else printf 'Seeder: not running\n'; fi
 }
 
-case "${1:-}" in
+case "${1:-up}" in
+  up) start_emulator && start_services && install_app && open_app ;;
+  start) start_emulator ;;
+  install) install_app ;;
+  open) start_services && open_app ;;
+  site) start_services && printf 'Live test room: %s/\n' "$FIXTURE_URL" ;;
   fixtures) "$SIM_DIR/fixtures.sh" ;;
   services) start_services ;;
-  test) run_tests && run_data_tests ;;
+  test) run_tests && run_data_tests && run_data_tests tv.daniil.stream.AppFlowTest,tv.daniil.stream.AcceptanceTest,tv.daniil.stream.ProfileTest ;;
   engine-test) run_tests ;;
   data-test) run_data_tests ;;
+  smoke) run_data_tests tv.daniil.stream.AppFlowTest ;;
+  acceptance) run_data_tests "${2:-tv.daniil.stream.AppFlowTest,tv.daniil.stream.AcceptanceTest,tv.daniil.stream.ProfileTest}" ;;
+  process-death)
+    start_services && install_app && (prepare_java; cd "$ANDROID_DIR"; ./gradlew -q :app:assembleDebugAndroidTest) && \
+      device install -r -t "$ANDROID_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" && "$SIM_DIR/process-death.sh"
+    ;;
+  release-test) start_services && "$SIM_DIR/release-probe.sh" ;;
+  soak)
+    run_data_tests tv.daniil.stream.SoakTest || exit $?
+    device exec-out run-as tv.daniil.stream cat files/validation-soak.json >"$SIM_DIR/.cache/evidence/soak.json"
+    ;;
+  profile) profile_app ;;
   status) show_status ;;
   logs)
-    device logcat -d -t 400 -v time
+    device logcat -d -t 400 -v time || exit $?
     for log in "$STATE_DIR/fixtures.log" "$STATE_DIR/seeder.log"; do [ -f "$log" ] && { printf '\n== %s\n' "$log"; tail -n 40 "$log"; }; done ;;
   stop-services) stop_services ;;
   *) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;

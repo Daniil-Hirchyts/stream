@@ -5,6 +5,11 @@ on:
   pull_request:
     paths: ['streaming/**', 'android/playback/**', '.github/workflows/streaming.yml']
   workflow_dispatch:
+    inputs:
+      soak:
+        description: 'Also run the full thirty-minute playback/seek soak'
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -30,6 +35,10 @@ jobs:
       - uses: actions/checkout@v4
       # A fake adb answers as the wrong device; no real device is contacted.
       - run: sh streaming/simulator/tests/identity.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test streaming/simulator/tests/*.test.mjs
   android:
     runs-on: ubuntu-latest
     defaults:
@@ -52,4 +61,43 @@ jobs:
           path: streaming/native/.deps
           key: native-deps-android-${{ hashFiles('streaming/native/deps.lock', 'streaming/native/patches/**', 'streaming/native/build-openssl.sh') }}
       # armeabi-v7a (Fire TV Stick), arm64-v8a (local emulator) and x86_64 (Linux emulators).
-      - run: ./gradlew :torrent:assembleDebug :torrent:assembleDebugAndroidTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug
+      - run: ./gradlew :torrent:assembleDebug :torrent:assembleDebugAndroidTest :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:lintDebug :app:lintRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: daniil-tv-android
+          path: |
+            streaming/android/app/build/outputs/apk/debug/*.apk
+            streaming/android/app/build/outputs/apk/release/*.apk
+            streaming/android/app/build/outputs/mapping/release/
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;29.0.14206865' 'cmake;3.31.6'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg ninja-build && sudo chmod 666 /dev/kvm
+      - name: Pinned native sources
+        uses: actions/cache@v4
+        with:
+          path: streaming/native/.deps
+          key: native-deps-emulator-${{ hashFiles('streaming/native/deps.lock', 'streaming/native/patches/**', 'streaming/native/build-openssl.sh') }}
+      - name: Real local BitTorrent and both playback consumers
+        env:
+          DANIILTV_CI_SOAK: ${{ inputs.soak || false }}
+        run: sh streaming/simulator/ci.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: daniil-tv-emulator-evidence
+          path: streaming/simulator/.cache/evidence/
