@@ -1,0 +1,41 @@
+plugins { id 'com.android.application' }
+def releaseValidation = providers.gradleProperty('releaseValidation').orNull == 'true'
+
+android {
+    namespace 'tv.daniil.stream'
+    compileSdk 36
+    // The app performs final native symbol stripping; use the same pinned toolchain as :torrent.
+    ndkVersion file('../../native/deps.lock').readLines().find { it.startsWith('ndk ') }.split(/\s+/)[1]
+    defaultConfig {
+        applicationId 'tv.daniil.stream'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '0.1.0'
+        testInstrumentationRunner releaseValidation ? 'tv.daniil.stream.ReleaseProbeInstrumentation' : 'androidx.test.runner.AndroidJUnitRunner'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildFeatures { buildConfig true }
+    testBuildType releaseValidation ? 'release' : 'debug'
+    buildTypes {
+        release {
+            if (releaseValidation) signingConfig signingConfigs.debug
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            testProguardFile 'test-proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    implementation project(':torrent')
+    implementation 'androidx.recyclerview:recyclerview:1.4.0'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test:core:1.6.1'
+    androidTestCompileOnly 'com.google.errorprone:error_prone_annotations:2.18.0'
+}

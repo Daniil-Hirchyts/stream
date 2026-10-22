@@ -1,9 +1,9 @@
 name: Casting UI and receiver
 on:
   push:
-    paths: ['casting/extension/**', 'casting/sidepanel/**', 'casting/receiver/**', '.github/workflows/casting-ui.yml']
+    paths: ['casting/extension/**', 'casting/sidepanel/**', 'casting/receiver/**', 'android/playback/**', '.github/workflows/casting-ui.yml']
   pull_request:
-    paths: ['casting/extension/**', 'casting/sidepanel/**', 'casting/receiver/**', '.github/workflows/casting-ui.yml']
+    paths: ['casting/extension/**', 'casting/sidepanel/**', 'casting/receiver/**', 'android/playback/**', '.github/workflows/casting-ui.yml']
   workflow_dispatch:
 permissions:
   contents: read

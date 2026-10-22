@@ -24,7 +24,11 @@ validate some current video servers. Keep TLS verification enabled.
 | Chrome extension | `casting/extension/background.js`, `manifest.json`, `sidepanel.html`, `icons/` | Detects page media/catalogues, controls native messaging; Chrome loads this directory unpacked. |
 | Chrome side panel | `casting/sidepanel/src/` (React/TypeScript/CSS) | Builds `casting/extension/sidepanel/app.js` and `app.css`. Edit source, then rebuild; do not hand-edit generated bundles. Cast, Remote, TV are user-facing; versions, activity and diagnostics live in Developer. |
 | Desktop helper | `casting/native/src/` (Rust) | Chrome native host, CLI, pairing, relay/conversion, packaging and installation. Replaces deleted Python helper/installer. `Cargo.lock` is committed. FFmpeg does encoding; Rust coordinates it. |
-| Android receiver | `casting/receiver/app/src/main/` (Java/XML, Media3) | `tv.daniil.cast/.PlayerActivity`; HTTP control/pairing service, playback, menus, subtitles. Debug APK in `app/build/outputs/apk/debug/`. Android 8+ minimum, target/compile 36. |
+| Android receiver | `casting/receiver/app/src/main/` (Java/XML) | `tv.daniil.cast/.PlayerActivity`; HTTP control/pairing service, Chrome command/status adapter, idle/pairing screens, episodes, conversion waits. Debug APK in `app/build/outputs/apk/debug/`. Android 8+ minimum, target/compile 36. |
+| Shared playback | `android/playback/` (Java/XML library, Media3) | `tv.daniil.playback`: `PlaybackSession`/`PlayerScreen`, subtitles, tracks, overlay, menu, errors. No Gradle build of its own: each app includes it as `:playback`. Changes must pass the receiver suite (and the standalone app's, once it exists). |
+| Daniil TV engine | `streaming/native/` (C++17; libtorrent 2.1.2 + `patches/libtorrent`) | Bounded piece cache, libtorrent disk subsystem, read-ahead/eviction controller, JNI. Sources pinned in `deps.lock`, fetched and verified by `fetch-deps.sh` into ignored `.deps/`; change libtorrent only through `patches/` (the checkout is reset). Host `dtv-fixture`, `dtv-tests`. |
+| Daniil TV Android | `streaming/android/` (Gradle: `:app`, `:torrent`, shared `:playback`) | `tv.daniil.stream`: Java/XML/RecyclerView navigation/player host, add-ons, encrypted SQLite library/history/preferences and private imports. `tv.daniil.torrent`: JNI engine/Media3 data source, three ABIs. See `streaming/android/README.md`. |
+| Daniil TV simulator | `streaming/simulator.sh`, `streaming/simulator/` | Generated media and torrents, fixture service on 58133, real seeder on 58134 (adb reverse), device tests; emulator identity checks in `simulator/emulator.sh`. |
 | Local simulator | `casting/simulator.sh`, `casting/simulator/`, `casting/Simulator.command` | Builds/starts the real components, generates local fixtures, hosts test room/live screen, tests playback. No mock Chrome APIs in the real test room. |
 | Fire TV maintenance | `scripts/`, `profiles/`, `restore-firetv.sh` | Separate owner-specific cleanup/recovery tools using Python and CleanYourTV. Not a casting runtime dependency. |
 | CleanYourTV | Git submodule `cleanyourtv/` | Pinned upstream maintenance dependency. Do not vendor its repository or modify it for casting work. |
@@ -96,6 +100,50 @@ setup preserves userdata and enables this. Cold restart after changing hardware.
 (cd casting/sidepanel && npm run check && npm test && npm run build)
 (cd casting/native && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked)
 ```
+
+Daniil TV (see `docs/STREAMING_APP_PLAN.md` and `streaming/native/README.md`):
+
+```sh
+./streaming/native/build-host.sh dev     # also asan, tsan, checks (libtorrent invariants)
+sh streaming/simulator/tests/identity.sh  # mocked wrong-device refusals
+./streaming/simulator.sh test            # engine via JNI + Media3 on the verified emulator
+./streaming/simulator.sh data-test       # add-ons/persistence/imports; no public providers
+./streaming/simulator.sh smoke           # real catalogue → torrent → visible player, controls and lifecycle
+./streaming/simulator.sh soak            # thirty real minutes; no concurrent device tests
+./streaming/simulator.sh profile         # actual PSS/RSS, graphics and screenshot evidence
+```
+
+Standalone app tests use isolated `test-*.db` stores and player preferences;
+release builds ignore those instrumentation overrides. Native create/select/
+close work is ordered on the application-owned playback worker. Do not move
+session cleanup onto a new activity's independent worker or clear an active
+session's payload directory. The explicit `release-test` command uses a local
+validation signature, probes the shrunk JNI boundary without opening owner
+data, and restores debug APKs. `process-death` deliberately kills only the
+standalone app after durable progress, then verifies recovery.
+
+Required streaming tests use only generated fixtures, loopback peers and the
+emulator: no public torrents, trackers, DHT or LAN. Keep piece hash checks on,
+never substitute HTTP for the BitTorrent transfer, and keep the eviction
+regressions passing under every `build-host.sh` variant before touching the
+patch or moving libtorrent.
+
+The new app's data APIs block and belong on application workers. Each navigation
+or search owns a cancellable provider scope; configuration changes cancel older
+work. Never install Cinemeta or a source provider without an explicit acceptance
+in onboarding/settings. Never cache playable stream addresses for resume or log
+configured add-on URL paths/queries. Metadata/import/preference values use the
+app's Keystore-backed encryption; backup and device transfer are disabled. Tests
+use database-specific import directories and an untrusted loopback TLS fixture
+on 58135; certificate verification must reject it. Do not disable TLS to make it
+pass. The app now includes the standalone launcher and playback host; fixture
+providers, test content URIs and test configuration belong only to debug/tests.
+Its tvOS-style screens are `ui.Page`/`ui.Item` blocks built off the main thread
+and drawn by `ui.PageAdapter`. App instrumentation finds controls by their
+visible label or content description (for example Play, Resume, Sources, Add
+favourite, Start watching, the tab names), so keep those labels exact when
+restyling. Restyle the shared player for Daniil TV through app resource
+overrides, not by editing `android/playback`.
 
 Android instrumentation covers long VTT/SRT/ASS cues after forward/backward seeks,
 resumed load and late selection; certificate vs network errors; injected real

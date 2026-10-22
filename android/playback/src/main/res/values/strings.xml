@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Apps may override any of these, for example to name where a video came from. -->
+<resources>
+    <string name="now_playing">Now playing</string>
+    <string name="live">Live</string>
+    <string name="hint_options">Options</string>
+    <string name="hint_back">Back</string>
+    <string name="hint_retry">Try again</string>
+    <string name="hint_sources">Choose source</string>
+    <string name="hint_close">Close</string>
+    <string name="hint_play_now">Play now</string>
+    <string name="hint_cancel">Cancel</string>
+    <string name="details_subtitles">Subtitles: %1$s</string>
+
+    <string name="up_next">Up next</string>
+    <string name="up_next_countdown">Starts in %1$d s</string>
+
+    <string name="menu_options">Options</string>
+    <string name="menu_settings">Settings</string>
+    <string name="menu_audio">Audio</string>
+    <string name="menu_subtitles">Subtitles</string>
+    <string name="menu_quality">Quality</string>
+    <string name="menu_speed">Speed</string>
+    <string name="menu_style">Subtitle style</string>
+    <string name="quality_auto">Auto</string>
+    <string name="quality_auto_current">Auto · %1$s</string>
+    <string name="speed_normal">Normal</string>
+    <string name="speed_value">%1$s×</string>
+
+    <string name="subtitle_sample">Subtitles will look like this</string>
+    <string name="audio_numbered">Audio %1$d</string>
+    <string name="subtitle_size">Size</string>
+    <string name="subtitle_color">Color</string>
+    <string name="subtitle_edge">Background</string>
+    <string name="subtitle_position">Position</string>
+    <string name="track_off">Off</string>
+    <string name="track_numbered">Subtitles %1$d</string>
+    <string name="track_from_page">%1$s (external)</string>
+    <string name="closed_captions">Closed captions</string>
+    <string name="size_small">Small</string>
+    <string name="size_medium">Medium</string>
+    <string name="size_large">Large</string>
+    <string name="size_xlarge">Extra large</string>
+    <string name="color_white">White</string>
+    <string name="color_yellow">Yellow</string>
+    <string name="color_cyan">Cyan</string>
+    <string name="edge_outline">Outline</string>
+    <string name="edge_shadow">Shadow</string>
+    <string name="edge_box">Dark box</string>
+    <string name="position_low">Low</string>
+    <string name="position_standard">Standard</string>
+    <string name="position_raised">Raised</string>
+
+    <string name="error_generic_title">Couldn’t play this video</string>
+    <string name="error_generic">Something went wrong while playing. Try again, or choose another source.</string>
+    <string name="error_expired_title">This link has expired</string>
+    <string name="error_expired">The video address is no longer valid. Open the video again to get a fresh link.</string>
+    <string name="error_forbidden_title">The server refused this TV</string>
+    <string name="error_forbidden">This video needs a login or a fresh link. Choose another source.</string>
+    <string name="error_server_title">The video server isn’t answering</string>
+    <string name="error_server">It may be busy. Try again in a moment.</string>
+    <string name="error_network_title">Can’t reach the video server</string>
+    <string name="error_network">Check the TV’s internet connection, then try again.</string>
+    <string name="error_certificate_title">Can’t verify the video server</string>
+    <string name="error_certificate">Check this device’s date and time and install available system updates. The server’s security certificate could not be verified.</string>
+    <string name="error_format_title">Not a video the TV can open</string>
+    <string name="error_format">Choose another source for this video.</string>
+    <string name="error_decoder_title">This TV couldn’t play this quality</string>
+    <string name="error_decoder">Try again, or choose a lower quality in Options.</string>
+    <string name="error_drm_title">This video is protected</string>
+    <string name="error_drm">Protected videos only play in the service’s own TV app.</string>
+    <string name="error_open_title">Couldn’t open this video</string>
+    <string name="control_play">Play</string>
+    <string name="control_pause">Pause</string>
+    <string name="control_rewind">−10 s</string>
+    <string name="control_forward">+10 s</string>
+    <string name="control_stop">Stop</string>
+    <string name="control_seek">Playback position</string>
+</resources>

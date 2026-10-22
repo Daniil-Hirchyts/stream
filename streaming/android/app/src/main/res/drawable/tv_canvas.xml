@@ -1,0 +1,5 @@
+<!-- Shown when a page has no artwork: a soft light falling from the top. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape><solid android:color="@color/tv_background" /></shape></item>
+    <item><shape><gradient android:type="radial" android:gradientRadius="900dp" android:centerX="0.3" android:centerY="0.0" android:startColor="#FF2A2B33" android:endColor="#000A0A0D" /></shape></item>
+</layer-list>

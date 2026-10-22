@@ -1,5 +1,23 @@
 # Daniil TV
 
+Daniil TV is a separate Android TV app for catalogues, search, a local library,
+manual torrent imports and direct playback. It uses a bounded native torrent
+cache and shared Media3 controls, independently of the Chrome extension and
+desktop helper.
+
+```sh
+./streaming/simulator.sh up       # Build/install/open the standalone app
+./streaming/simulator.sh site     # Real emulator screen and pointer/remote controls
+./streaming/simulator.sh test     # JNI, data and application smoke suites
+./streaming/simulator.sh soak     # Thirty real minutes of playback and seeks
+```
+
+See the [Android app guide](streaming/android/README.md),
+[complete specification](docs/STREAMING_APP_PLAN.md), and
+[validation record](docs/streaming-validation.md). The development target is
+the explicitly verified local Android TV emulator. Physical Fire TV testing
+requires separate authorization.
+
 Daniil Cast sends video from a Chrome tab to an Android/Fire TV receiver. The
 project contains the Chrome extension, its Rust desktop helper, the Android app,
 and a complete local Android TV test environment.

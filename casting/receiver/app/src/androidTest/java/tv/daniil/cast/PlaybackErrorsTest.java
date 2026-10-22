@@ -5,6 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import tv.daniil.playback.PlaybackErrors;
 import java.net.UnknownHostException;
 import java.security.cert.CertPathValidatorException;
 import javax.net.ssl.SSLHandshakeException;

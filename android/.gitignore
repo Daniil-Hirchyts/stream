@@ -1,0 +1,3 @@
+# Apps build these libraries into their own build folders; this catches IDE or stray builds.
+build/
+.gradle/
