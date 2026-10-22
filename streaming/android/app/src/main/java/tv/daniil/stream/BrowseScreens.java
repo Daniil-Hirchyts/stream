@@ -75,16 +75,10 @@ final class BrowseScreens {
 
     Page search(Route route, Cancellation scope) throws Exception {
         Page page = new Page();
-        page.add(Item.keyboard("keyboard", route.value, text -> {
-            route.value = text; route.searchSubmitted = false; route.scroll = null; nav.searchInput(text);
-        }, () -> {
-            route.searchSubmitted = true; route.scroll = null; nav.refresh();
-        }));
+        Item search = searchItem(route);
+        page.add(search);
         page.initialFocus = "keyboard:Q";
-        if (route.value.trim().isEmpty() || !route.searchSubmitted) {
-            page.add(Item.text("", "Use the keyboard above to search catalogues and your imports."));
-            return page;
-        }
+        if (route.value.trim().length() < 2) return page;
         AddonRepository.Result<Title> found = services.addons.search(route.value, scope);
         List<Tile> tiles = new ArrayList<>();
         String needle = route.value.trim().toLowerCase(Locale.ROOT);
@@ -97,13 +91,24 @@ final class BrowseScreens {
             }
         }
         for (Title t : found.items) tiles.add(poster("search", t));
-        if (!tiles.isEmpty()) {
-            page.add(Item.header("Results", tiles.size() + (tiles.size() == 1 ? " title" : " titles")));
-            page.addAll(Item.grid("search-results", Tile.Style.POSTER, POSTER_COLUMNS, tiles));
-        } else page.add(Item.message(R.drawable.ic_tv_search, "No results", "Try another search, or add a catalogue add-on that supports search."));
-        if (!found.failures.isEmpty()) page.add(Item.notice(R.drawable.ic_tv_offline, "Some providers could not answer", "Results from the other providers are shown."));
-        page.add(Item.actions("search-actions", new Item.Action("retry-search", Item.Action.Style.SECONDARY, "Refresh search", nav::refresh).icon(R.drawable.ic_tv_refresh)));
+        search.tiles = tiles;
+        search.detail = tiles.isEmpty() ? "No results" : tiles.size() + (tiles.size() == 1 ? " result" : " results");
+        if (!found.failures.isEmpty()) search.meta = "Some providers could not answer";
         return page;
+    }
+
+    Item searchLoading(Route route) {
+        Item item = searchItem(route);
+        item.loading = route.value.trim().length() >= 2;
+        return item;
+    }
+
+    private Item searchItem(Route route) {
+        return Item.keyboard("keyboard", route.value, text -> {
+            route.value = text; route.searchSubmitted = false; route.scroll = null; nav.searchInput(text);
+        }, () -> {
+            route.searchSubmitted = true; route.scroll = null; nav.refresh();
+        });
     }
 
     Page library() {

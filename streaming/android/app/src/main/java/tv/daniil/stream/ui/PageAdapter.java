@@ -14,6 +14,7 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import androidx.annotation.Nullable;
+import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
@@ -89,8 +90,12 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         FrameLayout box = (FrameLayout) holder.itemView;
         box.removeAllViews();
         Item item = items.get(position);
+        boolean fillViewport = item.kind == Item.Kind.KEYBOARD || item.kind == Item.Kind.LOADING;
+        box.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                fillViewport ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT));
         View content = build(item);
-        box.addView(content);
+        box.addView(content, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                fillViewport ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
     private View build(Item item) {
@@ -107,6 +112,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             case SOURCE: return source(item);
             case FIELD: return field(item);
             case KEYBOARD: return keyboard(item);
+            case SKELETON: return skeleton(item);
             case MESSAGE: return message(item);
             case NOTICE: return notice(item);
             case TEXT: return text(item);
@@ -308,20 +314,133 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     }
 
     private final class TileAdapter extends RecyclerView.Adapter<Holder> {
-        final List<Item.Tile> tiles; final Item.Tile.Style style; final int widthDp;
-        TileAdapter(List<Item.Tile> tiles, Item.Tile.Style style, int widthDp) { this.tiles = tiles; this.style = style; this.widthDp = widthDp; }
+        final List<Item.Tile> tiles; final Item.Tile.Style style; final int widthDp, gapDp; final boolean matchSpan;
+        TileAdapter(List<Item.Tile> tiles, Item.Tile.Style style, int widthDp) { this(tiles, style, widthDp, GAP, false); }
+        TileAdapter(List<Item.Tile> tiles, Item.Tile.Style style, int widthDp, int gapDp) { this(tiles, style, widthDp, gapDp, false); }
+        TileAdapter(List<Item.Tile> tiles, Item.Tile.Style style, int widthDp, int gapDp, boolean matchSpan) {
+            this.tiles = tiles; this.style = style; this.widthDp = widthDp; this.gapDp = gapDp; this.matchSpan = matchSpan;
+        }
         @Override public int getItemCount() { return tiles.size(); }
         @Override public Holder onCreateViewHolder(ViewGroup parent, int type) {
             FrameLayout box = new FrameLayout(context); box.setClipChildren(false); box.setClipToPadding(false);
-            box.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            box.setLayoutParams(new RecyclerView.LayoutParams(matchSpan ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
             return new Holder(box);
         }
         @Override public void onBindViewHolder(Holder holder, int position) {
             FrameLayout box = (FrameLayout) holder.itemView; box.removeAllViews();
             View tile = tile(tiles.get(position), style, dp(widthDp));
-            box.setPadding(0, 0, position == tiles.size() - 1 ? 0 : dp(GAP), 0);
+            box.setPadding(0, 0, position == tiles.size() - 1 ? 0 : dp(gapDp), 0);
             box.addView(tile);
         }
+    }
+
+    private RecyclerView.Adapter<Holder> skeletonCards(int count) {
+        return new RecyclerView.Adapter<Holder>() {
+            @Override public Holder onCreateViewHolder(ViewGroup parent, int type) {
+                LinearLayout card = new LinearLayout(context); card.setOrientation(LinearLayout.VERTICAL);
+                AspectFrame poster = new AspectFrame(context, 1.5f); poster.setBackgroundResource(R.drawable.tv_skeleton);
+                card.addView(poster, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                View title = skeletonBar(76, 12);
+                LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(dp(76), dp(12));
+                titleParams.topMargin = dp(9); card.addView(title, titleParams);
+                View subtitle = skeletonBar(48, 10);
+                LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(dp(48), dp(10));
+                subtitleParams.topMargin = dp(6); card.addView(subtitle, subtitleParams);
+                return new Holder(card);
+            }
+            @Override public void onBindViewHolder(Holder holder, int position) { }
+            @Override public int getItemCount() { return count; }
+        };
+    }
+
+    private View skeleton(Item item) {
+        LinearLayout root = column(); root.setPadding(gutterStart, dp(18), gutterEnd, dp(30));
+        switch (item.value) {
+            case "Home":
+                root.addView(skeletonHero()); root.addView(skeletonShelf()); root.addView(skeletonShelf()); break;
+            case "Library": case "History":
+                root.addView(skeletonShelf()); root.addView(skeletonShelf()); break;
+            case "Settings": skeletonRows(root, 7); break;
+            case "Imports": skeletonRows(root, 4); break;
+            case "Add-on": root.addView(skeletonHero()); skeletonRows(root, 3); break;
+            case "Catalogues": skeletonRows(root, 5); break;
+            case "Catalogue": root.addView(skeletonChips()); root.addView(skeletonShelf()); break;
+            case "Details": root.addView(skeletonHero()); root.addView(skeletonChips()); root.addView(skeletonShelf()); break;
+            case "Sources": skeletonRows(root, 5); break;
+            case "Developer": skeletonRows(root, 5); break;
+            default: return loading();
+        }
+        root.setLayoutParams(fill()); return root;
+    }
+
+    private View skeletonHero() {
+        LinearLayout hero = new LinearLayout(context); hero.setOrientation(LinearLayout.VERTICAL);
+        hero.setGravity(Gravity.BOTTOM); hero.setMinimumHeight(dp(164)); hero.setPadding(0, dp(12), 0, dp(22));
+        hero.addView(skeletonBar(280, 28)); addSkeletonGap(hero, 12);
+        hero.addView(skeletonBar(190, 13)); addSkeletonGap(hero, 10);
+        hero.addView(skeletonBar(430, 13));
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        p.bottomMargin = dp(12); hero.setLayoutParams(p); return hero;
+    }
+
+    private View skeletonShelf() {
+        LinearLayout shelf = new LinearLayout(context); shelf.setOrientation(LinearLayout.VERTICAL);
+        shelf.setPadding(0, dp(10), 0, dp(16));
+        shelf.addView(skeletonBar(170, 18));
+        LinearLayout cards = new LinearLayout(context); cards.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams cardsParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardsParams.topMargin = dp(12); shelf.addView(cards, cardsParams);
+        for (int i = 0; i < 6; i++) {
+            LinearLayout card = new LinearLayout(context); card.setOrientation(LinearLayout.VERTICAL);
+            AspectFrame poster = new AspectFrame(context, 1.5f); poster.setBackgroundResource(R.drawable.tv_skeleton);
+            card.addView(poster, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            addSkeletonGap(card, 8); card.addView(skeletonBar(82, 11)); addSkeletonGap(card, 5); card.addView(skeletonBar(54, 9));
+            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+            cardParams.setMargins(dp(6), 0, dp(6), 0); cards.addView(card, cardParams);
+        }
+        return shelf;
+    }
+
+    private View skeletonChips() {
+        LinearLayout chips = new LinearLayout(context); chips.setGravity(Gravity.CENTER_VERTICAL);
+        chips.setPadding(0, dp(8), 0, dp(18));
+        for (int width : new int[]{82, 104, 76, 92}) {
+            View chip = skeletonBar(width, 34);
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(width), dp(34)); p.setMargins(0, 0, dp(10), 0);
+            chips.addView(chip, p);
+        }
+        return chips;
+    }
+
+    private void skeletonRows(LinearLayout root, int count) {
+        for (int i = 0; i < count; i++) {
+            FrameLayout row = new FrameLayout(context); row.setBackgroundResource(R.drawable.tv_skeleton);
+            View icon = skeletonBar(24, 24);
+            FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER_VERTICAL | Gravity.START);
+            iconParams.leftMargin = dp(22); row.addView(icon, iconParams);
+            LinearLayout text = new LinearLayout(context); text.setOrientation(LinearLayout.VERTICAL); text.setGravity(Gravity.CENTER_VERTICAL);
+            text.addView(skeletonBar(216, 13));
+            LinearLayout.LayoutParams sub = new LinearLayout.LayoutParams(dp(132), dp(9)); sub.topMargin = dp(7); text.addView(skeletonBar(132, 9), sub);
+            FrameLayout.LayoutParams textParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER_VERTICAL | Gravity.START);
+            textParams.leftMargin = dp(66); row.addView(text, textParams);
+            View trailing = skeletonBar(52, 11);
+            FrameLayout.LayoutParams trailingParams = new FrameLayout.LayoutParams(dp(52), dp(11), Gravity.CENTER_VERTICAL | Gravity.END);
+            trailingParams.rightMargin = dp(42); row.addView(trailing, trailingParams);
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(62));
+            rowParams.bottomMargin = dp(10); root.addView(row, rowParams);
+        }
+    }
+
+    private View skeletonBar(int widthDp, int heightDp) {
+        View view = new View(context); view.setBackgroundResource(R.drawable.tv_skeleton);
+        if (widthDp > 0) view.setLayoutParams(new LinearLayout.LayoutParams(dp(widthDp), dp(heightDp)));
+        return view;
+    }
+
+    private void addSkeletonGap(LinearLayout parent, int heightDp) {
+        parent.addView(new View(context), new LinearLayout.LayoutParams(1, dp(heightDp)));
     }
 
     /** Keeps artwork at its aspect ratio for whatever width the tile receives. */
@@ -538,20 +657,62 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         return root;
     }
     private View keyboard(Item item) {
-        LinearLayout root = column();
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setPadding(gutterStart, dp(10), gutterEnd, dp(12));
-        TextView label = Tv.heading(context, "On-screen keyboard", 14, R.color.tv_text_secondary);
-        label.setLetterSpacing(0.12f);
-        label.setGravity(Gravity.CENTER);
-        label.setPadding(0, 0, 0, dp(10));
-        root.addView(label, wrap());
+        LinearLayout root = new LinearLayout(context); root.setOrientation(LinearLayout.HORIZONTAL);
+        root.setGravity(Gravity.CENTER_VERTICAL); root.setClipChildren(false); root.setClipToPadding(false);
+        root.setPadding(gutterStart, dp(8), gutterEnd, dp(12));
 
-        LinearLayout keys = new LinearLayout(context);
-        keys.setOrientation(LinearLayout.VERTICAL);
-        keys.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.addView(keys, wrap());
+        LinearLayout keyboardPanel = new LinearLayout(context); keyboardPanel.setGravity(Gravity.CENTER);
+        keyboardPanel.setClipChildren(false); keyboardPanel.setClipToPadding(false);
+        root.addView(keyboardPanel, new LinearLayout.LayoutParams(dp(444), ViewGroup.LayoutParams.MATCH_PARENT));
+        keyboardPanel.addView(keyboardKeys(item), wrap());
 
+        View divider = new View(context); divider.setBackgroundColor(context.getColor(R.color.tv_hairline));
+        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(dp(1), dp(290));
+        dividerParams.setMargins(dp(14), 0, dp(18), 0); root.addView(divider, dividerParams);
+
+        LinearLayout results = new LinearLayout(context); results.setOrientation(LinearLayout.VERTICAL);
+        results.setClipChildren(false); results.setClipToPadding(false);
+        results.setPadding(0, dp(8), 0, 0);
+        root.addView(results, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+
+        LinearLayout heading = new LinearLayout(context); heading.setGravity(Gravity.CENTER_VERTICAL);
+        TextView label = Tv.heading(context, "Results", 21, R.color.tv_text);
+        heading.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        if (!item.detail.isEmpty()) {
+            TextView count = Tv.oneLine(Tv.text(context, item.detail, 14, R.color.tv_text_secondary));
+            LinearLayout.LayoutParams countParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            countParams.leftMargin = dp(12); heading.addView(count, countParams);
+        }
+        results.addView(heading, wrap());
+        if (!item.meta.isEmpty()) {
+            TextView warning = Tv.oneLine(Tv.text(context, item.meta, 13, R.color.tv_warning));
+            warning.setPadding(0, dp(6), 0, 0); results.addView(warning, wrap());
+        }
+
+        if (item.loading || !item.tiles.isEmpty()) {
+            RecyclerView list = new RecyclerView(context);
+            list.setLayoutManager(new GridLayoutManager(context, 3)); list.setItemAnimator(null);
+            list.setClipChildren(false); list.setClipToPadding(false); list.setPadding(0, dp(8), 0, dp(8));
+            list.setVerticalScrollBarEnabled(false); list.setNestedScrollingEnabled(true);
+            if (item.loading) list.setAdapter(skeletonCards(6));
+            else list.setAdapter(new TileAdapter(item.tiles, Item.Tile.Style.POSTER, 0, 8, true));
+            results.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        } else if (!item.detail.isEmpty()) {
+            FrameLayout empty = new FrameLayout(context);
+            TextView message = Tv.heading(context, item.detail, 20, R.color.tv_text_secondary);
+            empty.addView(message, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+            results.addView(empty, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        } else {
+            results.addView(new View(context), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        }
+        root.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        return root;
+    }
+
+    private LinearLayout keyboardKeys(Item item) {
+        LinearLayout keys = new LinearLayout(context); keys.setOrientation(LinearLayout.VERTICAL);
+        keys.setGravity(Gravity.CENTER_HORIZONTAL); keys.setClipChildren(false); keys.setClipToPadding(false);
         StringBuilder query = new StringBuilder(item.value);
         boolean[] symbols = {false};
         Runnable[] rebuild = new Runnable[1];
@@ -563,14 +724,14 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                     : new String[]{"A", "S", "D", "F", "G", "H", "J", "K", "L"};
             String[] third = symbols[0] ? new String[]{".", ",", "?", "!", "'", ":", ";", "/"}
                     : new String[]{"Z", "X", "C", "V", "B", "N", "M"};
-            addKeyboardRow(keys, item, first, 58, query);
-            addKeyboardRow(keys, item, second, 58, query);
+            addKeyboardRow(keys, item, first, query);
+            addKeyboardRow(keys, item, second, query);
             String[] last = new String[third.length + 1];
             System.arraycopy(third, 0, last, 0, third.length); last[last.length - 1] = "⌫";
-            addKeyboardRow(keys, item, last, 58, query);
+            addKeyboardRow(keys, item, last, query);
             LinearLayout row = new LinearLayout(context); row.setGravity(Gravity.CENTER);
             keys.addView(row, wrap());
-            addKeyboardButton(row, item, symbols[0] ? "ABC" : "123", symbols[0] ? "Switch to letters" : "Switch to numbers and symbols", 76,
+            addKeyboardButton(row, item, symbols[0] ? "ABC" : "123", symbols[0] ? "Switch to letters" : "Switch to numbers and symbols", 50,
                     () -> {
                         symbols[0] = !symbols[0]; rebuild[0].run();
                         keys.post(() -> {
@@ -578,30 +739,29 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                             if (firstKey != null) firstKey.requestFocus();
                         });
                     });
-            addKeyboardButton(row, item, "Space", "Insert a space", 180, () -> {
+            addKeyboardButton(row, item, "Space", "Insert a space", 72, () -> {
                 if (query.length() < 120) query.append(' ');
                 if (item.keyboardInput != null) item.keyboardInput.accept(query.toString());
             });
-            addKeyboardButton(row, item, "Clear", "Clear search", 92, () -> {
+            addKeyboardButton(row, item, "Clear", "Clear search", 58, () -> {
                 query.setLength(0);
                 if (item.keyboardInput != null) item.keyboardInput.accept("");
             });
-            addKeyboardButton(row, item, "Search", "Search", 124, () -> {
+            addKeyboardButton(row, item, "Search", "Search", 72, () -> {
                 if (item.keyboardSubmit != null) item.keyboardSubmit.run();
             });
         };
         rebuild[0].run();
-        root.setLayoutParams(fill());
-        return root;
+        return keys;
     }
 
-    private void addKeyboardRow(LinearLayout keys, Item item, String[] labels, int width, StringBuilder query) {
+    private void addKeyboardRow(LinearLayout keys, Item item, String[] labels, StringBuilder query) {
         LinearLayout row = new LinearLayout(context); row.setGravity(Gravity.CENTER);
-        keys.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(56)));
+        keys.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)));
         for (String label : labels) {
             boolean backspace = label.equals("⌫");
             addKeyboardButton(row, item, label, backspace ? "Delete last character" : "Type " + label,
-                    backspace ? 76 : width, () -> {
+                    backspace ? 54 : 38, () -> {
                         if (backspace) {
                             if (query.length() > 0) query.deleteCharAt(query.length() - 1);
                         } else if (query.length() < 120) query.append(label);
@@ -611,31 +771,25 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     }
 
     private void addKeyboardButton(LinearLayout row, Item item, String label, String description, int width, Runnable action) {
-        TextView key = Tv.heading(context, label, label.length() == 1 ? 21 : 16, R.color.tv_on_glass);
+        TextView key = Tv.heading(context, label, label.length() == 1 ? 16 : 12, R.color.tv_on_glass);
         key.setGravity(Gravity.CENTER);
         key.setSingleLine(true);
         key.setContentDescription(description);
         key.setBackgroundResource(label.equals("Search") ? R.drawable.tv_chip : R.drawable.tv_button);
         key.setDefaultFocusHighlightEnabled(false);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(width), dp(48));
-        params.setMargins(dp(3), dp(3), dp(3), dp(3));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(width), dp(40));
+        params.setMargins(dp(2), dp(2), dp(2), dp(2));
         row.addView(key, params);
         Tv.control(key, item.key + ":" + label, action, this::focused, 1.04f, false);
+        if (key.getTag() != null && key.getTag().equals(restore)) key.post(key::requestFocus);
     }
 
     private View loading() {
-        LinearLayout root = column(); root.setGravity(Gravity.CENTER);
-        root.setMinimumHeight(dp(260));
-        root.setPadding(gutterStart, dp(24), gutterEnd, dp(24));
+        LinearLayout root = new LinearLayout(context); root.setOrientation(LinearLayout.VERTICAL); root.setGravity(Gravity.CENTER);
         ProgressBar spinner = new ProgressBar(context);
         spinner.setIndeterminateDrawable(context.getDrawable(R.drawable.tv_loading_indicator));
         spinner.setContentDescription("Loading");
         root.addView(spinner, new LinearLayout.LayoutParams(dp(56), dp(56)));
-        TextView label = Tv.heading(context, "Loading", 14, R.color.tv_text_secondary);
-        label.setLetterSpacing(0.14f);
-        label.setPadding(0, dp(18), 0, 0);
-        root.addView(label, wrap());
-        root.setLayoutParams(fill());
         return root;
     }
 

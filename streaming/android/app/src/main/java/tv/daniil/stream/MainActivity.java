@@ -70,6 +70,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private boolean stopped, contentReady, incomingHandled;
     private boolean searchExpanded;
     private String searchReturnTab = "Home";
+    @Nullable private Runnable searchDebounce;
     /** A tab was chosen: leave focus on the tab bar rather than jumping into the new page. */
     private boolean stayOnTabs;
     @Nullable private Uri incomingFile;
@@ -158,6 +159,14 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             saved.value = value; saved.searchSubmitted = false;
         }
         syncSearchQuery();
+        if (stack.isEmpty() || !route().screen.equals("Search")) return;
+        if (searchDebounce != null) main.removeCallbacks(searchDebounce);
+        cancelWork();
+        searchDebounce = () -> {
+            searchDebounce = null;
+            if (!stack.isEmpty() && route().screen.equals("Search")) render();
+        };
+        main.postDelayed(searchDebounce, 280);
     }
     @Override public void openImports() {
         if (services == null) return;
@@ -192,6 +201,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     @Override public void refresh() { render(); }
     private void cancelWork() { generation++; if (scope != null) scope.close(); if (pending != null) pending.cancel(true); }
     private void render() {
+        if (searchDebounce != null) { main.removeCallbacks(searchDebounce); searchDebounce = null; }
         cancelWork();
         if (stopped || services == null) return;
         scope = services.addons.newRequest();
@@ -299,7 +309,28 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     }
     private void loading() {
         contentReady = false;
+        if (!stack.isEmpty()) {
+            Route current = route();
+            if (current.screen.equals("Search") && browse != null) {
+                Item search = browse.searchLoading(current);
+                String focus = current.focus.isEmpty() ? "keyboard:Q" : current.focus;
+                adapter.set(java.util.Collections.singletonList(search), focus);
+                return;
+            }
+            if (hasPageSkeleton(current.screen)) {
+                adapter.set(java.util.Collections.singletonList(Item.skeleton(current.screen)), "");
+                return;
+            }
+        }
         adapter.set(java.util.Collections.singletonList(Item.loading()), "");
+    }
+    private static boolean hasPageSkeleton(String screen) {
+        switch (screen) {
+            case "Home": case "Library": case "History": case "Settings": case "Imports":
+            case "Add-on": case "Catalogues": case "Catalogue": case "Details": case "Sources": case "Developer":
+                return true;
+            default: return false;
+        }
     }
     private void failed(Throwable e) {
         Page page = new Page().add(Item.message(e instanceof AddonException && ((AddonException) e).kind == AddonException.Kind.CERTIFICATE ? R.drawable.ic_tv_info : R.drawable.ic_tv_offline,
