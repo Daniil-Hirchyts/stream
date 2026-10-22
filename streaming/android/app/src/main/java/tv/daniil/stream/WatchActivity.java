@@ -360,6 +360,22 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     @Override public boolean canChooseSource() { return title != null && !title.provider.equals("local"); }
     @Override public void onChooseSource() { chooseSources(); }
     @Override public void onExit() { finish(); }
+    private static final int[] ERROR_BUTTONS = {R.id.error_retry, R.id.error_sources, R.id.error_close};
+    /** The error alert's buttons stack; OK presses the focused one (the shared player would retry whatever is focused). */
+    @Override public boolean onKey(int code) {
+        boolean ok = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
+        View focused = getCurrentFocus();
+        if (!ok || session == null || session.error() == null || focused == null) return false;
+        for (int id : ERROR_BUTTONS) if (focused.getId() == id) { focused.performClick(); return true; }
+        return false;
+    }
+    /** An error alert opens with its first button focused, so the remote is on it at once. */
+    @Override public void onScreenChanged() {
+        View error = findViewById(R.id.error), focused = getCurrentFocus();
+        if (error == null || error.getVisibility() != View.VISIBLE) return;
+        for (View v = focused; v != null; v = v.getParent() instanceof View ? (View) v.getParent() : null) if (v == error) return;
+        for (int id : ERROR_BUTTONS) { View button = findViewById(id); if (button.getVisibility() == View.VISIBLE) { button.requestFocus(); return; } }
+    }
     @Override public List<MenuPanel.Item> menuItems(boolean leading) {
         List<MenuPanel.Item> result = new ArrayList<>();
         if (leading) {

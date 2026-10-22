@@ -21,9 +21,10 @@ public final class AppFlowTest extends AppHarness {
         playFilm();
         waitUntil("native statistics", 5000, () -> diagnostics().has("cache"));
         JSONObject initial = diagnostics(); assertTrue(initial.toString(), initial.getLong("totalDownload") < 68_000_000);
-        control(tv.daniil.playback.R.id.player_view, false); control(tv.daniil.playback.R.id.control_play, true);
+        // Stream's player has no transport row: a pointer pauses with the centre glyph, the remote skips.
+        control(tv.daniil.playback.R.id.player_view, false); control(tv.daniil.playback.R.id.center_icon, true);
         waitUntil("paused by mouse", 5000, () -> state() != null && !state().playWhenReady);
-        control(tv.daniil.playback.R.id.control_forward, false); waitUntil("seek forward", 20_000, () -> state().positionMs >= 10_000);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT); waitUntil("seek forward", 20_000, () -> state().positionMs >= 10_000);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PLAY);
         WatchActivity activity = watch();
         instrumentation.runOnMainSync(() -> { tv.daniil.playback.PlaybackSession s = session(activity); s.seekTo(36_000); });

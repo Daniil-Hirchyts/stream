@@ -272,13 +272,10 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         // Titles scroll with their page, as on tvOS, rather than floating over it.
         List<Item> items = page.items;
         if (page.title != null) { items = new ArrayList<>(page.items); items.add(0, Item.pageTitle(page.title)); }
-        int headerHeight = topBar.getHeight();
-        if (headerHeight == 0) headerHeight = Tv.dp(this, 76);
         gutters(page.narrow);
         // Home's spotlight sets the artwork itself; clearing it first would flash the plain canvas.
         boolean spotlight = !page.items.isEmpty() && page.items.get(0).kind == Item.Kind.SPOTLIGHT;
-        int contentTop = spotlight ? 0 : headerHeight + Tv.dp(this, 2);
-        list.setPadding(list.getPaddingLeft(), contentTop, list.getPaddingRight(), list.getPaddingBottom());
+        contentTop(spotlight);
         if (!spotlight) backdrop.show(page.backdrop, true, page.blurBackdrop);
         // Restore the route's focus; otherwise start on the page's first choice, unless the user is on the tabs.
         String wanted = !route.focus.isEmpty() ? route.focus : page.initialFocus != null ? page.initialFocus : "";
@@ -335,8 +332,9 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
                 return;
             }
             if (hasPageSkeleton(current.screen)) {
-                // The skeleton takes the width its page will have, so nothing jumps sideways when the page arrives.
+                // The skeleton takes the place its page will have, so nothing jumps when the page arrives.
                 gutters(isNarrow(current.screen));
+                contentTop(current.screen.equals("Home"));
                 adapter.set(java.util.Collections.singletonList(Item.skeleton(current.screen)), "");
                 return;
             }
@@ -349,6 +347,12 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             case "Imports": case "Add-on": case "Developer": case "Add-ons": case "Add-on review": case "Sources": return true;
             default: return false;
         }
+    }
+    /** Pages start below the tab bar; Home's spotlight runs under it. */
+    private void contentTop(boolean spotlight) {
+        int headerHeight = topBar.getHeight();
+        if (headerHeight == 0) headerHeight = Tv.dp(this, 76);
+        list.setPadding(list.getPaddingLeft(), spotlight ? 0 : headerHeight + Tv.dp(this, 2), list.getPaddingRight(), list.getPaddingBottom());
     }
     private void gutters(boolean narrow) {
         float widthDp = getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density;
@@ -525,8 +529,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         }));
     }
     @Override public void notices() {
-        String[] files = {"androidx.txt", "libtorrent.txt", "boost.txt", "openssl.txt", "ed25519.txt", "try-signal.txt"};
-        choose("Open source notices", new String[]{"AndroidX / Media3", "libtorrent", "Boost", "OpenSSL", "Ed25519", "try_signal"}, which -> work(() -> {
+        String[] files = {"androidx.txt", "libtorrent.txt", "boost.txt", "openssl.txt", "ed25519.txt", "try-signal.txt", "inter.txt"};
+        choose("Open source notices", new String[]{"AndroidX / Media3", "libtorrent", "Boost", "OpenSSL", "Ed25519", "try_signal", "Inter typeface"}, which -> work(() -> {
             try (java.io.InputStream input = getAssets().open("notices/" + files[which]); java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
                 byte[] buffer = new byte[8192];
                 for (int count; (count = input.read(buffer)) != -1; ) bytes.write(buffer, 0, count);

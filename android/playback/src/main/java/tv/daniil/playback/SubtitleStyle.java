@@ -14,13 +14,15 @@ import org.json.JSONObject;
 
 /**
  * How subtitles look, saved on the TV. Each setting is a short list of tested choices; the keys are also the
- * values the Chrome extension sends, so both sides stay in step.
+ * values the Chrome extension sends, so both sides stay in step. The font is chosen on the TV only.
  */
 @OptIn(markerClass = UnstableApi.class)
 public final class SubtitleStyle {
     public enum Setting {
         SIZE("size", R.string.subtitle_size, 1, new String[] {"small", "medium", "large", "xlarge"},
                 new int[] {R.string.size_small, R.string.size_medium, R.string.size_large, R.string.size_xlarge}),
+        FONT("font", R.string.subtitle_font, 0, new String[] {"standard", "bold", "condensed", "serif"},
+                new int[] {R.string.font_standard, R.string.font_bold, R.string.font_condensed, R.string.font_serif}),
         COLOR("color", R.string.subtitle_color, 0, new String[] {"white", "yellow", "cyan"},
                 new int[] {R.string.color_white, R.string.color_yellow, R.string.color_cyan}),
         EDGE("edge", R.string.subtitle_edge, 2, new String[] {"outline", "shadow", "box"},
@@ -49,6 +51,11 @@ public final class SubtitleStyle {
     // Gap below the last line, as a fraction of the video height.
     private static final float[] BOTTOM_GAP = {0.04f, 0.08f, 0.16f};
     private static final int BOX = 0xB3000000;
+    // System families every Android TV has: medium sans (the default), bold sans for bright or busy pictures,
+    // condensed for long lines, and serif for a classic film look.
+    private static final Typeface[] FONTS = {
+            Typeface.create("sans-serif-medium", Typeface.NORMAL), Typeface.create("sans-serif", Typeface.BOLD),
+            Typeface.create("sans-serif-condensed", Typeface.BOLD), Typeface.create("serif", Typeface.NORMAL)};
 
     private final SharedPreferences prefs;
     private final int[] choice = new int[Setting.values().length];
@@ -84,7 +91,7 @@ public final class SubtitleStyle {
                 edge == 2 ? BOX : Color.TRANSPARENT, Color.TRANSPARENT,
                 edge == 0 ? CaptionStyleCompat.EDGE_TYPE_OUTLINE
                         : edge == 1 ? CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW : CaptionStyleCompat.EDGE_TYPE_NONE,
-                Color.BLACK, Typeface.create("sans-serif-medium", Typeface.NORMAL)));
+                Color.BLACK, FONTS[get(Setting.FONT)]));
         // Site-supplied colours and sizes would override the viewer's choice, so only cue positions are kept.
         view.setApplyEmbeddedStyles(false);
         view.setFractionalTextSize(SIZES[get(Setting.SIZE)], true);

@@ -37,21 +37,40 @@ public final class Tv {
 
     public static int dp(Context context, float value) { return Math.round(value * context.getResources().getDisplayMetrics().density); }
 
+    /**
+     * The app's type: Inter, the open typeface closest to Apple's SF, at three weights for text (regular, medium for
+     * headings and controls, semibold for emphasis) and its Display cut for large titles.
+     */
+    public enum Font {
+        REGULAR(R.font.inter_regular), MEDIUM(R.font.inter_medium), SEMIBOLD(R.font.inter_semibold), DISPLAY(R.font.inter_display_semibold);
+        final int resource;
+        private Typeface typeface;
+        Font(int resource) { this.resource = resource; }
+        public Typeface get(Context context) {
+            if (typeface == null) typeface = context.getResources().getFont(resource);
+            return typeface;
+        }
+    }
+    /** Titles from this size up use the Display cut, drawn for large sizes. */
+    private static final float DISPLAY_SP = 24;
+
     public static TextView text(Context context, String value, float sp, @ColorRes int color) {
         TextView view = new TextView(context);
         view.setText(value); view.setTextSize(sp); view.setTextColor(context.getColorStateList(color));
+        view.setTypeface(Font.REGULAR.get(context));
         view.setIncludeFontPadding(false);
         return view;
     }
     public static TextView heading(Context context, String value, float sp, @ColorRes int color) {
         TextView view = text(context, value, sp, color);
-        view.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        view.setTypeface(Font.MEDIUM.get(context));
         return view;
     }
     public static TextView bold(Context context, String value, float sp) {
         TextView view = text(context, value, sp, R.color.tv_text);
-        view.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        view.setLetterSpacing(-0.015f);
+        boolean display = sp >= DISPLAY_SP;
+        view.setTypeface((display ? Font.DISPLAY : Font.SEMIBOLD).get(context));
+        view.setLetterSpacing(display ? -0.005f : -0.01f);
         return view;
     }
     /**
@@ -110,7 +129,8 @@ public final class Tv {
 
     /** A platter button in one of the {@link Item.Action} styles. Its content turns dark on the white focus platter. */
     public static View button(Context context, Item.Action action, Consumer<String> focused) {
-        FrameLayout button = new FrameLayout(context);
+        // Glass: on Android 12+ the platter blurs the artwork behind it, as the tab bar does.
+        FrameLayout button = GlassView.surface(context);
         button.setContentDescription(action.label);
         LinearLayout content = new LinearLayout(context);
         content.setGravity(Gravity.CENTER);

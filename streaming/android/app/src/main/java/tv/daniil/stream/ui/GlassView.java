@@ -11,10 +11,11 @@ import eightbitlab.com.blurview.BlurView;
 import tv.daniil.stream.R;
 
 /**
- * A rounded backdrop-blurred surface for the few pieces of app chrome that float over content (the tab bar and search
- * field). Live blur uses RenderEffect (Android 12+), which costs one GPU pass per frame. Earlier versions would blur
- * on the CPU before every frame, which stalls a TV stick, so there the surface uses a denser static material.
- * Never use this for list rows, buttons or cards: one instance per floating surface.
+ * A rounded backdrop-blurred surface: the tab bar and search field, and the buttons, chips and notices on a page.
+ * Live blur uses RenderEffect (Android 12+): one small GPU pass for each surface while what is behind it changes, and
+ * none while the screen is still. Earlier versions would blur on the CPU before every frame, which stalls a TV stick,
+ * so there the chrome uses a denser static material and buttons keep their plain platter. Not for list rows, tiles
+ * or keyboard keys: they are many, and rows and keys sit on the plain canvas.
  */
 public final class GlassView extends BlurView {
     public static final boolean LIVE_BLUR = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S;
@@ -34,6 +35,11 @@ public final class GlassView extends BlurView {
         setOutlineProvider(ViewOutlineProvider.BACKGROUND);
         setClipToOutline(true);
         if (!LIVE_BLUR) setBackgroundResource(R.drawable.tv_tabs_solid);
+    }
+
+    /** A plain container where live blur isn't available; the caller sets its platter. */
+    static android.widget.FrameLayout surface(Context context) {
+        return LIVE_BLUR ? new GlassView(context) : new android.widget.FrameLayout(context);
     }
 
     @Override protected void onAttachedToWindow() {

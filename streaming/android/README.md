@@ -24,7 +24,8 @@ button. Home, Library and Settings are tabs in a floating bar at the top; search
 opens from the same bar, and the add-on store, add-on management and Imports
 live under Settings. Details provide Play/Resume, Sources,
 watched/favourite controls and seasons/episodes. Settings manage add-ons,
-catalogue visibility, languages, subtitle style, cache size (128/256/512 MiB),
+catalogue visibility, languages, subtitle style (size, font, colour,
+background, position), cache size (128/256/512 MiB),
 autoplay and app-cache cleanup. Versions, statistics and license texts live in
 Developer views.
 
@@ -65,6 +66,18 @@ Shelves scroll horizontally. Page titles scroll with their page.
   - 16 dp for cards and 24 dp for sheets.
   - Capsules for floating and filter controls (tab bar, tabs, chips, search
     field); circles for icon buttons.
+- **Type:** Inter, the open typeface closest to Apple's SF, bundled and
+  subset to Latin, Greek and Cyrillic by `branding/make_fonts.sh` (other
+  scripts fall back to the system font). Regular for text, Medium for
+  headings and controls, SemiBold for emphasis, and the Display cut for
+  titles from 24 sp. The player's type scale (`Text.*` styles) is overridden
+  by name to use it, and its times use tabular figures.
+- **Loading:** each screen's skeleton is built from the blocks of its page:
+  title, rows, two-line rows, buttons, chips, shelves, grids, the details
+  header and the Settings split view, at the same sizes and spacing. Each
+  line of text is a bar inside an empty text view of that line's size, so the
+  page replaces it without anything moving. Search shows the results grid's
+  own columns.
 - **Contrast:** small text is at least 4.5:1 on the canvas; tertiary grey is
   60% white. Facts over artwork use a brighter grey, and all text that can sit
   over artwork carries a soft shadow.
@@ -79,17 +92,24 @@ Shelves scroll horizontally. Page titles scroll with their page.
   the screen, with a centred title and stacked full-width buttons. A long
   choice list or message scrolls, clipped, above the buttons.
 
-Glass comes from cheap, static blurs rather than live per-frame ones:
+Glass comes from cheap blurs:
 - **Artwork:** each title's artwork also has a softened layer, blurred and
   fading in towards the bottom where text, buttons and shelves sit, so
   translucent controls over it read as glass. Sources shows the artwork fully
   blurred.
 - **Alerts:** an alert copies the screen at an eighth of its size, blurs that
   once on a worker and fades it in.
-- **Tab bar and search field:** only these blur live, and only on Android 12+
-  (a RenderEffect GPU pass). Earlier versions, including Fire TV's Android 9,
-  use a static material, because BlurView there blurs on the CPU before every
-  frame, which is what made the UI stall.
+- **Live, on Android 12+ only:** the tab bar and search field, and the
+  buttons, chips and notices on a page, blur what is behind them
+  (`GlassView`: a small RenderEffect GPU pass per surface while the picture
+  behind it changes, none while the screen is still). Earlier versions,
+  including Fire TV's Android 9, use a static material for the bar and plain
+  platters for buttons, because BlurView there blurs on the CPU before every
+  frame, which is what made the UI stall. Rows, tiles and keys never blur:
+  they are many, and rows and keys sit on the plain canvas.
+- **Player:** the video plays on a SurfaceView, which the system composites
+  outside the view tree, so nothing in the app can blur it. The options sheet
+  and the error alert are denser glass over the darkened frame instead.
 
 Artwork is cached on disk (40 MiB, least recently shown evicted) as well as in
 memory. Off-screen shelves keep their views, so scrolling back neither rebuilds
@@ -102,13 +122,25 @@ Cast keeps its own look:
   types the library reads:
   - The title and track details sit at the top, with round Audio & subtitles
     and Close buttons beside them; there is no "Now playing" label.
-  - The timeline has the elapsed and remaining times at its ends. Rewind,
-    Play/Pause (a fixed width, so nothing moves when it toggles) and Forward
-    sit centred between them.
+  - The timeline sits low, with the elapsed and remaining times under its
+    ends. There are no transport buttons: OK plays and pauses, left and right
+    skip, Menu opens the options; a pointer clicks the centre glyph or drags
+    the timeline. The library binds Rewind, Play and Forward, so they stay in
+    the layout, hidden.
   - The centre play/pause glyph is a small glass disc.
-- **Options menu:** `layout/row_menu.xml`, `bg_option_row`, `option_label`
-  and `menu_icon`. The focused row turns white with dark text, as everywhere
-  else.
+  - Errors are a centred glass alert like the app's, with stacked full-width
+    buttons. It opens with its first button focused, and OK presses the
+    focused one (`WatchActivity.onKey`); the library alone would retry.
+- **Options menu:** a floating glass sheet (`layout/playback_menu.xml`,
+  `bg_panel`) without Back and Close buttons: Back and Menu close it, and a
+  pointer uses the header's chevron or clicks outside. Rows use
+  `layout/row_menu.xml`, `bg_option_row`, `option_label` and `menu_icon`; the
+  focused row turns white with dark text, as everywhere else.
+- **Subtitle font:** Standard, Bold, Condensed or Serif, from the shared
+  player's subtitle style (system families every Android TV has), in
+  Settings → Subtitles and the player's Subtitle style menu. Daniil Cast's
+  receiver offers the same choice on the TV; the Chrome extension doesn't
+  send it.
 
 Screens are built off the main thread as `ui.Page` lists of `ui.Item` blocks
 (`BrowseScreens`, `TitleScreens`, `SetupScreens`), and `ui.PageAdapter` turns
@@ -288,14 +320,20 @@ cd streaming/android
 Internet Archive data.
 - **Screens:** the empty Home and the starter install, Home, details,
   Sources, Library, the store, Settings with an alert, Search, Imports, and
-  the player overlay, error card and options menu.
+  the player overlay, error alert and options menu.
+- **Skeletons and branding:** every screen's loading skeleton (`sk-*`), to
+  compare with its page, and the launcher icon and banner as Android draws
+  them (`00-*`).
 - **Remote check:** on each page it walks D-pad focus from the focused
   control and fails if a visible control is unreachable or touch-only.
 - **Limits:** it doesn't replace instrumentation on the emulator, and it
   can't show live blur.
 
-`branding/make_brand.py` regenerates the launcher icon (an adaptive vector)
-and the TV banner (PNGs at three densities) from one geometry.
+`branding/make_brand.py` regenerates the launcher icon and the TV banner from
+one geometry: a graphite field and a frosted-glass play mark. The icon is an
+adaptive vector with a monochrome layer; the banner is PNGs at five densities
+with the wordmark in Inter Display SemiBold. `branding/make_fonts.sh`
+regenerates the bundled Inter subsets.
 
 `:app:testDebugUnitTest` runs JVM tests of the store protocol, listing rules,
 built-in add-on and torrent discovery without a device or network. With

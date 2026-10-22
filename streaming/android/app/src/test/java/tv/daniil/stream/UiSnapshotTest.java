@@ -194,7 +194,7 @@ public final class UiSnapshotTest {
 
     /**
      * The player overlay (Stream's override of the shared player's layers) over a real film still: playing with the
-     * controls up and Play/Pause focused, then the error card. Inflated directly with the same views WatchActivity uses.
+     * controls up, then the error alert and the options menu. Inflated directly with the same views WatchActivity uses.
      */
     @Test public void playerOverlay() throws Exception {
         android.app.Activity host = Robolectric.buildActivity(android.app.Activity.class).setup().get();
@@ -221,12 +221,9 @@ public final class UiSnapshotTest {
         progress.setProgress(428); progress.setSecondaryProgress(520);
         ((android.widget.TextView) root.findViewById(R.id.elapsed)).setText("41:02");
         ((android.widget.TextView) root.findViewById(R.id.remaining)).setText("−55:21");
-        android.widget.TextView play = root.findViewById(R.id.control_play);
-        play.setText(tv.daniil.playback.R.string.control_pause);
-        for (int id : new int[]{R.id.control_play, R.id.control_rewind, R.id.control_forward, R.id.control_options, R.id.control_stop}) {
+        for (int id : new int[]{R.id.control_options, R.id.control_stop, R.id.center_icon}) {
             View control = root.findViewById(id); control.setFocusable(true); control.setClickable(true);
         }
-        play.requestFocus();
         settle(1500);
         snap("15-player", host.getWindow());
         root.findViewById(R.id.controls).setVisibility(View.GONE);
@@ -234,12 +231,12 @@ public final class UiSnapshotTest {
         ((android.widget.TextView) root.findViewById(R.id.error_title)).setText("This source didn't open");
         ((android.widget.TextView) root.findViewById(R.id.error_message)).setText("The provider didn't answer in time. Try again, or choose another source.");
         root.findViewById(R.id.error_sources).setVisibility(View.VISIBLE);
-        root.findViewById(R.id.error_retry).requestFocus();
+        for (int id : new int[]{R.id.error_retry, R.id.error_sources, R.id.error_close}) root.findViewById(id).setFocusable(true);
+        root.findViewById(R.id.error_retry).requestFocusFromTouch();
         settle(800);
         snap("15b-player-error", host.getWindow());
-        // The options menu, built with the same row layout the player's menu inflates; the first row has focus.
+        // The options menu, built with the same row layout the player's menu inflates; opening it hides the controls.
         root.findViewById(R.id.error).setVisibility(View.GONE);
-        root.findViewById(R.id.controls).setVisibility(View.VISIBLE);
         android.view.LayoutInflater.from(host).inflate(tv.daniil.playback.R.layout.playback_menu, root, true);
         root.findViewById(tv.daniil.playback.R.id.menu).setVisibility(View.VISIBLE);
         ((android.widget.TextView) root.findViewById(tv.daniil.playback.R.id.menu_title)).setText(tv.daniil.playback.R.string.menu_options);
@@ -255,6 +252,39 @@ public final class UiSnapshotTest {
         }
         settle(800);
         snap("15c-player-menu", host.getWindow());
+    }
+
+    /** Each screen's loading skeleton, exactly as MainActivity shows it while the page builds, to compare with the page. */
+    @SuppressWarnings("unchecked")
+    @Test public void skeletons() throws Exception {
+        activity = Robolectric.buildActivity(MainActivity.class).setup().get();
+        settle(1500);
+        java.lang.reflect.Field field = MainActivity.class.getDeclaredField("stack"); field.setAccessible(true);
+        java.lang.reflect.Method loading = MainActivity.class.getDeclaredMethod("loading"); loading.setAccessible(true);
+        List<Route> stack = (List<Route>) field.get(activity);
+        for (String screen : new String[]{"Home", "Library", "Settings", "Imports", "Add-on", "Add-ons", "Add-on review",
+                "Catalogues", "Catalogue", "Details", "Sources", "Developer"}) {
+            stack.add(new Route(screen));
+            activity.runOnUiThread(() -> { try { loading.invoke(activity); } catch (Exception e) { throw new AssertionError(e); } });
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50));
+            snap("sk-" + screen.toLowerCase(java.util.Locale.ROOT).replace(' ', '-'));
+            stack.remove(stack.size() - 1);
+        }
+    }
+
+    /** The launcher icon as the system draws its vector layers (masked), and the banner, beside branding/make_brand.py's previews. */
+    @Test public void brand() throws Exception {
+        android.content.Context context = ApplicationProvider.getApplicationContext();
+        for (int[] spec : new int[][]{{R.mipmap.ic_launcher, 432, 432}, {R.drawable.ic_launcher_monochrome, 432, 432}, {R.drawable.tv_banner, 640, 360}}) {
+            android.graphics.drawable.Drawable drawable = context.getDrawable(spec[0]);
+            Bitmap bitmap = Bitmap.createBitmap(spec[1], spec[2], Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+            canvas.drawColor(0xFF1C1C1E);
+            drawable.setBounds(0, 0, spec[1], spec[2]);
+            drawable.draw(canvas);
+            String name = "00-" + context.getResources().getResourceEntryName(spec[0]);
+            try (FileOutputStream stream = new FileOutputStream(new File(out, name + ".png"))) { bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream); }
+        }
     }
 
     /** Settles until {@code done} holds or {@code ms} pass. */

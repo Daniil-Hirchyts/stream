@@ -537,3 +537,62 @@ a real film still.
 - **Lint:** both variants report 0 errors and 18 warnings (previously 20).
 - **Not run:** instrumentation on the emulator, so the updated Settings and
   search flows in `AcceptanceTest` and `AppFlowTest` are unverified.
+
+## Stream: glass brand, Inter, matching skeletons and a quieter player, 2026-10-22
+
+**What changed:**
+- **Icon and banner:** a graphite field lit from above and one frosted-glass
+  play mark with a bright rim and a soft shadow, replacing the violet-to-rose
+  gradient. The icon is an adaptive vector with its own monochrome layer; the
+  banner's wordmark is Inter Display SemiBold. `UiSnapshotTest.brand` renders
+  both as Android draws them.
+- **Type:** the app bundles Inter (SIL OFL 1.1), subset to Latin, Greek and
+  Cyrillic by `branding/make_fonts.sh` (about 155 KB per weight, four files).
+  Text, headings, emphasis and large titles use Regular, Medium, SemiBold and
+  Display SemiBold. The shared player's `Text.*` styles are overridden by name
+  in the app, and its times use tabular figures. Its licence is listed under
+  Developer → Open source notices.
+- **Subtitle font:** a new Font setting in the shared player's subtitle style:
+  Standard (medium sans, the previous look), Bold, Condensed or Serif, all
+  system families every Android TV has. It shows in Settings → Subtitles and
+  in the player's Subtitle style menu, in both apps. The Chrome extension
+  doesn't send it.
+- **Skeletons:** each screen's skeleton is built from its page's blocks at
+  the same sizes and spacing, with a bar inside an empty text view of each
+  line's size. Pages now start at the same height as their skeleton; before,
+  a skeleton kept the previous page's top inset.
+- **Player:**
+  - The transport row is hidden. The remote plays, pauses and skips; a
+    pointer clicks the centre glyph or drags the timeline.
+  - The timeline sits lower, with the times under its ends.
+  - The options menu is a floating glass sheet without Back and Close.
+  - Errors are a centred glass alert with stacked buttons, like the app's.
+    It opens with its first button focused.
+- **Glass:** on Android 12+, buttons, chips and notices blur what is behind
+  them, as the tab bar does. Rows, tiles and keys don't. The player can't blur
+  video, which plays on a SurfaceView composited outside the view tree.
+
+**Problems found and fixed:**
+- **Error alert OK key:** OK always retried, whichever button had focus,
+  because the shared player handles OK on an error before the focused view.
+  `WatchActivity.onKey` now presses the focused alert button.
+- **Grids:** a short last row (one favourite, say) had wider tiles than a full
+  row, because the gaps were margins shared out by weight. Each column is now
+  an equal slot that gives up the same share of the gaps.
+- **Search skeleton:** it used different gaps and an odd count; it now has the
+  results grid's columns, gaps and two full rows.
+
+**Results here** (Linux container, no emulator or device):
+- **Builds:** Stream's `:app:assembleDebug`, `:app:assembleRelease` and
+  `:app:assembleDebugAndroidTest` pass. The Daniil Cast receiver's
+  `:app:assembleDebug` and `:app:assembleDebugAndroidTest` pass with the
+  shared player's new Font setting.
+- **Unit tests:** `:app:testDebugUnitTest` passes 18 tests, including 4
+  render tests with `-PuiSnapshots=true`. They make 45 renders: the screens,
+  12 skeletons, the icon and the banner. The D-pad walk passes on all 14
+  pages.
+- **Lint:** both variants report 0 errors and 18 warnings.
+- **Not run:** instrumentation on the emulator for either app. Unverified:
+  AppFlowTest's new centre-glyph and D-pad steps, AcceptanceTest's subtitle
+  font row, and the receiver suite with the extra Font row. Robolectric
+  renders don't show live blur.

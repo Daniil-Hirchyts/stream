@@ -51,8 +51,8 @@
         android:visibility="gone" />
 
     <!-- Playback overlay, after tvOS: the title at the top with the two things a viewer reaches for (audio and
-         subtitles, and leaving) beside it; the timeline at the bottom with one centred transport row between the
-         times. Every control works by remote, pointer and touch; the remote's own keys stay the quickest way. -->
+         subtitles, and leaving) beside it, and the timeline at the bottom. Every control works by remote, pointer
+         and touch. -->
     <FrameLayout
         android:id="@+id/controls"
         android:layout_width="match_parent"
@@ -67,7 +67,7 @@
 
         <View
             android:layout_width="match_parent"
-            android:layout_height="220dp"
+            android:layout_height="180dp"
             android:layout_gravity="bottom"
             android:background="@drawable/scrim_bottom" />
 
@@ -168,13 +168,16 @@
                 android:layout_marginStart="10dp" />
         </LinearLayout>
 
+        <!-- The timeline, low on the screen, with the times under its ends. The remote plays and pauses (OK), skips
+             (left and right) and opens the menu; a pointer clicks the centre glyph or drags the timeline. The
+             transport buttons stay in the layout, hidden, because the shared player binds them. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
             android:layout_marginStart="@dimen/safe_horizontal"
             android:layout_marginEnd="@dimen/safe_horizontal"
-            android:layout_marginBottom="@dimen/safe_vertical"
+            android:layout_marginBottom="22dp"
             android:orientation="vertical">
 
             <SeekBar
@@ -190,12 +193,10 @@
                 android:splitTrack="false"
                 android:thumbTint="@color/tv_focus" />
 
-            <!-- Elapsed and remaining at the ends; rewind, play/pause and forward between them. The play button keeps one
-                 width for both labels, so nothing moves when it changes. -->
             <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp">
+                android:layout_marginTop="-10dp">
 
                 <TextView
                     android:id="@+id/elapsed"
@@ -205,50 +206,6 @@
                     android:shadowDy="1"
                     android:shadowRadius="6" />
 
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="center"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <ImageView
-                        android:id="@+id/control_rewind"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
-                        android:background="@drawable/tv_button_round"
-                        android:contentDescription="@string/control_rewind"
-                        android:padding="13dp"
-                        android:src="@drawable/ic_rewind"
-                        android:tint="@color/tv_on_glass" />
-
-                    <TextView
-                        android:id="@+id/control_play"
-                        android:layout_width="wrap_content"
-                        android:layout_height="48dp"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="14dp"
-                        android:background="@drawable/tv_button"
-                        android:fontFamily="sans-serif-medium"
-                        android:gravity="center"
-                        android:minWidth="128dp"
-                        android:paddingStart="24dp"
-                        android:paddingEnd="24dp"
-                        android:text="@string/control_play"
-                        android:textColor="@color/tv_on_glass"
-                        android:textSize="16sp" />
-
-                    <ImageView
-                        android:id="@+id/control_forward"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
-                        android:background="@drawable/tv_button_round"
-                        android:contentDescription="@string/control_forward"
-                        android:padding="13dp"
-                        android:src="@drawable/ic_forward"
-                        android:tint="@color/tv_on_glass" />
-                </LinearLayout>
-
                 <TextView
                     android:id="@+id/remaining"
                     style="@style/Text.Time"
@@ -257,6 +214,26 @@
                     android:shadowDy="1"
                     android:shadowRadius="6"
                     android:textColor="@color/tv_text_on_artwork" />
+
+                <ImageView
+                    android:id="@+id/control_rewind"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/control_rewind"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/control_play"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:visibility="gone" />
+
+                <ImageView
+                    android:id="@+id/control_forward"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/control_forward"
+                    android:visibility="gone" />
             </FrameLayout>
         </LinearLayout>
     </FrameLayout>
@@ -309,60 +286,64 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Error: only for problems the viewer has to act on. -->
+    <!-- Error: only for problems the viewer has to act on. A glass alert, as elsewhere in the app: the title and
+         message centred, then full-width buttons, one above the other; OK presses the focused one. -->
     <FrameLayout
         android:id="@+id/error"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#F20B1116"
+        android:background="@color/tv_player_error_backdrop"
         android:visibility="gone">
 
         <LinearLayout
-            android:layout_width="600dp"
+            android:layout_width="500dp"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:background="@drawable/card"
+            android:background="@drawable/tv_dialog"
+            android:elevation="24dp"
+            android:gravity="center_horizontal"
             android:orientation="vertical"
-            android:padding="44dp">
-
-            <ImageView
-                android:layout_width="56dp"
-                android:layout_height="56dp"
-                android:background="@drawable/alert_circle"
-                android:importantForAccessibility="no"
-                android:padding="14dp"
-                android:src="@drawable/ic_alert"
-                android:tint="@color/danger" />
+            android:paddingStart="30dp"
+            android:paddingTop="32dp"
+            android:paddingEnd="30dp"
+            android:paddingBottom="24dp">
 
             <TextView
                 android:id="@+id/error_title"
-                style="@style/Text.Title"
-                android:layout_marginTop="28dp" />
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/inter_medium"
+                android:gravity="center"
+                android:textColor="@color/tv_text"
+                android:textSize="21sp" />
 
             <TextView
                 android:id="@+id/error_message"
-                style="@style/Text.Body"
-                android:layout_marginTop="12dp" />
-
-            <View
                 android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginTop="28dp"
-                android:background="@color/line" />
-
-            <LinearLayout
-                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:layout_marginTop="12dp"
+                android:gravity="center"
+                android:lineSpacingExtra="3dp"
+                android:textColor="@color/tv_text_secondary"
+                android:textSize="15sp" />
 
-                <TextView android:id="@+id/error_retry" style="@style/Action" android:text="@string/hint_retry" />
-                <!-- Shown only when the app can offer another source. -->
-                <TextView android:id="@+id/error_sources" style="@style/Action" android:text="@string/hint_sources"
-                    android:visibility="gone" />
-                <TextView android:id="@+id/error_close" style="@style/Action" android:text="@string/hint_close" />
-            </LinearLayout>
+            <TextView
+                android:id="@+id/error_retry"
+                style="@style/TvPlayerAlertButton"
+                android:layout_marginTop="28dp"
+                android:text="@string/hint_retry" />
+
+            <!-- Shown only when the app can offer another source. -->
+            <TextView
+                android:id="@+id/error_sources"
+                style="@style/TvPlayerAlertButton"
+                android:text="@string/hint_sources"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/error_close"
+                style="@style/TvPlayerAlertButton"
+                android:text="@string/hint_close" />
         </LinearLayout>
     </FrameLayout>
 </merge>

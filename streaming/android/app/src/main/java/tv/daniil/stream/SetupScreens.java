@@ -22,7 +22,7 @@ final class SetupScreens {
     static final String[] LANGUAGE_NAMES = {"Automatic", "English", "Russian", "French", "German", "Spanish", "Italian", "Ukrainian", "Japanese", "Off"};
     static final String[] LANGUAGES = {"", "eng", "rus", "fra", "deu", "spa", "ita", "ukr", "jpn", "off"};
     private static final String[][] SUBTITLE_STYLES = {
-            {"size", "small", "medium", "large", "xlarge"}, {"color", "white", "yellow", "cyan"},
+            {"size", "small", "medium", "large", "xlarge"}, {"font", "standard", "bold", "condensed", "serif"}, {"color", "white", "yellow", "cyan"},
             {"edge", "outline", "shadow", "box"}, {"position", "low", "standard", "raised"}};
     private final Context context;
     private final Navigator nav;

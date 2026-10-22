@@ -3,6 +3,7 @@ package tv.daniil.stream.ui;
 import android.content.Context;
 import android.graphics.Outline;
 import android.graphics.Rect;
+import android.graphics.Typeface;
 import android.view.FocusFinder;
 import android.view.Gravity;
 import android.view.View;
@@ -96,7 +97,8 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         FrameLayout box = (FrameLayout) holder.itemView;
         box.removeAllViews();
         Item item = items.get(position);
-        boolean fillViewport = item.kind == Item.Kind.KEYBOARD || item.kind == Item.Kind.SPLIT || item.kind == Item.Kind.LOADING;
+        boolean fillViewport = item.kind == Item.Kind.KEYBOARD || item.kind == Item.Kind.SPLIT || item.kind == Item.Kind.LOADING
+                || item.kind == Item.Kind.SKELETON && item.value.equals("Settings");
         box.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 fillViewport ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT));
         View content = build(item);
@@ -304,7 +306,11 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             int span = android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
             text.setSpan(new android.text.style.AbsoluteSizeSpan(13, true), start, text.length(), span);
             text.setSpan(new android.text.style.ForegroundColorSpan(context.getColor(R.color.tv_text_tertiary)), start, text.length(), span);
-            text.setSpan(new android.text.style.TypefaceSpan("sans-serif"), start, text.length(), span);
+            Typeface regular = Tv.Font.REGULAR.get(context);
+            text.setSpan(new android.text.style.MetricAffectingSpan() {
+                @Override public void updateMeasureState(android.text.TextPaint paint) { paint.setTypeface(regular); }
+                @Override public void updateDrawState(android.text.TextPaint paint) { paint.setTypeface(regular); }
+            }, start, text.length(), span);
         }
         TextView heading = Tv.onArtwork(Tv.oneLine(Tv.heading(context, "", sp, color))); heading.setText(text);
         heading.setContentDescription(detail == null || detail.isEmpty() ? title : title + ", " + detail);
@@ -338,17 +344,26 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         return root;
     }
 
-    /** Equal-width tiles: weights rather than a measured width, which may still be the previous page's. */
+    /**
+     * Equal-width tiles: weights rather than a measured width, which may still be the previous page's. Each column is
+     * an equal slot that gives up the same share of the gaps, so a short last row lines up with the full rows above.
+     */
     private View grid(Item item) {
         int columns = Integer.parseInt(item.value);
+        List<View> tiles = new ArrayList<>();
+        for (Item.Tile tile : item.tiles) tiles.add(tile(tile, item.style, 0));
+        return gridRow(tiles, columns);
+    }
+    private View gridRow(List<View> tiles, int columns) {
         LinearLayout row = new LinearLayout(context); row.setOrientation(LinearLayout.HORIZONTAL);
         row.setClipChildren(false); row.setClipToPadding(false); row.setWeightSum(columns);
         row.setPadding(gutterStart, dp(12), gutterEnd, dp(6));
-        for (int i = 0; i < item.tiles.size(); i++) {
-            View tile = tile(item.tiles.get(i), item.style, 0);
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-            p.leftMargin = i == 0 ? 0 : dp(GAP / 2f); p.rightMargin = i == columns - 1 ? 0 : dp(GAP / 2f);
-            row.addView(tile, p);
+        int gap = dp(GAP);
+        for (int i = 0; i < tiles.size(); i++) {
+            FrameLayout slot = new FrameLayout(context); slot.setClipChildren(false); slot.setClipToPadding(false);
+            slot.setPadding(gap * i / columns, 0, gap - gap * (i + 1) / columns, 0);
+            slot.addView(tiles.get(i), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            row.addView(slot, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         }
         row.setLayoutParams(fill());
         return row;
@@ -384,122 +399,252 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         }
     }
 
+    // Skeletons: each page's loading state, built from the same blocks as the page, with the same sizes and spacing.
+    // A bar stands where each line of text will be, inside an empty text view of that line's size, so the page
+    // replaces it without anything moving.
+
+    /** Search results while they load: the results grid's own columns and gaps. */
     private RecyclerView.Adapter<Holder> skeletonCards(int count) {
         return new RecyclerView.Adapter<Holder>() {
             @Override public Holder onCreateViewHolder(ViewGroup parent, int type) {
                 FrameLayout box = new FrameLayout(context);
                 box.setClipChildren(false); box.setClipToPadding(false);
-                LinearLayout card = new LinearLayout(context); card.setOrientation(LinearLayout.VERTICAL);
-                AspectFrame poster = new AspectFrame(context, 1.5f); poster.setBackgroundResource(R.drawable.tv_skeleton);
-                card.addView(poster, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                View title = skeletonBar(76, 12);
-                LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(dp(76), dp(12));
-                titleParams.topMargin = dp(9); card.addView(title, titleParams);
-                View subtitle = skeletonBar(48, 10);
-                LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(dp(48), dp(10));
-                subtitleParams.topMargin = dp(6); card.addView(subtitle, subtitleParams);
-                box.addView(card, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                box.addView(skeletonTile(Item.Tile.Style.POSTER, 0), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                 box.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                 return new Holder(box);
             }
             @Override public void onBindViewHolder(Holder holder, int position) {
-                FrameLayout box = (FrameLayout) holder.itemView;
-                boolean endOfRow = position % SEARCH_COLUMNS == SEARCH_COLUMNS - 1;
-                box.setPadding(0, 0, endOfRow ? 0 : dp(8), dp(16));
+                int column = position % SEARCH_COLUMNS, gap = dp(14);
+                holder.itemView.setPadding(gap * column / SEARCH_COLUMNS, 0, gap - gap * (column + 1) / SEARCH_COLUMNS, dp(18));
             }
             @Override public int getItemCount() { return count; }
         };
     }
 
     private View skeleton(Item item) {
-        LinearLayout root = column(); root.setPadding(gutterStart, dp(18), gutterEnd, dp(30));
+        LinearLayout root = new LinearLayout(context); root.setOrientation(LinearLayout.VERTICAL);
+        root.setClipChildren(false); root.setClipToPadding(false);
+        Item.Tile.Style poster = Item.Tile.Style.POSTER;
         switch (item.value) {
             case "Home":
-                root.addView(skeletonHero()); root.addView(skeletonShelf()); root.addView(skeletonShelf()); break;
+                root.addView(skeletonSpotlight()); root.addView(skeletonShelf(poster)); root.addView(skeletonShelf(poster)); break;
             case "Library": case "History":
-                root.addView(skeletonShelf()); root.addView(skeletonShelf()); break;
-            case "Settings": skeletonRows(root, 7); break;
-            case "Imports": skeletonRows(root, 4); break;
-            case "Add-on": root.addView(skeletonHero()); skeletonRows(root, 3); break;
-            case "Add-ons": root.addView(skeletonChips()); skeletonRows(root, 6); break;
-            case "Add-on review": skeletonRows(root, 4); break;
-            case "Catalogues": skeletonRows(root, 5); break;
-            case "Catalogue": root.addView(skeletonChips()); root.addView(skeletonShelf()); break;
-            case "Details": root.addView(skeletonHero()); root.addView(skeletonChips()); root.addView(skeletonShelf()); break;
-            case "Sources": skeletonRows(root, 5); break;
-            case "Developer": skeletonRows(root, 5); break;
+                root.addView(skeletonHeading(17, 20, 0, 96)); root.addView(skeletonGrid(poster, 6));
+                root.addView(skeletonHeading(17, 20, 0, 136)); root.addView(skeletonGrid(poster, 6)); break;
+            case "Settings": return skeletonSplit();
+            case "Imports":
+                root.addView(skeletonTitle(116)); root.addView(skeletonRow(false, 196, 0)); root.addView(skeletonRow(false, 164, 0)); break;
+            case "Add-on":
+                root.addView(skeletonTitle(180)); root.addView(skeletonText(false, 0, 210));
+                root.addView(skeletonRow(false, 130, 24)); root.addView(skeletonRow(false, 104, 0)); root.addView(skeletonRow(false, 92, 0));
+                root.addView(skeletonHeading(14, 22, ROW_INSET, 84)); root.addView(skeletonRow(false, 150, 44)); root.addView(skeletonRow(false, 120, 44)); break;
+            case "Add-ons":
+                root.addView(skeletonTitle(180)); root.addView(skeletonActions(true, 46, 84, 106, 102, 88));
+                root.addView(skeletonHeading(14, 22, ROW_INSET, 56));
+                for (int i = 0; i < 5; i++) root.addView(skeletonSource(new int[]{132, 104, 150, 118, 140}[i], new int[]{200, 230, 210, 180, 220}[i], i == 0 ? 64 : 0));
+                break;
+            case "Add-on review":
+                root.addView(skeletonTitle(200)); root.addView(skeletonText(false, 0, 600, 600, 340)); root.addView(skeletonText(false, 0, 230, 150));
+                root.addView(skeletonActions(false, 148)); root.addView(skeletonText(false, 0, 330)); break;
+            case "Catalogues":
+                root.addView(skeletonTitle(110));
+                for (int width : new int[]{140, 120, 156, 104, 132, 118}) root.addView(skeletonRow(true, width, 0));
+                break;
+            case "Catalogue":
+                root.addView(skeletonTitle(170)); root.addView(skeletonGrid(poster, 6)); root.addView(skeletonGrid(poster, 6)); break;
+            case "Details":
+                root.addView(skeletonDetails()); root.addView(skeletonActions(false, 156, 126, 134, 168, -1)); root.addView(skeletonText(false, 64, 280)); break;
+            case "Sources":
+                root.addView(skeletonTitle(120)); root.addView(skeletonHeading(14, 22, ROW_INSET, 150));
+                for (int i = 0; i < 4; i++) root.addView(skeletonSource(new int[]{170, 150, 190, 140}[i], new int[]{150, 170, 130, 160}[i], 0));
+                root.addView(skeletonActions(false, 170)); break;
+            case "Developer":
+                root.addView(skeletonTitle(140));
+                for (int width : new int[]{220, 380, 300, 340, 420}) root.addView(skeletonText(false, 60, width));
+                break;
             default: return loading();
         }
-        root.setLayoutParams(fill()); return root;
+        root.setLayoutParams(fill());
+        return root;
     }
 
-    private View skeletonHero() {
-        LinearLayout hero = new LinearLayout(context); hero.setOrientation(LinearLayout.VERTICAL);
-        hero.setGravity(Gravity.BOTTOM); hero.setMinimumHeight(dp(164)); hero.setPadding(0, dp(12), 0, dp(22));
-        hero.addView(skeletonBar(280, 28)); addSkeletonGap(hero, 12);
-        hero.addView(skeletonBar(190, 13)); addSkeletonGap(hero, 10);
-        hero.addView(skeletonBar(430, 13));
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        p.bottomMargin = dp(12); hero.setLayoutParams(p); return hero;
-    }
-
-    private View skeletonShelf() {
-        LinearLayout shelf = new LinearLayout(context); shelf.setOrientation(LinearLayout.VERTICAL);
-        shelf.setPadding(0, dp(10), 0, dp(16));
-        shelf.addView(skeletonBar(170, 18));
-        LinearLayout cards = new LinearLayout(context); cards.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams cardsParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardsParams.topMargin = dp(12); shelf.addView(cards, cardsParams);
-        for (int i = 0; i < 6; i++) {
-            LinearLayout card = new LinearLayout(context); card.setOrientation(LinearLayout.VERTICAL);
-            AspectFrame poster = new AspectFrame(context, 1.5f); poster.setBackgroundResource(R.drawable.tv_skeleton);
-            card.addView(poster, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            addSkeletonGap(card, 8); card.addView(skeletonBar(82, 11)); addSkeletonGap(card, 5); card.addView(skeletonBar(54, 9));
-            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-            cardParams.setMargins(dp(6), 0, dp(6), 0); cards.addView(card, cardParams);
+    /** A bar for each line of {@code text}: the view keeps its real size and spacing, its words hidden. */
+    private View skeletonLines(TextView text, int... widthsDp) {
+        FrameLayout box = new FrameLayout(context);
+        StringBuilder blank = new StringBuilder(" ");
+        for (int i = 1; i < widthsDp.length; i++) blank.append("\n ");
+        text.setText(blank); text.setMaxLines(Math.max(1, widthsDp.length));
+        text.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        box.addView(text, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        // Each bar is centred on its line's capital letters: half a cap height above the baseline. The first line's
+        // baseline sits below the font's own top padding.
+        android.graphics.Paint.FontMetricsInt metrics = text.getPaint().getFontMetricsInt();
+        int bar = Math.max(dp(6), Math.round(text.getTextSize() * 0.62f)), line = text.getLineHeight();
+        int baseline = text.getPaddingTop() - (text.getIncludeFontPadding() ? metrics.top : metrics.ascent);
+        for (int i = 0; i < widthsDp.length; i++) {
+            if (widthsDp[i] <= 0) continue;
+            FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(dp(widthsDp[i]), bar);
+            p.leftMargin = text.getPaddingLeft();
+            p.topMargin = baseline + i * line - Math.round(text.getTextSize() * 0.36f) - bar / 2;
+            box.addView(skeletonBar(R.drawable.tv_skeleton), p);
         }
-        return shelf;
+        return box;
     }
 
-    private View skeletonChips() {
-        LinearLayout chips = new LinearLayout(context); chips.setGravity(Gravity.CENTER_VERTICAL);
-        chips.setPadding(0, dp(8), 0, dp(18));
-        for (int width : new int[]{82, 104, 76, 92}) {
-            View chip = skeletonBar(width, 34);
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(width), dp(34)); p.setMargins(0, 0, dp(10), 0);
-            chips.addView(chip, p);
-        }
-        return chips;
-    }
-
-    private void skeletonRows(LinearLayout root, int count) {
-        for (int i = 0; i < count; i++) {
-            FrameLayout row = new FrameLayout(context); row.setBackgroundResource(R.drawable.tv_skeleton);
-            View icon = skeletonBar(24, 24);
-            FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER_VERTICAL | Gravity.START);
-            iconParams.leftMargin = dp(22); row.addView(icon, iconParams);
-            LinearLayout text = new LinearLayout(context); text.setOrientation(LinearLayout.VERTICAL); text.setGravity(Gravity.CENTER_VERTICAL);
-            text.addView(skeletonBar(216, 13));
-            LinearLayout.LayoutParams sub = new LinearLayout.LayoutParams(dp(132), dp(9)); sub.topMargin = dp(7); text.addView(skeletonBar(132, 9), sub);
-            FrameLayout.LayoutParams textParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER_VERTICAL | Gravity.START);
-            textParams.leftMargin = dp(66); row.addView(text, textParams);
-            View trailing = skeletonBar(52, 11);
-            FrameLayout.LayoutParams trailingParams = new FrameLayout.LayoutParams(dp(52), dp(11), Gravity.CENTER_VERTICAL | Gravity.END);
-            trailingParams.rightMargin = dp(42); row.addView(trailing, trailingParams);
-            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46));
-            rowParams.bottomMargin = dp(6); root.addView(row, rowParams);
-        }
-    }
-
-    private View skeletonBar(int widthDp, int heightDp) {
-        View view = new View(context); view.setBackgroundResource(R.drawable.tv_skeleton);
-        if (widthDp > 0) view.setLayoutParams(new LinearLayout.LayoutParams(dp(widthDp), dp(heightDp)));
+    private View skeletonBar(int background) {
+        View view = new View(context); view.setBackgroundResource(background);
         return view;
     }
 
-    private void addSkeletonGap(LinearLayout parent, int heightDp) {
-        parent.addView(new View(context), new LinearLayout.LayoutParams(1, dp(heightDp)));
+    private View skeletonTitle(int widthDp) {
+        View title = skeletonLines(Tv.bold(context, "", 30), widthDp);
+        title.setPadding(gutterStart, dp(6), gutterEnd, dp(4)); title.setLayoutParams(fill());
+        return title;
+    }
+
+    /** A shelf or grid heading (17 sp, white) or a list section heading (14 sp, inset to the rows' labels). */
+    private View skeletonHeading(float sp, int topDp, int insetDp, int widthDp) {
+        View heading = skeletonLines(Tv.heading(context, "", sp, R.color.tv_text), widthDp);
+        heading.setPadding(gutterStart + dp(insetDp), dp(topDp), gutterEnd, dp(2)); heading.setLayoutParams(fill());
+        return heading;
+    }
+
+    private View skeletonText(boolean inList, int overlineDp, int... widthsDp) {
+        LinearLayout root = column(); root.setPadding(gutterStart + (inList ? dp(ROW_INSET) : 0), dp(14), gutterEnd, dp(2));
+        if (overlineDp > 0) root.addView(skeletonLines(Tv.heading(context, "", 12, R.color.tv_text_tertiary), overlineDp));
+        TextView detail = Tv.text(context, "", 15, R.color.tv_text_secondary); detail.setLineSpacing(0, 1.22f); detail.setPadding(0, dp(5), 0, 0);
+        root.addView(skeletonLines(detail, widthsDp));
+        root.setLayoutParams(fill());
+        return root;
+    }
+
+    /** A list row: optional icon, label and value, at the row's own height. */
+    private View skeletonRow(boolean icon, int labelDp, int valueDp) {
+        LinearLayout row = new LinearLayout(context); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(46)); row.setPadding(dp(ROW_INSET), dp(8), dp(14), dp(8));
+        if (icon) {
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(21), dp(21)); p.rightMargin = dp(14);
+            row.addView(skeletonBar(R.drawable.tv_skeleton_round), p);
+        }
+        row.addView(skeletonLines(Tv.text(context, "", 16, R.color.tv_on_glass), labelDp), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        if (valueDp > 0) row.addView(skeletonLines(Tv.text(context, "", 15, R.color.tv_on_glass_secondary), valueDp));
+        FrameLayout box = new FrameLayout(context); box.setPadding(gutterStart, dp(2), gutterEnd, dp(2));
+        box.addView(row, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        box.setLayoutParams(fill());
+        return box;
+    }
+
+    /** A two-line row (a source or a listed add-on), with its status at the end. */
+    private View skeletonSource(int titleDp, int metaDp, int statusDp) {
+        LinearLayout row = new LinearLayout(context); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(ROW_INSET), dp(10), dp(14), dp(10));
+        LinearLayout text = new LinearLayout(context); text.setOrientation(LinearLayout.VERTICAL);
+        text.addView(skeletonLines(Tv.text(context, "", 16, R.color.tv_on_glass), titleDp));
+        TextView meta = Tv.text(context, "", 13, R.color.tv_on_glass_secondary); meta.setPadding(0, dp(5), 0, 0);
+        text.addView(skeletonLines(meta, metaDp));
+        row.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        if (statusDp > 0) row.addView(skeletonLines(Tv.text(context, "", 13, R.color.tv_on_glass_secondary), statusDp));
+        FrameLayout box = new FrameLayout(context); box.setPadding(gutterStart, dp(2), gutterEnd, dp(2));
+        box.addView(row, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        box.setLayoutParams(fill());
+        return box;
+    }
+
+    /** Buttons (44 dp) or filter chips (36 dp capsules) at their usual widths; -1 is a round icon button. */
+    private View skeletonActions(boolean chips, int... widthsDp) {
+        LinearLayout row = new LinearLayout(context); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(gutterStart, dp(10), gutterEnd, dp(10));
+        int height = dp(chips ? 36 : 44);
+        for (int i = 0; i < widthsDp.length; i++) {
+            boolean round = widthsDp[i] < 0;
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(round ? height : dp(widthsDp[i]), height);
+            if (i > 0) p.leftMargin = dp(12);
+            row.addView(skeletonBar(round ? R.drawable.tv_skeleton_round : chips ? R.drawable.tv_skeleton_capsule : R.drawable.tv_skeleton), p);
+        }
+        row.setLayoutParams(fill());
+        return row;
+    }
+
+    /** Home's spotlight: its fixed height, with the title, facts and description at the bottom. */
+    private View skeletonSpotlight() {
+        LinearLayout root = column(); root.setGravity(Gravity.BOTTOM); root.setPadding(gutterStart, dp(4), gutterEnd, dp(2));
+        TextView title = Tv.bold(context, "", 34); title.setPadding(0, dp(4), 0, 0);
+        TextView meta = Tv.text(context, "", 14, R.color.tv_text_on_artwork); meta.setPadding(0, dp(10), 0, 0);
+        TextView description = Tv.text(context, "", 15, R.color.tv_text); description.setPadding(0, dp(8), 0, 0);
+        root.addView(skeletonLines(title, 300)); root.addView(skeletonLines(meta, 250)); root.addView(skeletonLines(description, 500, 380));
+        root.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(SPOTLIGHT_HEIGHT)));
+        return root;
+    }
+
+    /** A title's details header, as {@link #details} lays it out over the backdrop. */
+    private View skeletonDetails() {
+        LinearLayout root = column(); root.setGravity(Gravity.BOTTOM); root.setMinimumHeight(dp(220));
+        root.setPadding(gutterStart, dp(4), gutterEnd, dp(14));
+        TextView overline = Tv.heading(context, "", 12.5f, R.color.tv_text_on_artwork);
+        TextView title = Tv.bold(context, "", 36); title.setPadding(0, dp(8), 0, 0);
+        TextView meta = Tv.text(context, "", 14, R.color.tv_text_on_artwork); meta.setPadding(0, dp(12), 0, 0);
+        TextView about = Tv.text(context, "", 15, R.color.tv_text); about.setPadding(0, dp(8), 0, 0);
+        root.addView(skeletonLines(overline, 44)); root.addView(skeletonLines(title, 320)); root.addView(skeletonLines(meta, 380));
+        root.addView(skeletonLines(about, 540, 540, 320));
+        root.setLayoutParams(fill());
+        return root;
+    }
+
+    private View skeletonTile(Item.Tile.Style style, int widthDp) {
+        LinearLayout tile = new LinearLayout(context); tile.setOrientation(LinearLayout.VERTICAL);
+        AspectFrame frame = new AspectFrame(context, style == Item.Tile.Style.POSTER ? 1.5f : 0.5625f);
+        frame.setBackgroundResource(R.drawable.tv_skeleton);
+        tile.addView(frame, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView title = Tv.heading(context, "", 13.5f, R.color.tv_caption); title.setPadding(dp(2), dp(9), dp(2), 0);
+        TextView subtitle = Tv.text(context, "", 12, R.color.tv_text_secondary); subtitle.setPadding(dp(2), dp(3), dp(2), 0);
+        boolean poster = style == Item.Tile.Style.POSTER;
+        tile.addView(skeletonLines(title, poster ? 84 : 132)); tile.addView(skeletonLines(subtitle, poster ? 56 : 90));
+        tile.setLayoutParams(new LinearLayout.LayoutParams(widthDp > 0 ? dp(widthDp) : ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return tile;
+    }
+
+    /** A shelf: heading, then tiles at the shelf's width and gap, running off the edge as a real shelf does. */
+    private View skeletonShelf(Item.Tile.Style style) {
+        LinearLayout root = new LinearLayout(context); root.setOrientation(LinearLayout.VERTICAL);
+        root.addView(skeletonHeading(17, 14, 0, 150));
+        LinearLayout tiles = new LinearLayout(context); tiles.setOrientation(LinearLayout.HORIZONTAL);
+        tiles.setPadding(gutterStart, dp(12), 0, dp(14));
+        int width = style == Item.Tile.Style.POSTER ? POSTER_WIDTH : LANDSCAPE_WIDTH;
+        for (int i = 0; i < (style == Item.Tile.Style.POSTER ? 8 : 5); i++) {
+            View tile = skeletonTile(style, width);
+            if (i > 0) ((LinearLayout.LayoutParams) tile.getLayoutParams()).leftMargin = dp(GAP);
+            tiles.addView(tile);
+        }
+        HorizontalScrollView clip = new HorizontalScrollView(context); clip.setHorizontalScrollBarEnabled(false); clip.setFocusable(false);
+        clip.addView(tiles);
+        root.addView(clip, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.setLayoutParams(fill());
+        return root;
+    }
+
+    /** One full grid row, as {@link #grid} lays it out. */
+    private View skeletonGrid(Item.Tile.Style style, int columns) {
+        List<View> tiles = new ArrayList<>();
+        for (int i = 0; i < columns; i++) tiles.add(skeletonTile(style, 0));
+        return gridRow(tiles, columns);
+    }
+
+    /** Settings: the categories column and the first pane, at {@link #split}'s widths. */
+    private View skeletonSplit() {
+        LinearLayout root = new LinearLayout(context); root.setOrientation(LinearLayout.HORIZONTAL);
+        root.setPadding(gutterStart, dp(4), gutterEnd, 0);
+        LinearLayout categories = new LinearLayout(context); categories.setOrientation(LinearLayout.VERTICAL);
+        int saved = gutterStart, savedEnd = gutterEnd;
+        gutterStart = 0; gutterEnd = 0;
+        for (int width : new int[]{62, 70, 82, 70, 64, 50}) categories.addView(skeletonRow(true, width, 0));
+        gutterStart = dp(28);
+        LinearLayout pane = new LinearLayout(context); pane.setOrientation(LinearLayout.VERTICAL);
+        for (int width : new int[]{86, 120, 130, 104, 96}) pane.addView(skeletonRow(false, width, 0));
+        gutterStart = saved; gutterEnd = savedEnd;
+        root.addView(categories, new LinearLayout.LayoutParams(dp(240), ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(pane, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        root.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        return root;
     }
 
     /** Keeps artwork at its aspect ratio for whatever width the tile receives. */
@@ -725,7 +870,6 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     private View notice(Item item) {
         LinearLayout box = new LinearLayout(context); box.setOrientation(LinearLayout.HORIZONTAL); box.setGravity(Gravity.CENTER_VERTICAL);
         box.setClipChildren(false); box.setClipToPadding(false);
-        box.setBackgroundResource(R.drawable.tv_notice);
         box.setPadding(dp(18), dp(12), dp(8), dp(12));
         box.addView(Tv.icon(context, item.icon == 0 ? R.drawable.ic_tv_info : item.icon, 22, R.color.tv_text));
         LinearLayout text = new LinearLayout(context); text.setOrientation(LinearLayout.VERTICAL); text.setPadding(dp(14), 0, dp(12), 0);
@@ -739,8 +883,11 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             ((ViewGroup) ((ViewGroup) buttons).getChildAt(0)).setPadding(0, dp(4), dp(8), dp(4));
             box.addView(buttons, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
+        // The notice is glass; its buttons lift outside it, so they sit on the same blur rather than inside its clip.
+        FrameLayout glass = GlassView.surface(context); glass.setBackgroundResource(R.drawable.tv_notice);
         FrameLayout wrap = new FrameLayout(context); wrap.setClipChildren(false); wrap.setClipToPadding(false);
         wrap.setPadding(gutterStart, dp(14), gutterEnd, dp(6));
+        wrap.addView(glass, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         wrap.addView(box, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         wrap.setLayoutParams(fill());
         return wrap;
@@ -790,7 +937,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             // The bottom padding keeps a focused row inside the TV's safe area while unfocused rows run to the edge.
             list.setPadding(0, dp(8), 0, dp(28));
             list.setVerticalScrollBarEnabled(false); list.setNestedScrollingEnabled(true);
-            if (item.loading) list.setAdapter(skeletonCards(6));
+            if (item.loading) list.setAdapter(skeletonCards(SEARCH_COLUMNS * 2));
             else list.setAdapter(new TileAdapter(item.tiles, Item.Tile.Style.POSTER, 0, 14, true, SEARCH_COLUMNS, 18));
             // Rows scrolled up must not draw over the heading or the search bar; the edge columns keep room to lift.
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1);

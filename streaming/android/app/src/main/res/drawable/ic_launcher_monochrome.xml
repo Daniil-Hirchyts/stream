@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stream's mark in one colour, for themed launcher icons. Made by branding/make_brand.py. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M40.50,42.00 L40.50,66.00 Q40.50,72.50 46.15,69.28 L67.35,57.22 Q73.00,54.00 67.35,50.78 L46.15,38.72 Q40.50,35.50 40.50,42.00 Z" />
+</vector>

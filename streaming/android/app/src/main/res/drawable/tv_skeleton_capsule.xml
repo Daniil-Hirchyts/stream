@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Skeleton for a filter chip. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#24FFFFFF" />
+    <corners android:radius="@dimen/tv_radius_capsule" />
+</shape>

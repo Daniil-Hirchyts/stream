@@ -114,7 +114,7 @@ public final class AcceptanceTest extends AppHarness {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); tap("Settings", true);
         tap("Languages", false); tap("Audio language", false); tap("Russian", true); tap("Subtitle language", false); tap("English", true);
         tap("Subtitles", true);
-        for (String[] setting : new String[][]{{"size", "large"}, {"color", "yellow"}, {"edge", "outline"}, {"position", "raised"}}) {
+        for (String[] setting : new String[][]{{"size", "large"}, {"font", "condensed"}, {"color", "yellow"}, {"edge", "outline"}, {"position", "raised"}}) {
             tap("Subtitle " + setting[0], false); tap(setting[1], true);
             waitUntil("style saved", 5000, () -> setting[1].equals(services.playerPreferences.getString("subtitle_" + setting[0], "")));
         }

@@ -24,6 +24,9 @@
     <!-- Alerts: translucent glass over a blurred, slightly darkened copy of the screen. -->
     <color name="tv_material_dialog">#A62A2A30</color>
     <color name="tv_alert_tint">#59000000</color>
+    <!-- Behind the player's error alert: the last frame, darkened. A video surface can't be blurred from the view tree. -->
+    <color name="tv_player_error_backdrop">#C7000000</color>
+    <color name="tv_material_player">#E01E1E22</color>
 
     <!-- The shared player takes the same neutral palette in this app only; Daniil Cast keeps its own. -->
     <color name="ink" tools:ignore="UnusedResources">#FF000000</color>

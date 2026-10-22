@@ -1,8 +1,8 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">Stream</string>
     <string name="player_audio_subtitles">Audio and subtitles</string>
     <style name="TvTheme" parent="android:style/Theme.Material.NoActionBar">
-        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:fontFamily">@font/inter</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowBackground">@color/tv_background</item>
@@ -35,19 +35,19 @@
         <item name="android:buttonBarPositiveButtonStyle">@style/TvDialogPrimaryButton</item>
         <item name="android:buttonBarNegativeButtonStyle">@style/TvDialogSecondaryButton</item>
         <item name="android:buttonBarNeutralButtonStyle">@style/TvDialogSecondaryButton</item>
-        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:fontFamily">@font/inter</item>
     </style>
     <style name="TvDialogTitle" parent="android:style/TextAppearance.Material.DialogWindowTitle">
         <item name="android:textSize">22sp</item>
         <item name="android:textColor">@color/tv_text</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
     </style>
     <style name="TvDialogSecondaryButton" parent="android:style/Widget.Material.Button.Borderless.Colored">
         <item name="android:background">@drawable/tv_dialog_button</item>
         <item name="android:textColor">@color/tv_text</item>
         <item name="android:textSize">16sp</item>
         <item name="android:textAllCaps">false</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
         <item name="android:minWidth">104dp</item>
         <item name="android:minHeight">48dp</item>
         <item name="android:paddingStart">18dp</item>
@@ -55,8 +55,59 @@
         <item name="android:insetTop">4dp</item>
         <item name="android:insetBottom">4dp</item>
     </style>
+    <!-- The player's error buttons: full width, one above the other, as Tv.Alert builds them. -->
+    <style name="TvPlayerAlertButton">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">46dp</item>
+        <item name="android:layout_marginTop">8dp</item>
+        <item name="android:background">@drawable/tv_dialog_button</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:gravity">center</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:textColor">@color/tv_on_glass</item>
+        <item name="android:textSize">16sp</item>
+    </style>
     <style name="TvDialogPrimaryButton" parent="TvDialogSecondaryButton">
         <item name="android:background">@drawable/tv_dialog_primary</item>
         <item name="android:textColor">@color/tv_on_focus</item>
+    </style>
+
+    <!-- The shared player's type scale in this app's typeface (same names, sizes and colours as android/playback). -->
+    <style name="Text" tools:ignore="UnusedResources">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:fontFamily">@font/inter</item>
+    </style>
+    <style name="Text.Title" tools:ignore="UnusedResources">
+        <item name="android:textSize">26sp</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+    </style>
+    <style name="Text.Value" tools:ignore="UnusedResources">
+        <item name="android:textSize">17sp</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+    </style>
+    <style name="Text.Overline" tools:ignore="UnusedResources">
+        <item name="android:textSize">13sp</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:textColor">@color/accent</item>
+        <item name="android:letterSpacing">0.14</item>
+        <item name="android:textAllCaps">true</item>
+    </style>
+    <!-- Tabular figures, so the times don't shift as they count. -->
+    <style name="Text.Time" tools:ignore="UnusedResources">
+        <item name="android:textSize">16sp</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+    </style>
+    <style name="KeyCap" parent="Text" tools:ignore="UnusedResources">
+        <item name="android:layout_height">28dp</item>
+        <item name="android:minWidth">34dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingStart">8dp</item>
+        <item name="android:paddingEnd">8dp</item>
+        <item name="android:background">@drawable/keycap</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
     </style>
 </resources>
