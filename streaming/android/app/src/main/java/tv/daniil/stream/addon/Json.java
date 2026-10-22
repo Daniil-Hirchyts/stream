@@ -52,6 +52,42 @@ final class Json {
         return fallback;
     }
 
+    /** Display text: some providers send HTML entities ("O&apos;Dea", "Tom &amp; Jerry"); show the characters. */
+    static String text(JSONObject o, String key, String fallback) { return entities(string(o, key, fallback)); }
+    static List<String> texts(JSONObject o, String key) {
+        List<String> raw = strings(o, key);
+        List<String> out = new ArrayList<>(raw.size());
+        for (String value : raw) out.add(entities(value));
+        return Collections.unmodifiableList(out);
+    }
+    static String entities(String value) {
+        if (value == null || value.indexOf('&') < 0) return value;
+        StringBuilder out = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            int end = c == '&' ? value.indexOf(';', i) : -1;
+            if (end < 0 || end - i > 10) { out.append(c); continue; }
+            String name = value.substring(i + 1, end);
+            int code = -1;
+            switch (name) {
+                case "amp": code = '&'; break;
+                case "lt": code = '<'; break;
+                case "gt": code = '>'; break;
+                case "quot": code = '"'; break;
+                case "apos": code = '\''; break;
+                case "nbsp": code = ' '; break;
+                default:
+                    try {
+                        if (name.startsWith("#x") || name.startsWith("#X")) code = Integer.parseInt(name.substring(2), 16);
+                        else if (name.startsWith("#")) code = Integer.parseInt(name.substring(1));
+                    } catch (NumberFormatException ignored) { /* not an entity */ }
+            }
+            if (code <= 0 || code > Character.MAX_CODE_POINT) { out.append(c); continue; }
+            out.appendCodePoint(code); i = end;
+        }
+        return out.toString();
+    }
+
     /** The strings of an array, skipping anything else; empty when absent. */
     static List<String> strings(JSONObject o, String key) {
         JSONArray a = o.optJSONArray(key);

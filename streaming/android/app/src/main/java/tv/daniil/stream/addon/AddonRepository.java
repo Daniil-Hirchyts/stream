@@ -59,18 +59,26 @@ public final class AddonRepository implements AutoCloseable {
     private final List<String> directory;
     private final AddonClient client = new AddonClient();
     private final ThreadPoolExecutor workers = new ThreadPoolExecutor(4, 4, 0, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(64));
+    /** Guards only {@link #scopes}: screens open requests on the UI thread while workers hold {@code this} to save. */
+    private final Object scopeLock = new Object();
     private final List<Cancellation> scopes = new ArrayList<>();
 
     /** No default directory: the store lists built-in add-ons and lists published by installed add-ons. */
     public AddonRepository(TvStore store) { this(store, Collections.emptyList()); }
     /** @param directory manifest addresses whose Official and Community add-on lists the store always shows */
     public AddonRepository(TvStore store, List<String> directory) { this.store = store; this.directory = Collections.unmodifiableList(new ArrayList<>(directory)); }
-    public synchronized Cancellation newRequest() {
-        scopes.removeIf(Cancellation::isCancelled);
-        Cancellation scope = new Cancellation(); scopes.add(scope); return scope;
+    public Cancellation newRequest() {
+        synchronized (scopeLock) {
+            scopes.removeIf(Cancellation::isCancelled);
+            Cancellation scope = new Cancellation(); scopes.add(scope); return scope;
+        }
     }
     /** Called before configuration changes and when leaving all provider screens. */
-    public synchronized void cancelRequests() { for (Cancellation scope : scopes) scope.close(); scopes.clear(); }
+    public void cancelRequests() {
+        List<Cancellation> open;
+        synchronized (scopeLock) { open = new ArrayList<>(scopes); scopes.clear(); }
+        for (Cancellation scope : open) scope.close();
+    }
     public AddonManifest preview(String manifestUrl, Cancellation scope) throws AddonException {
         AddonUrl url = new AddonUrl(manifestUrl);
         return AddonManifest.parse(client.json(url.manifest, scope, AddonClient.deadline()));
@@ -298,5 +306,5 @@ public final class AddonRepository implements AutoCloseable {
             workers.purge();
         }
     }
-    @Override public synchronized void close() { cancelRequests(); workers.shutdownNow(); client.close(); }
+    @Override public void close() { cancelRequests(); workers.shutdownNow(); client.close(); }
 }

@@ -1,14 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Daniil TV palette: near-black canvas, neutral glass surfaces and white focus, after tvOS. -->
+    <!-- Daniil TV palette: near-black canvas, translucent platters and white focus, after tvOS. -->
     <color name="tv_background">#FF0A0A0D</color>
     <color name="tv_surface">#FF1C1C1E</color>
-    <color name="tv_glass">#2EFFFFFF</color>
-    <color name="tv_glass_low">#14FFFFFF</color>
     <color name="tv_hairline">#1FFFFFFF</color>
-    <color name="tv_glass_pressed">#40FFFFFF</color>
-    <color name="tv_glass_selected">#29FFFFFF</color>
-    <color name="tv_glass_focus_fill">#33FFFFFF</color>
     <color name="tv_text">#FFF5F5F7</color>
     <color name="tv_text_secondary">#A6EBEBF5</color>
     <color name="tv_text_tertiary">#66EBEBF5</color>
@@ -16,6 +11,14 @@
     <color name="tv_on_focus_secondary">#99111113</color>
     <color name="tv_focus">#FFFFFFFF</color>
     <color name="tv_warning">#FFFFD60A</color>
+    <!-- tvOS materials: translucent platters at rest, a white platter for focus. -->
+    <color name="tv_platter">#24FFFFFF</color>
+    <color name="tv_platter_low">#12FFFFFF</color>
+    <color name="tv_platter_selected">#3DFFFFFF</color>
+    <color name="tv_focus_pressed">#D9FFFFFF</color>
+    <color name="tv_material_thin">#52222227</color>
+    <color name="tv_material">#E6202024</color>
+    <color name="tv_material_dialog">#D91E1E22</color>
 
     <!-- The shared player takes the same neutral palette in this app only; Daniil Cast keeps its own. -->
     <color name="ink" tools:ignore="UnusedResources">#FF000000</color>

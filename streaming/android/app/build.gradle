@@ -20,7 +20,8 @@ android {
     }
     buildFeatures { buildConfig true }
     // JVM tests of the add-on protocol code; Android stubs answer defaults and org.json comes from its own artifact.
-    testOptions { unitTests.returnDefaultValues = true }
+    // Robolectric UI snapshots need the merged resources.
+    testOptions { unitTests.returnDefaultValues = true; unitTests.includeAndroidResources = true }
     testBuildType releaseValidation ? 'release' : 'debug'
     buildTypes {
         release {
@@ -39,6 +40,8 @@ dependencies {
     implementation 'com.github.Dimezis:BlurView:version-3.2.0'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20250517'
+    testImplementation 'org.robolectric:robolectric:4.17'
+    testImplementation 'androidx.test:core:1.6.1'
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test:core:1.6.1'
@@ -46,9 +49,17 @@ dependencies {
 }
 
 // Live tests reach real add-ons and archive.org with real films; only `-PliveAddons=true` runs them.
+// `-PuiSnapshots=true` renders the real browse screens at 1920×1080 into build/ui-snapshots (Robolectric, live Cinemeta).
 tasks.withType(Test).configureEach {
     systemProperty 'dtv.live', providers.gradleProperty('liveAddons').getOrElse('false')
     systemProperty 'dtv.evidence', layout.buildDirectory.dir('live-evidence').get().asFile.path
-    outputs.upToDateWhen { !providers.gradleProperty('liveAddons').isPresent() }
+    systemProperty 'dtv.snapshots', providers.gradleProperty('uiSnapshots').getOrElse('false')
+    systemProperty 'dtv.snapshotDir', layout.buildDirectory.dir('ui-snapshots').get().asFile.path
+    systemProperty 'robolectric.graphicsMode', 'NATIVE'
+    systemProperty 'robolectric.pixelCopyRenderMode', 'hardware'
+    // Robolectric's Android runtime reaches JDK internals on Java 17+.
+    jvmArgs '--add-opens=java.base/jdk.internal.access=ALL-UNNAMED', '--add-opens=java.base/java.io=ALL-UNNAMED',
+            '--add-opens=java.base/java.lang=ALL-UNNAMED', '--add-opens=java.base/java.nio=ALL-UNNAMED'
+    outputs.upToDateWhen { !providers.gradleProperty('liveAddons').isPresent() && !providers.gradleProperty('uiSnapshots').isPresent() }
     testLogging { events 'passed', 'skipped', 'failed'; showStandardStreams = providers.gradleProperty('liveAddons').isPresent() }
 }

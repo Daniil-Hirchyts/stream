@@ -1,7 +1,6 @@
 package tv.daniil.stream;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Intent;
 import android.net.Uri;
@@ -56,7 +55,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private Artwork artwork;
     private Backdrop backdrop;
     private LinearLayout navigation;
-    private View topBarControls, searchButton, searchExpandedView, searchClose;
+    private View topBar, topBarControls, searchButton, searchExpandedView, searchClose;
+    private boolean topBarHidden;
     private TextView searchQuery;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Route> stack = new ArrayList<>();
@@ -82,14 +82,17 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         incomingHandled = saved != null && saved.getBoolean("incomingHandled");
         incomingFile = incomingHandled ? null : incoming(getIntent());
         setContentView(R.layout.activity_browse);
-        artwork = new Artwork();
+        artwork = new Artwork(new java.io.File(getCacheDir(), "artwork"));
         backdrop = new Backdrop(artwork, findViewById(R.id.backdrop), findViewById(R.id.backdrop_back), findViewById(R.id.backdrop_scrim));
         list = findViewById(R.id.page_rows);
         list.setLayoutManager(new PageAdapter.Layout(this, RecyclerView.VERTICAL, 40));
         list.setItemAnimator(null);
+        // Off-screen shelves keep their views: scrolling back never rebuilds a row or reloads its artwork.
+        list.setItemViewCacheSize(10);
         adapter = new PageAdapter(this, artwork, this);
         list.setAdapter(adapter);
         navigation = findViewById(R.id.navigation);
+        topBar = findViewById(R.id.top_bar);
         topBarControls = findViewById(R.id.top_bar_controls);
         searchButton = findViewById(R.id.search_button);
         searchExpandedView = findViewById(R.id.search_expanded);
@@ -98,6 +101,15 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         searchButton.setDefaultFocusHighlightEnabled(false);
         searchClose.setDefaultFocusHighlightEnabled(false);
         for (String screen : TABS) navigation.addView(tab(screen));
+        // The tab bar's ends hold focus rather than dropping into whatever content lies beyond them.
+        View lastTab = navigation.getChildAt(TABS.length - 1);
+        lastTab.setId(View.generateViewId()); lastTab.setNextFocusRightId(lastTab.getId());
+        searchButton.setNextFocusLeftId(R.id.search_button);
+        // tvOS: the tab bar slides away while content scrolls and returns when focus reaches it or the page is at its top.
+        list.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override public void onScrolled(RecyclerView view, int dx, int dy) { updateTopBar(); }
+        });
+        list.getViewTreeObserver().addOnGlobalFocusChangeListener((old, now) -> updateTopBar());
         Tv.control(searchButton, "nav:search", this::search, key -> {}, 1.06f, false);
         Tv.control(searchClose, "search:close", this::closeSearch, key -> {}, 1.04f, false);
         if (android.os.Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
@@ -113,15 +125,13 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         initialize();
     }
     private TextView tab(String screen) {
-        TextView tab = Tv.heading(this, screen, 17, R.color.tv_tab_text);
+        TextView tab = Tv.heading(this, screen, 15.5f, R.color.tv_tab_text);
         tab.setGravity(Gravity.CENTER); tab.setBackgroundResource(R.drawable.tv_tab); tab.setContentDescription(screen);
-        tab.setDefaultFocusHighlightEnabled(false);
-        tab.setPadding(Tv.dp(this, 14), 0, Tv.dp(this, 14), 0);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, Tv.dp(this, 44));
-        params.setMarginStart(Tv.dp(this, 3)); params.setMarginEnd(Tv.dp(this, 3));
+        tab.setPadding(Tv.dp(this, 17), 0, Tv.dp(this, 17), 0);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, Tv.dp(this, 38));
+        params.setMarginStart(Tv.dp(this, 2)); params.setMarginEnd(Tv.dp(this, 2));
         tab.setLayoutParams(params);
-        Tv.control(tab, "nav:" + screen, () -> { stayOnTabs = true; root(screen); }, key -> {}, 1.06f, false);
+        Tv.control(tab, "nav:" + screen, () -> { stayOnTabs = true; root(screen); }, key -> {}, 1.04f, false);
         return tab;
     }
     private void initialize() {
@@ -210,6 +220,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         Route route = route(); Cancellation request = scope;
         chrome(route.screen);
         loading();
+        topBarHidden = true; updateTopBar();
         work(() -> build(route, request), this::show);
     }
     private Page build(Route route, Cancellation request) throws Exception {
@@ -242,17 +253,23 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         for (int i = 0; i < navigation.getChildCount(); i++) navigation.getChildAt(i).setActivated(TABS[i].equals(rootScreen));
         syncSearchQuery();
     }
+    /** Hides the tab bar once content has scrolled under it, unless it has focus; shows it again at the top. */
+    private void updateTopBar() {
+        boolean hide = !searchExpanded && !topBar.hasFocus() && list.computeVerticalScrollOffset() > Tv.dp(this, 24);
+        if (hide == topBarHidden) return;
+        topBarHidden = hide;
+        topBar.animate().cancel();
+        topBar.animate().translationY(hide ? -topBar.getHeight() : 0).alpha(hide ? 0f : 1f).setDuration(hide ? 220 : 260).start();
+    }
     private void show(Page page) {
         contentReady = false;
         Route route = route();
-        TextView title = findViewById(R.id.page_title);
-        title.setText(page.title == null ? "" : page.title);
-        title.setVisibility(page.title == null ? View.GONE : View.VISIBLE);
-        int headerHeight = findViewById(R.id.top_bar).getHeight();
-        if (headerHeight == 0) headerHeight = Tv.dp(this, 84);
-        FrameLayout.LayoutParams titlePosition = (FrameLayout.LayoutParams) title.getLayoutParams();
-        titlePosition.topMargin = headerHeight + Tv.dp(this, 8);
-        title.setLayoutParams(titlePosition);
+        // Titles scroll with their page, as on tvOS, rather than floating over it.
+        findViewById(R.id.page_title).setVisibility(View.GONE);
+        List<Item> items = page.items;
+        if (page.title != null) { items = new ArrayList<>(page.items); items.add(0, Item.pageTitle(page.title)); }
+        int headerHeight = topBar.getHeight();
+        if (headerHeight == 0) headerHeight = Tv.dp(this, 76);
         View panel = findViewById(R.id.side_panel);
         panel.setVisibility(page.hasPanel() ? View.VISIBLE : View.GONE);
         if (page.hasPanel()) {
@@ -263,16 +280,15 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         adapter.gutter(page.hasPanel() ? 8 : 48, 48);
         // Home's spotlight sets the artwork itself; clearing it first would flash the plain canvas.
         boolean spotlight = !page.items.isEmpty() && page.items.get(0).kind == Item.Kind.SPOTLIGHT;
-        int contentTop = spotlight ? Tv.dp(this, 8)
-                : headerHeight + Tv.dp(this, page.title == null ? 8 : 66);
+        int contentTop = spotlight ? 0 : headerHeight + Tv.dp(this, 2);
         list.setPadding(list.getPaddingLeft(), contentTop, list.getPaddingRight(), list.getPaddingBottom());
-        if (!spotlight) backdrop.show(page.backdrop, true);
+        if (!spotlight) backdrop.show(page.backdrop, true, page.blurBackdrop);
         // Restore the route's focus; otherwise start on the page's first choice, unless the user is on the tabs.
         String wanted = !route.focus.isEmpty() ? route.focus : page.initialFocus != null ? page.initialFocus : "";
         boolean tabs = stayOnTabs && navigation.hasFocus();
         stayOnTabs = false;
         if (wanted.isEmpty() && !tabs && page.firstTile() != null) wanted = page.firstTile();
-        adapter.set(page.items, wanted);
+        adapter.set(items, wanted);
         if (route.scroll != null) list.getLayoutManager().onRestoreInstanceState(route.scroll);
         else list.scrollToPosition(0);
         String target = wanted;
@@ -348,7 +364,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
 
     // Page listener.
     @Override public void focused(String key) { if (contentReady && !stack.isEmpty()) route().focus = key; }
-    @Override public void featured(@Nullable Title title) { backdrop.show(title, false); }
+    @Override public void featured(@Nullable Title title) { backdrop.show(title, false, false); }
 
     // Workers.
     private <T> void work(Callable<T> task, Consumer<T> done) {
@@ -369,205 +385,69 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         then(() -> { services.store.remember(title); return null; }, () -> startActivity(WatchActivity.intent(this, title, video, sourceKey)));
     }
 
-    // Dialogs.
-    private void showDialog(AlertDialog dialog) {
-        dialogs.add(dialog); dialog.setOnDismissListener(ignored -> dialogs.remove(dialog)); dialog.show(); Tv.styleDialog(dialog);
-        for (int id : new int[]{AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_NEUTRAL}) {
-            View button = dialog.getButton(id);
-            if (button != null) button.setOnTouchListener((v, event) -> { if (event.getActionMasked() == MotionEvent.ACTION_DOWN) v.requestFocus(); return false; });
-        }
-    }
-    private void showGlassDialog(Dialog dialog) {
+    // Dialogs: tvOS alerts (Tv.Alert), dismissed by Back or their Cancel/Close button.
+    private void show(Tv.Alert alert) {
+        Dialog dialog = alert.dialog;
         dialogs.add(dialog); dialog.setOnDismissListener(ignored -> dialogs.remove(dialog));
-        dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
-        dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        dialog.show(); Tv.styleDialog(dialog);
+        alert.show();
     }
-    private LinearLayout glassSurface(Dialog dialog, String title) {
-        LinearLayout surface = new LinearLayout(this);
-        surface.setOrientation(LinearLayout.VERTICAL);
-        surface.setBackgroundResource(R.drawable.tv_dialog);
-        int horizontal = Tv.dp(this, 32);
-        surface.setPadding(horizontal, Tv.dp(this, 26), horizontal, Tv.dp(this, 24));
-
-        LinearLayout header = new LinearLayout(this);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView heading = Tv.heading(this, title, 25, R.color.tv_text);
-        heading.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        header.addView(heading);
-        ImageView close = Tv.icon(this, R.drawable.ic_tv_close, 22, R.color.tv_text_secondary);
-        close.setBackgroundResource(R.drawable.tv_button_round);
-        close.setContentDescription("Close");
-        close.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
-        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(Tv.dp(this, 48), Tv.dp(this, 48));
-        closeParams.setMarginStart(Tv.dp(this, 18));
-        header.addView(close, closeParams);
-        surface.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 48)));
-        Tv.control(close, "popup:close", dialog::cancel, ignored -> {}, 1.04f, false);
-        return surface;
-    }
+    /** Long text (licences) scrolls inside the alert, left-aligned for reading. */
     private void showGlassMessage(String title, CharSequence message, boolean scroll, Runnable onClose) {
-        Dialog dialog = new Dialog(this);
-        LinearLayout surface = glassSurface(dialog, title);
+        Tv.Alert alert = Tv.alert(this, title, scroll ? null : message);
         if (scroll) {
             ScrollView content = new ScrollView(this);
-            content.setVerticalScrollBarEnabled(false);
-            TextView body = Tv.text(this, message.toString(), 15, R.color.tv_text_secondary);
-            body.setTextIsSelectable(true);
+            content.setVerticalScrollBarEnabled(false); content.setFocusable(true);
+            TextView body = Tv.text(this, message.toString(), 13.5f, R.color.tv_text_secondary);
             body.setLineSpacing(Tv.dp(this, 3), 1f);
-            int pad = Tv.dp(this, 18);
-            body.setPadding(pad, pad, pad, pad);
             content.addView(body);
-            LinearLayout.LayoutParams contentParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 380));
-            contentParams.topMargin = Tv.dp(this, 18);
-            surface.addView(content, contentParams);
-        } else {
-            TextView body = Tv.text(this, message.toString(), 17, R.color.tv_text_secondary);
-            body.setLineSpacing(Tv.dp(this, 4), 1f);
-            body.setPadding(0, Tv.dp(this, 18), 0, Tv.dp(this, 8));
-            surface.addView(body);
+            LinearLayout.LayoutParams contentParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 300));
+            contentParams.topMargin = Tv.dp(this, 16);
+            alert.surface.addView(Tv.clipped(content, 0), alert.surface.indexOfChild(alert.buttons), contentParams);
         }
-        dialog.setOnCancelListener(ignored -> { if (onClose != null) onClose.run(); });
-        dialog.setContentView(surface);
-        dialog.setCanceledOnTouchOutside(true);
-        showGlassDialog(dialog);
+        alert.button("popup:close", "Close", alert.dialog::cancel);
+        alert.dialog.setOnCancelListener(ignored -> { if (onClose != null) onClose.run(); });
+        show(alert);
     }
     private void showGlassConfirmation(String title, CharSequence message, String action, Runnable onAccept, Runnable onCancel) {
-        Dialog dialog = new Dialog(this);
-        LinearLayout surface = glassSurface(dialog, title);
-        ScrollView content = new ScrollView(this);
-        content.setVerticalScrollBarEnabled(false);
-        TextView body = Tv.text(this, message.toString(), 17, R.color.tv_text_secondary);
-        body.setLineSpacing(Tv.dp(this, 4), 1f);
-        content.addView(body);
-        LinearLayout.LayoutParams contentParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        contentParams.topMargin = Tv.dp(this, 18);
-        contentParams.bottomMargin = Tv.dp(this, 8);
-        surface.addView(content, contentParams);
-
-        LinearLayout actions = new LinearLayout(this);
-        actions.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams actionsParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 56));
-        actionsParams.topMargin = Tv.dp(this, 12);
-        surface.addView(actions, actionsParams);
-        FrameLayout primary = new FrameLayout(this);
-        primary.setBackgroundResource(R.drawable.tv_dialog_primary);
-        primary.setContentDescription(action);
-        primary.setMinimumWidth(Tv.dp(this, 176));
-        LinearLayout primaryContent = new LinearLayout(this);
-        primaryContent.setGravity(Gravity.CENTER);
-        primaryContent.addView(Tv.heading(this, action, 17, R.color.tv_on_focus));
-        ImageView arrow = Tv.icon(this, R.drawable.ic_tv_chevron, 20, R.color.tv_on_focus);
-        LinearLayout.LayoutParams arrowParams = (LinearLayout.LayoutParams) arrow.getLayoutParams();
-        arrowParams.setMarginStart(Tv.dp(this, 10));
-        primaryContent.addView(arrow, arrowParams);
-        primary.addView(primaryContent, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER));
-        actions.addView(primary, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        Tv.control(primary, "popup:confirm", () -> { dialog.dismiss(); onAccept.run(); }, ignored -> {}, 1.04f, false);
-        dialog.setOnCancelListener(ignored -> { if (onCancel != null) onCancel.run(); });
-        dialog.setContentView(surface);
-        dialog.setCanceledOnTouchOutside(true);
-        showGlassDialog(dialog);
-        primary.requestFocus();
+        Tv.Alert alert = Tv.alert(this, title, message);
+        alert.button("popup:confirm", action, () -> { alert.dialog.dismiss(); onAccept.run(); });
+        alert.button("popup:cancel", "Cancel", alert.dialog::cancel);
+        alert.dialog.setOnCancelListener(ignored -> { if (onCancel != null) onCancel.run(); });
+        show(alert);
     }
     @Override public void edit(String title, String hint, String initial, Consumer<String> accept) {
-        Dialog dialog = new Dialog(this);
-        LinearLayout surface = new LinearLayout(this);
-        surface.setOrientation(LinearLayout.VERTICAL);
-        surface.setBackgroundResource(R.drawable.tv_dialog);
-        int horizontal = Tv.dp(this, 32);
-        surface.setPadding(horizontal, Tv.dp(this, 28), horizontal, Tv.dp(this, 28));
-
-        LinearLayout header = new LinearLayout(this);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView heading = Tv.heading(this, title, 26, R.color.tv_text);
-        heading.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        header.addView(heading);
-        ImageView close = Tv.icon(this, R.drawable.ic_tv_close, 22, R.color.tv_text_secondary);
-        close.setBackgroundResource(R.drawable.tv_button_round);
-        close.setContentDescription("Cancel");
-        close.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
-        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(Tv.dp(this, 48), Tv.dp(this, 48));
-        closeParams.setMarginStart(Tv.dp(this, 18));
-        header.addView(close, closeParams);
-        surface.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 48)));
-        Tv.control(close, "popup:cancel", dialog::dismiss, ignored -> {}, 1.04f, false);
-
         String description;
-        if (title.equals("Add add-on")) description = "Connect a catalogue or source using its manifest URL.";
+        if (title.equals("Add add-on")) description = "Connect a catalogue or source using its manifest address.";
         else if (title.equals("Import torrent")) description = "Paste a magnet link or a torrent URL.";
         else if (title.toLowerCase(java.util.Locale.ROOT).contains("name") || title.startsWith("Rename")) description = "Choose the name shown in your library.";
-        else description = "Enter a value to continue.";
-        TextView detail = Tv.text(this, description, 16, R.color.tv_text_secondary);
-        detail.setPadding(0, Tv.dp(this, 6), 0, Tv.dp(this, 22));
-        surface.addView(detail);
-
+        else description = "";
+        Tv.Alert alert = Tv.alert(this, title, description);
         EditText input = new EditText(this);
-        input.setSingleLine(true); input.setHint(hint); input.setText(initial); input.setTextSize(19);
-        input.setTextColor(getColor(R.color.tv_text)); input.setHintTextColor(getColor(R.color.tv_text_secondary));
+        input.setSingleLine(true); input.setHint(hint); input.setText(initial); input.setTextSize(17);
+        input.setTextColor(getColor(R.color.tv_text)); input.setHintTextColor(getColor(R.color.tv_text_tertiary));
         input.setSelectAllOnFocus(true); input.setContentDescription(title); input.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        input.setBackgroundResource(android.R.color.transparent); input.setPadding(0, 0, 0, 0);
-        LinearLayout field = new LinearLayout(this);
-        field.setGravity(Gravity.CENTER_VERTICAL);
-        field.setBackgroundResource(R.drawable.tv_dialog_field);
-        field.setPadding(Tv.dp(this, 20), 0, Tv.dp(this, 20), 0);
-        int inputIcon = hint.equalsIgnoreCase("Title") || hint.equalsIgnoreCase("Value") ? R.drawable.ic_tv_edit : R.drawable.ic_tv_link;
-        ImageView leading = Tv.icon(this, inputIcon, 23, R.color.tv_text_secondary);
-        LinearLayout.LayoutParams leadingParams = (LinearLayout.LayoutParams) leading.getLayoutParams();
-        leadingParams.setMarginEnd(Tv.dp(this, 16));
-        field.addView(leading, leadingParams);
-        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
-        field.addView(input, inputParams);
-        surface.addView(field, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 62)));
-
-        TextView error = Tv.text(this, "", 14, R.color.tv_warning);
-        error.setVisibility(View.GONE);
-        error.setPadding(Tv.dp(this, 4), Tv.dp(this, 8), 0, 0);
-        surface.addView(error);
-
-        LinearLayout actions = new LinearLayout(this);
-        actions.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams actionsParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 56));
-        actionsParams.topMargin = Tv.dp(this, 22);
-        surface.addView(actions, actionsParams);
-        FrameLayout proceed = new FrameLayout(this);
-        proceed.setBackgroundResource(R.drawable.tv_dialog_primary);
-        proceed.setContentDescription("Continue");
-        proceed.setMinimumWidth(Tv.dp(this, 176));
-        LinearLayout proceedContent = new LinearLayout(this);
-        proceedContent.setGravity(Gravity.CENTER);
-        TextView proceedLabel = Tv.heading(this, "Continue", 17, R.color.tv_on_focus);
-        proceedContent.addView(proceedLabel);
-        ImageView arrow = Tv.icon(this, R.drawable.ic_tv_chevron, 20, R.color.tv_on_focus);
-        LinearLayout.LayoutParams arrowParams = (LinearLayout.LayoutParams) arrow.getLayoutParams();
-        arrowParams.setMarginStart(Tv.dp(this, 10));
-        proceedContent.addView(arrow, arrowParams);
-        proceed.addView(proceedContent, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER));
-        actions.addView(proceed, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        Tv.control(proceed, "popup:continue", () -> {
+        input.setBackgroundResource(R.drawable.tv_dialog_field); input.setPadding(Tv.dp(this, 16), 0, Tv.dp(this, 16), 0);
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 50));
+        inputParams.topMargin = Tv.dp(this, 20);
+        alert.surface.addView(input, alert.surface.indexOfChild(alert.buttons), inputParams);
+        TextView error = Tv.text(this, "", 13.5f, R.color.tv_warning);
+        error.setVisibility(View.GONE); error.setGravity(Gravity.CENTER); error.setPadding(0, Tv.dp(this, 8), 0, 0);
+        alert.surface.addView(error, alert.surface.indexOfChild(alert.buttons));
+        View proceed = alert.button("popup:continue", "Continue", () -> {
             String text = input.getText().toString().trim();
-            if (text.isEmpty()) {
-                error.setText("Enter a value"); error.setVisibility(View.VISIBLE); input.requestFocus(); return;
-            }
-            error.setVisibility(View.GONE); dialog.dismiss(); accept.accept(text);
-        }, ignored -> {}, 1.04f, false);
+            if (text.isEmpty()) { error.setText("Enter a value"); error.setVisibility(View.VISIBLE); input.requestFocus(); return; }
+            error.setVisibility(View.GONE); alert.dialog.dismiss(); accept.accept(text);
+        });
+        alert.button("popup:cancel", "Cancel", alert.dialog::dismiss);
         input.setOnEditorActionListener((v, action, event) -> {
             if (action != EditorInfo.IME_ACTION_DONE) return false;
             proceed.performClick(); return true;
         });
-        dialog.setContentView(surface);
-        showGlassDialog(dialog);
+        show(alert);
         input.requestFocus();
     }
-    @Override public void choose(String title, String[] options, Consumer<Integer> accept) {
-        Dialog dialog = Tv.glassChoices(this, title, options, accept, null);
-        showGlassDialog(dialog);
-        View first = dialog.getWindow().getDecorView().findViewWithTag("choice:0");
-        if (first != null) first.requestFocus();
-    }
-    @Override public void alert(String title, String message) {
-        showGlassMessage(title, message, false, null);
-    }
+    @Override public void choose(String title, String[] options, Consumer<Integer> accept) { show(Tv.choices(this, title, options, accept, null)); }
+    @Override public void alert(String title, String message) { showGlassMessage(title, message, false, null); }
     @Override public void openWebsite(String address) {
         try {
             AddonUrl.web(address);

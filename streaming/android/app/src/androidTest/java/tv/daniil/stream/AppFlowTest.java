@@ -43,7 +43,7 @@ public final class AppFlowTest extends AppHarness {
         waitUntil("background history", 10_000, () -> !services.store.history(true).isEmpty());
         waitUntil("cache released", 10_000, () -> { java.io.File[] f = new java.io.File(context.getCacheDir(), "payload").listFiles(); return f == null || f.length == 0; });
         context.startActivity(new android.content.Intent(context, MainActivity.class).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
-        tap("History", false); waitUntil("history row", 10_000, () -> services.store.history(true).size() == 1);
+        tap("Library", false); waitUntil("history row", 10_000, () -> services.store.history(true).size() == 1);
     }
     @Test public void seriesResolvesItsOriginalVideoIdAndNextEpisodeIndependently() throws Exception {
         readyLibrary(); launch(); tap("Generated Series", true); tap("Play", false);

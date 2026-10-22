@@ -3,6 +3,7 @@ package tv.daniil.stream.ui;
 import android.content.Context;
 import android.graphics.Outline;
 import android.graphics.Rect;
+import android.view.FocusFinder;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -32,7 +33,11 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     }
     static final class Holder extends RecyclerView.ViewHolder { Holder(View view) { super(view); } }
 
-    private static final int POSTER_WIDTH = 112, LANDSCAPE_WIDTH = 240, GAP = 22, SEARCH_COLUMNS = 3;
+    /** The Home spotlight: tall enough to clear the floating tab bar above its text. */
+    public static final int SPOTLIGHT_HEIGHT = 248;
+    private static final int POSTER_WIDTH = 120, LANDSCAPE_WIDTH = 216, GAP = 20, SEARCH_COLUMNS = 5;
+    /** Where a list row's label starts inside its platter. */
+    private static final int ROW_INSET = 16;
     private final Context context;
     private final Artwork artwork;
     private final Listener listener;
@@ -94,8 +99,10 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         box.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 fillViewport ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT));
         View content = build(item);
-        box.addView(content, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                fillViewport ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT));
+        // A block with a fixed height (the Home spotlight) keeps it; everything else wraps its content.
+        ViewGroup.LayoutParams own = content.getLayoutParams();
+        int height = fillViewport ? ViewGroup.LayoutParams.MATCH_PARENT : own != null && own.height > 0 ? own.height : ViewGroup.LayoutParams.WRAP_CONTENT;
+        box.addView(content, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height));
     }
 
     private View build(Item item) {
@@ -103,7 +110,8 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             case SPOTLIGHT: return spotlight(item);
             case DETAILS: return details(item);
             case INTRO: return intro(item);
-            case HEADER: return header(item.title, item.detail, 26);
+            case TITLE: return pageTitle(item);
+            case HEADER: return listFollows(item) ? sectionHeader(item.title, item.detail) : header(item.title, item.detail, 20);
             case SHELF: return shelf(item);
             case GRID: return grid(item);
             case ACTIONS: return actions(item, item.centered ? Gravity.CENTER_HORIZONTAL : Gravity.START);
@@ -121,6 +129,22 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         }
     }
 
+    /** Whether a heading introduces list rows (a grey section header) rather than artwork (a shelf header). */
+    private boolean listFollows(Item header) {
+        int index = items.indexOf(header);
+        if (index < 0 || index + 1 >= items.size()) return false;
+        Item.Kind next = items.get(index + 1).kind;
+        return next == Item.Kind.LIST || next == Item.Kind.SOURCE || next == Item.Kind.TEXT || next == Item.Kind.NOTICE || next == Item.Kind.ACTIONS;
+    }
+    /** Text set among list rows starts where the rows' labels do; elsewhere it aligns with the page edge. */
+    private boolean inList(Item text) {
+        for (int i = items.indexOf(text) - 1; i >= 0; i--) {
+            Item before = items.get(i);
+            if (before.kind == Item.Kind.TEXT) continue;
+            return before.kind == Item.Kind.LIST || before.kind == Item.Kind.SOURCE || (before.kind == Item.Kind.HEADER && listFollows(before));
+        }
+        return false;
+    }
     private LinearLayout column() {
         LinearLayout column = new LinearLayout(context); column.setOrientation(LinearLayout.VERTICAL);
         column.setClipChildren(false); column.setClipToPadding(false);
@@ -136,28 +160,28 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     private final class Spotlight {
         final LinearLayout root = column();
         final ImageView logo = new ImageView(context);
-        final TextView title = Tv.oneLine(Tv.bold(context, "", 38));
-        final TextView meta = Tv.oneLine(Tv.text(context, "", 15, R.color.tv_text_secondary));
-        final TextView description = Tv.lines(Tv.text(context, "", 16, R.color.tv_text), 2);
+        final TextView title = Tv.oneLine(Tv.bold(context, "", 34));
+        final TextView meta = Tv.oneLine(Tv.text(context, "", 14, R.color.tv_text_secondary));
+        final TextView description = Tv.lines(Tv.text(context, "", 15, R.color.tv_text), 2);
         String key = "";
         Runnable open;
         Title shown;
 
         Spotlight() {
-            root.setGravity(Gravity.BOTTOM); root.setPadding(gutterStart, dp(4), gutterEnd, dp(6));
+            root.setGravity(Gravity.BOTTOM); root.setPadding(gutterStart, dp(4), gutterEnd, dp(2));
             root.setTag("spotlight"); root.setClickable(true);
             root.setOnClickListener(v -> { if (open != null) { focused(key); open.run(); } });
-            logo.setAdjustViewBounds(true); logo.setScaleType(ImageView.ScaleType.FIT_START); logo.setMaxHeight(dp(70)); logo.setMaxWidth(dp(400));
+            logo.setAdjustViewBounds(true); logo.setScaleType(ImageView.ScaleType.FIT_START); logo.setMaxHeight(dp(72)); logo.setMaxWidth(dp(360));
             logo.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            // A fixed height keeps the shelves still while the spotlight follows focus.
-            root.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(164)));
+            // A fixed height keeps the shelves still while the spotlight follows focus; the top clears the tab bar.
+            root.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(SPOTLIGHT_HEIGHT)));
             // Wrapped widths: a MATCH_PARENT text view would ignore its maximum width.
-            title.setMaxWidth(dp(620)); meta.setMaxWidth(dp(620)); description.setMaxWidth(dp(580));
+            title.setMaxWidth(dp(600)); meta.setMaxWidth(dp(600)); description.setMaxWidth(dp(520));
             root.addView(logo, wrap()); root.addView(title, wrap());
             root.addView(meta, wrap()); root.addView(description, wrap());
             ((LinearLayout.LayoutParams) title.getLayoutParams()).topMargin = dp(4);
             ((LinearLayout.LayoutParams) logo.getLayoutParams()).topMargin = dp(6);
-            meta.setPadding(0, dp(8), 0, 0); description.setPadding(0, dp(6), 0, 0);
+            meta.setPadding(0, dp(10), 0, 0); description.setPadding(0, dp(8), 0, 0);
         }
         void show(@Nullable Title media, String tileKey, Runnable action) {
             key = tileKey; open = action;
@@ -171,7 +195,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             logo.setImageDrawable(null); gone(logo, true);
             if (media.logo != null) {
                 Title wanted = media;
-                artwork.fetch(media.logo, Artwork.THUMBNAIL, true, bitmap -> {
+                artwork.fetch(media.logo, Artwork.LOGO, true, bitmap -> {
                     if (shown != wanted) return;
                     logo.setImageBitmap(bitmap); gone(logo, false); gone(title, true);
                 });
@@ -212,61 +236,73 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     // Details header: logo or title, facts and description over the title's backdrop.
     private View details(Item item) {
         Title media = item.media;
-        LinearLayout root = column(); root.setGravity(Gravity.BOTTOM); root.setMinimumHeight(dp(214));
-        root.setPadding(gutterStart, dp(4), gutterEnd, dp(18));
-        TextView overline = Tv.oneLine(Tv.heading(context, kind(media), 14, R.color.tv_text_secondary));
-        overline.setLetterSpacing(0.12f); overline.setAllCaps(true); root.addView(overline);
+        LinearLayout root = column(); root.setGravity(Gravity.BOTTOM); root.setMinimumHeight(dp(220));
+        root.setPadding(gutterStart, dp(4), gutterEnd, dp(14));
+        TextView overline = Tv.oneLine(Tv.heading(context, kind(media), 12.5f, R.color.tv_text_secondary));
+        overline.setLetterSpacing(0.14f); overline.setAllCaps(true); root.addView(overline);
         ImageView logo = new ImageView(context);
-        logo.setAdjustViewBounds(true); logo.setScaleType(ImageView.ScaleType.FIT_START); logo.setMaxHeight(dp(104)); logo.setMaxWidth(dp(460));
+        logo.setAdjustViewBounds(true); logo.setScaleType(ImageView.ScaleType.FIT_START); logo.setMaxHeight(dp(92)); logo.setMaxWidth(dp(400));
         logo.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO); logo.setVisibility(View.GONE);
-        root.addView(logo, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        TextView title = Tv.lines(Tv.bold(context, media.name, 46), 2); title.setMaxWidth(dp(680)); title.setPadding(0, dp(6), 0, 0);
+        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        logoParams.topMargin = dp(10);
+        root.addView(logo, logoParams);
+        TextView title = Tv.lines(Tv.bold(context, media.name, 36), 2); title.setMaxWidth(dp(640)); title.setPadding(0, dp(8), 0, 0);
         root.addView(title, wrap());
-        if (media.logo != null) artwork.fetch(media.logo, Artwork.THUMBNAIL, true, bitmap -> { logo.setImageBitmap(bitmap); gone(logo, false); gone(title, true); });
+        if (media.logo != null) artwork.fetch(media.logo, Artwork.LOGO, true, bitmap -> { logo.setImageBitmap(bitmap); gone(logo, false); gone(title, true); });
         String facts = metaLine(media);
         if (!media.directors.isEmpty()) facts += (facts.isEmpty() ? "" : "  ·  ") + "Directed by " + String.join(", ", media.directors.subList(0, Math.min(2, media.directors.size())));
         if (!facts.isEmpty()) {
-            TextView meta = Tv.oneLine(Tv.text(context, facts, 16, R.color.tv_text_secondary)); meta.setMaxWidth(dp(680)); meta.setPadding(0, dp(12), 0, 0);
+            TextView meta = Tv.oneLine(Tv.text(context, facts, 14, R.color.tv_text_secondary)); meta.setMaxWidth(dp(640)); meta.setPadding(0, dp(12), 0, 0);
             root.addView(meta, wrap());
         }
         if (!media.description.isEmpty()) {
-            TextView about = Tv.lines(Tv.text(context, media.description, 17, R.color.tv_text), 4); about.setMaxWidth(dp(600)); about.setPadding(0, dp(10), 0, 0);
+            TextView about = Tv.lines(Tv.text(context, media.description, 15, R.color.tv_text), 3); about.setMaxWidth(dp(560)); about.setPadding(0, dp(8), 0, 0);
             root.addView(about, wrap());
         }
         if (!item.detail.isEmpty()) {
-            TextView note = Tv.oneLine(Tv.text(context, item.detail, 15, R.color.tv_warning)); note.setPadding(0, dp(10), 0, 0); root.addView(note);
+            TextView note = Tv.oneLine(Tv.text(context, item.detail, 13.5f, R.color.tv_warning)); note.setPadding(0, dp(8), 0, 0); root.addView(note);
         }
         root.setLayoutParams(fill());
         return root;
     }
 
     private View intro(Item item) {
-        LinearLayout root = column(); root.setGravity(Gravity.CENTER_HORIZONTAL); root.setPadding(gutterStart, dp(6), gutterEnd, dp(14));
+        LinearLayout root = column(); root.setGravity(Gravity.CENTER_HORIZONTAL); root.setPadding(gutterStart, dp(28), gutterEnd, dp(18));
         if (!item.meta.isEmpty()) {
-            TextView overline = Tv.heading(context, item.meta, 14, R.color.tv_text_secondary); overline.setLetterSpacing(0.16f); overline.setAllCaps(true);
+            TextView overline = Tv.heading(context, item.meta, 13, R.color.tv_text_secondary); overline.setLetterSpacing(0.16f); overline.setAllCaps(true);
             overline.setGravity(Gravity.CENTER); root.addView(overline);
         }
-        TextView title = Tv.bold(context, item.title, 44); title.setGravity(Gravity.CENTER); title.setPadding(0, dp(10), 0, 0); root.addView(title);
-        TextView detail = Tv.text(context, item.detail, 18, R.color.tv_text_secondary); detail.setGravity(Gravity.CENTER);
-        detail.setLineSpacing(0, 1.22f); detail.setMaxWidth(dp(680)); detail.setPadding(0, dp(12), 0, 0); root.addView(detail, wrap());
+        TextView title = Tv.bold(context, item.title, 38); title.setGravity(Gravity.CENTER); title.setPadding(0, dp(10), 0, 0); root.addView(title);
+        TextView detail = Tv.text(context, item.detail, 16, R.color.tv_text_secondary); detail.setGravity(Gravity.CENTER);
+        detail.setLineSpacing(0, 1.22f); detail.setMaxWidth(dp(620)); detail.setPadding(0, dp(12), 0, 0); root.addView(detail, wrap());
         root.setLayoutParams(fill());
         return root;
     }
 
-    private View header(String title, String detail, int topDp) {
+    private View pageTitle(Item item) {
+        TextView title = Tv.oneLine(Tv.bold(context, item.title, 30)); title.setPadding(gutterStart, dp(6), gutterEnd, dp(4));
+        title.setLayoutParams(fill());
+        return title;
+    }
+    /** A shelf or grid heading: white, above artwork. */
+    private View header(String title, String detail, int topDp) { return header(title, detail, topDp, 17, R.color.tv_text); }
+    /** A list section heading, as in tvOS Settings: smaller and grey, so the rows below lead. */
+    private View sectionHeader(String title, String detail) { return header(title, detail, 22, 14, R.color.tv_text_secondary); }
+    private View header(String title, String detail, int topDp, float sp, int color) {
         LinearLayout row = new LinearLayout(context); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.BOTTOM);
-        row.setPadding(gutterStart, dp(topDp), gutterEnd, dp(2));
+        // List headings line up with the labels inside the rows below them, as in tvOS Settings.
+        row.setPadding(gutterStart + (color == R.color.tv_text ? 0 : dp(ROW_INSET)), dp(topDp), gutterEnd, dp(2));
         // One line of text, so a heading such as "Generated series · Local fixtures" is never mistaken for a card's title.
         android.text.SpannableStringBuilder text = new android.text.SpannableStringBuilder(title);
         if (detail != null && !detail.isEmpty()) {
             int start = text.length();
             text.append("   ").append(detail);
             int span = android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE;
-            text.setSpan(new android.text.style.AbsoluteSizeSpan(15, true), start, text.length(), span);
+            text.setSpan(new android.text.style.AbsoluteSizeSpan(13, true), start, text.length(), span);
             text.setSpan(new android.text.style.ForegroundColorSpan(context.getColor(R.color.tv_text_tertiary)), start, text.length(), span);
             text.setSpan(new android.text.style.TypefaceSpan("sans-serif"), start, text.length(), span);
         }
-        TextView heading = Tv.oneLine(Tv.heading(context, "", 21, R.color.tv_text)); heading.setText(text);
+        TextView heading = Tv.oneLine(Tv.heading(context, "", sp, color)); heading.setText(text);
         heading.setContentDescription(detail == null || detail.isEmpty() ? title : title + ", " + detail);
         row.addView(heading);
         row.setLayoutParams(fill());
@@ -277,11 +313,12 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     private View shelf(Item item) {
         LinearLayout root = new LinearLayout(context); root.setOrientation(LinearLayout.VERTICAL);
         root.setClipChildren(false); root.setClipToPadding(false);
-        root.addView(header(item.title, item.detail, 10));
+        root.addView(header(item.title, item.detail, 14));
         RecyclerView list = new RecyclerView(context);
         list.setLayoutManager(new Layout(context, RecyclerView.HORIZONTAL, 96));
         list.setClipToPadding(false); list.setClipChildren(false); list.setItemAnimator(null);
-        list.setPadding(gutterStart, dp(12), gutterEnd, dp(10));
+        list.setHasFixedSize(true);
+        list.setPadding(gutterStart, dp(12), gutterEnd, dp(14));
         list.setHorizontalScrollBarEnabled(false);
         TileAdapter adapter = new TileAdapter(item.tiles, item.style, item.style == Item.Tile.Style.POSTER ? POSTER_WIDTH : LANDSCAPE_WIDTH);
         list.setAdapter(adapter);
@@ -302,7 +339,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         int columns = Integer.parseInt(item.value);
         LinearLayout row = new LinearLayout(context); row.setOrientation(LinearLayout.HORIZONTAL);
         row.setClipChildren(false); row.setClipToPadding(false); row.setWeightSum(columns);
-        row.setPadding(gutterStart, dp(12), gutterEnd, dp(12));
+        row.setPadding(gutterStart, dp(12), gutterEnd, dp(6));
         for (int i = 0; i < item.tiles.size(); i++) {
             View tile = tile(item.tiles.get(i), item.style, 0);
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
@@ -334,8 +371,11 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         @Override public void onBindViewHolder(Holder holder, int position) {
             FrameLayout box = (FrameLayout) holder.itemView; box.removeAllViews();
             View tile = tile(tiles.get(position), style, dp(widthDp));
-            boolean endOfRow = columns > 0 && position % columns == columns - 1;
-            box.setPadding(0, 0, position == tiles.size() - 1 || endOfRow ? 0 : dp(gapDp), dp(verticalGapDp));
+            if (columns > 0) {
+                // Each column gives up the same share of the gaps, so every tile in a grid has the same width.
+                int column = position % columns, gap = dp(gapDp);
+                box.setPadding(gap * column / columns, 0, gap - gap * (column + 1) / columns, dp(verticalGapDp));
+            } else box.setPadding(0, 0, position == tiles.size() - 1 ? 0 : dp(gapDp), dp(verticalGapDp));
             box.addView(tile);
         }
     }
@@ -443,8 +483,8 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             View trailing = skeletonBar(52, 11);
             FrameLayout.LayoutParams trailingParams = new FrameLayout.LayoutParams(dp(52), dp(11), Gravity.CENTER_VERTICAL | Gravity.END);
             trailingParams.rightMargin = dp(42); row.addView(trailing, trailingParams);
-            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(62));
-            rowParams.bottomMargin = dp(10); root.addView(row, rowParams);
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46));
+            rowParams.bottomMargin = dp(6); root.addView(row, rowParams);
         }
     }
 
@@ -479,10 +519,10 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         FrameLayout frame = new AspectFrame(context, style == Item.Tile.Style.POSTER ? 1.5f : 0.5625f);
         frame.setBackgroundResource(R.drawable.tv_artwork); frame.setClipToOutline(true);
         frame.setOutlineProvider(new ViewOutlineProvider() {
-            @Override public void getOutline(View view, Outline outline) { outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(12)); }
+            @Override public void getOutline(View view, Outline outline) { outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(10)); }
         });
-        TextView placeholder = Tv.lines(Tv.bold(context, tile.title, style == Item.Tile.Style.POSTER ? 17 : 20), 4);
-        placeholder.setGravity(Gravity.CENTER); placeholder.setPadding(dp(12), 0, dp(12), 0);
+        TextView placeholder = Tv.lines(Tv.bold(context, tile.title, style == Item.Tile.Style.POSTER ? 15 : 17), 4);
+        placeholder.setGravity(Gravity.CENTER); placeholder.setPadding(dp(10), 0, dp(10), 0);
         placeholder.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         frame.addView(placeholder, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER));
         ImageView image = new ImageView(context); image.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -490,33 +530,37 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         frame.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         artwork.load(image, tile.image);
         if (tile.progress >= 0) {
+            // The artwork darkens under the bar so it stays legible on light frames.
+            View shade = new View(context); shade.setBackgroundResource(R.drawable.tv_tile_shade);
+            frame.addView(shade, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(36), Gravity.BOTTOM));
             LinearLayout track = new LinearLayout(context); track.setBackgroundResource(R.drawable.tv_progress_track);
             View fill = new View(context); fill.setBackgroundResource(R.drawable.tv_progress_fill);
             track.addView(fill, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, Math.max(0.02f, Math.min(1f, tile.progress))));
             track.addView(new View(context), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, Math.max(0f, 1f - tile.progress)));
             FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(4), Gravity.BOTTOM);
-            p.setMargins(dp(12), 0, dp(12), dp(12)); frame.addView(track, p);
+            p.setMargins(dp(10), 0, dp(10), dp(10)); frame.addView(track, p);
         }
         if (tile.badge != 0) {
-            ImageView badge = Tv.icon(context, tile.badge, 30, R.color.tv_text);
-            badge.setBackgroundResource(R.drawable.tv_badge); badge.setPadding(dp(6), dp(6), dp(6), dp(6));
-            FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(dp(30), dp(30), Gravity.TOP | Gravity.END);
-            p.setMargins(0, dp(8), dp(8), 0); frame.addView(badge, p);
+            ImageView badge = Tv.icon(context, tile.badge, 26, R.color.tv_text);
+            badge.setBackgroundResource(R.drawable.tv_badge); badge.setPadding(dp(5), dp(5), dp(5), dp(5));
+            FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(dp(26), dp(26), Gravity.TOP | Gravity.END);
+            p.setMargins(0, dp(7), dp(7), 0); frame.addView(badge, p);
         }
         int fill = ViewGroup.LayoutParams.MATCH_PARENT;
         root.addView(frame, new LinearLayout.LayoutParams(fill, ViewGroup.LayoutParams.WRAP_CONTENT));
-        TextView title = Tv.oneLine(Tv.heading(context, tile.title, 15, R.color.tv_caption));
-        title.setDuplicateParentStateEnabled(true); title.setPadding(dp(2), dp(10), dp(2), 0);
+        TextView title = Tv.oneLine(Tv.heading(context, tile.title, 13.5f, R.color.tv_caption));
+        title.setDuplicateParentStateEnabled(true); title.setPadding(dp(2), dp(9), dp(2), 0);
         root.addView(title, new LinearLayout.LayoutParams(fill, ViewGroup.LayoutParams.WRAP_CONTENT));
-        TextView subtitle = Tv.oneLine(Tv.text(context, tile.subtitle.isEmpty() ? " " : tile.subtitle, 13, R.color.tv_text_tertiary));
-        subtitle.setPadding(dp(2), dp(4), dp(2), 0);
+        TextView subtitle = Tv.oneLine(Tv.text(context, tile.subtitle.isEmpty() ? " " : tile.subtitle, 12, R.color.tv_text_tertiary));
+        subtitle.setPadding(dp(2), dp(3), dp(2), 0);
         root.addView(subtitle, new LinearLayout.LayoutParams(fill, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.setLayoutParams(new LinearLayout.LayoutParams(width > 0 ? width : fill, ViewGroup.LayoutParams.WRAP_CONTENT));
-        Tv.control(root, tile.key, tile.action, key -> { focused(key); feature(tile); }, 1.1f);
+        // The artwork lifts with a soft shadow; the caption below grows with it and brightens.
+        Tv.control(root, tile.key, tile.action, key -> { focused(key); feature(tile); }, Tv.LIFT_TILE, false);
         View.OnFocusChangeListener lift = root.getOnFocusChangeListener();
         root.setOnFocusChangeListener((v, has) -> {
             lift.onFocusChange(v, has);
-            frame.animate().translationZ(has ? dp(20) : 0).setDuration(180).start();
+            frame.animate().translationZ(has ? dp(16) : 0).setDuration(200).start();
         });
         if (tile.key.equals(restore)) root.post(root::requestFocus);
         return root;
@@ -529,22 +573,45 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         scroll.setFillViewport(gravity == Gravity.CENTER_HORIZONTAL);
         LinearLayout row = new LinearLayout(context); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(gravity | Gravity.CENTER_VERTICAL);
         row.setClipChildren(false); row.setClipToPadding(false);
-        row.setPadding(gutterStart, dp(12), gutterEnd, dp(12));
+        row.setPadding(gutterStart, dp(10), gutterEnd, dp(10));
+        boolean icons = false;
+        for (Item.Action action : item.actions) icons |= action.style == Item.Action.Style.ICON;
+        // tvOS names an icon-only button beneath it while it has focus.
+        TextView caption = icons ? Tv.oneLine(Tv.text(context, "", 12.5f, R.color.tv_text_secondary)) : null;
         for (int i = 0; i < item.actions.size(); i++) {
             Item.Action action = item.actions.get(i);
             View button = Tv.button(context, action, this::focused);
-            if (i > 0) ((LinearLayout.LayoutParams) button.getLayoutParams()).leftMargin = dp(action.style == Item.Action.Style.TILE ? 22 : 14);
+            if (i > 0) ((LinearLayout.LayoutParams) button.getLayoutParams()).leftMargin = dp(action.style == Item.Action.Style.TILE ? 18 : 12);
             row.addView(button);
+            if (caption != null) {
+                View.OnFocusChangeListener focus = button.getOnFocusChangeListener();
+                boolean iconOnly = action.style == Item.Action.Style.ICON;
+                button.setOnFocusChangeListener((v, has) -> {
+                    focus.onFocusChange(v, has);
+                    if (has && iconOnly) {
+                        caption.setText(action.label);
+                        caption.post(() -> caption.setTranslationX(v.getLeft() + v.getWidth() / 2f - caption.getWidth() / 2f - scroll.getScrollX()));
+                        caption.animate().alpha(1f).setDuration(160).start();
+                    } else if (has || caption.getText().toString().equals(action.label)) caption.animate().alpha(0f).setDuration(120).start();
+                });
+            }
             if (action.key.equals(restore)) button.post(button::requestFocus);
         }
         scroll.addView(row, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        scroll.setLayoutParams(fill());
-        return scroll;
+        if (caption == null) { scroll.setLayoutParams(fill()); return scroll; }
+        LinearLayout column = new LinearLayout(context); column.setOrientation(LinearLayout.VERTICAL);
+        column.setClipChildren(false); column.setClipToPadding(false);
+        column.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        caption.setAlpha(0f); caption.setGravity(Gravity.CENTER); caption.setMinWidth(dp(160));
+        caption.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        column.addView(caption, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        column.setLayoutParams(fill());
+        return column;
     }
     private View chips(Item item) {
         LinearLayout root = new LinearLayout(context); root.setOrientation(LinearLayout.VERTICAL);
         root.setClipChildren(false); root.setClipToPadding(false);
-        if (!item.title.isEmpty()) root.addView(header(item.title, "", 10));
+        if (!item.title.isEmpty()) root.addView(sectionHeader(item.title, ""));
         root.addView(actions(item, Gravity.START));
         root.setLayoutParams(fill());
         return root;
@@ -552,85 +619,89 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
 
     private View row(Item item) {
         LinearLayout row = new LinearLayout(context); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(dp(60));
-        row.setPadding(dp(20), dp(10), dp(16), dp(10));
+        row.setMinimumHeight(dp(46));
+        row.setPadding(dp(ROW_INSET), dp(8), dp(14), dp(8));
         row.setContentDescription(item.value.isEmpty() ? item.title : item.title + ". " + item.value);
         if (item.icon != 0) {
-            ImageView icon = Tv.icon(context, item.icon, 24, R.color.tv_on_glass);
-            ((LinearLayout.LayoutParams) icon.getLayoutParams()).rightMargin = dp(16); row.addView(icon);
+            ImageView icon = Tv.icon(context, item.icon, 21, R.color.tv_on_glass);
+            ((LinearLayout.LayoutParams) icon.getLayoutParams()).rightMargin = dp(14); row.addView(icon);
         }
-        TextView title = Tv.oneLine(Tv.heading(context, item.title, 18, R.color.tv_on_glass)); title.setDuplicateParentStateEnabled(true);
+        TextView title = Tv.oneLine(Tv.text(context, item.title, 16, R.color.tv_on_glass)); title.setDuplicateParentStateEnabled(true);
         row.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         if (!item.value.isEmpty()) {
-            TextView value = Tv.oneLine(Tv.text(context, item.value, 16, R.color.tv_on_glass_secondary)); value.setDuplicateParentStateEnabled(true);
-            value.setMaxWidth(dp(300)); value.setPadding(dp(12), 0, dp(4), 0); row.addView(value);
+            TextView value = Tv.oneLine(Tv.text(context, item.value, 15, R.color.tv_on_glass_secondary)); value.setDuplicateParentStateEnabled(true);
+            value.setMaxWidth(dp(280)); value.setPadding(dp(12), 0, dp(4), 0); row.addView(value);
         }
-        if (item.action != null) row.addView(Tv.icon(context, R.drawable.ic_tv_chevron, 22, R.color.tv_on_glass_secondary));
-        return wrapRow(item, row, R.drawable.tv_row, 1.03f);
+        if (item.action != null) row.addView(Tv.icon(context, R.drawable.ic_tv_chevron, 18, R.color.tv_on_glass_secondary));
+        return wrapRow(item, row, R.drawable.tv_row, Tv.LIFT_ROW);
     }
     private View source(Item item) {
         LinearLayout row = new LinearLayout(context); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(22), dp(14), dp(18), dp(14));
+        row.setPadding(dp(ROW_INSET), dp(10), dp(14), dp(10));
         row.setContentDescription(item.title + ". " + item.meta + ". " + item.value);
-        LinearLayout text = new LinearLayout(context); text.setOrientation(LinearLayout.VERTICAL);
-        TextView title = Tv.oneLine(Tv.heading(context, item.title, 18, R.color.tv_on_glass)); title.setDuplicateParentStateEnabled(true); text.addView(title);
-        TextView meta = Tv.oneLine(Tv.text(context, item.meta, 14, R.color.tv_on_glass_secondary)); meta.setDuplicateParentStateEnabled(true);
-        meta.setPadding(0, dp(6), 0, 0); text.addView(meta);
+        LinearLayout text = new LinearLayout(context); text.setOrientation(LinearLayout.VERTICAL); text.setDuplicateParentStateEnabled(true);
+        TextView title = Tv.oneLine(Tv.text(context, item.title, 16, R.color.tv_on_glass)); title.setDuplicateParentStateEnabled(true); text.addView(title);
+        TextView meta = Tv.oneLine(Tv.text(context, item.meta, 13, R.color.tv_on_glass_secondary)); meta.setDuplicateParentStateEnabled(true);
+        meta.setPadding(0, dp(5), 0, 0); text.addView(meta);
         if (!item.detail.isEmpty()) {
-            TextView detail = Tv.lines(Tv.text(context, item.detail, 14, R.color.tv_on_glass_secondary), 2); detail.setDuplicateParentStateEnabled(true);
-            detail.setPadding(0, dp(4), 0, 0); text.addView(detail);
+            TextView detail = Tv.oneLine(Tv.text(context, item.detail, 13, R.color.tv_on_glass_secondary)); detail.setDuplicateParentStateEnabled(true);
+            detail.setPadding(0, dp(3), 0, 0); text.addView(detail);
         }
         row.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         LinearLayout status = new LinearLayout(context); status.setGravity(Gravity.CENTER_VERTICAL); status.setDuplicateParentStateEnabled(true);
-        status.addView(Tv.icon(context, item.muted ? R.drawable.ic_tv_info : R.drawable.ic_tv_check, 20, item.muted ? R.color.tv_on_glass_secondary : R.color.tv_on_glass));
-        TextView value = Tv.lines(Tv.text(context, item.value, 14, R.color.tv_on_glass_secondary), 2); value.setDuplicateParentStateEnabled(true);
-        value.setMaxWidth(dp(230)); value.setPadding(dp(8), 0, 0, 0); status.addView(value);
-        row.addView(status);
-        row.setAlpha(item.muted ? 0.62f : 1f);
-        return wrapRow(item, row, R.drawable.tv_row, 1.02f);
+        int statusIcon = item.statusIcon != 0 ? item.statusIcon : item.muted ? R.drawable.ic_tv_info : R.drawable.ic_tv_check;
+        if (statusIcon > 0) status.addView(Tv.icon(context, statusIcon, 18, item.muted ? R.color.tv_on_glass_secondary : R.color.tv_on_glass));
+        TextView value = Tv.lines(Tv.text(context, item.value, 13, R.color.tv_on_glass_secondary), 2); value.setDuplicateParentStateEnabled(true);
+        value.setMaxWidth(dp(200)); value.setPadding(statusIcon > 0 ? dp(7) : 0, 0, 0, 0); status.addView(value);
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        statusParams.leftMargin = dp(16);
+        row.addView(status, statusParams);
+        row.setAlpha(item.muted ? 0.55f : 1f);
+        return wrapRow(item, row, R.drawable.tv_row, Tv.LIFT_ROW);
     }
     private View field(Item item) {
         LinearLayout row = new LinearLayout(context); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(dp(64)); row.setPadding(dp(22), 0, dp(22), 0);
+        row.setMinimumHeight(dp(48)); row.setPadding(dp(18), 0, dp(18), 0);
         row.setContentDescription(item.title + ". " + item.value);
-        ImageView icon = Tv.icon(context, R.drawable.ic_tv_search, 26, R.color.tv_on_glass);
-        ((LinearLayout.LayoutParams) icon.getLayoutParams()).rightMargin = dp(16); row.addView(icon);
-        TextView value = Tv.oneLine(Tv.text(context, item.value, 20, R.color.tv_on_glass_secondary)); value.setDuplicateParentStateEnabled(true);
+        ImageView icon = Tv.icon(context, R.drawable.ic_tv_search, 22, R.color.tv_on_glass);
+        ((LinearLayout.LayoutParams) icon.getLayoutParams()).rightMargin = dp(14); row.addView(icon);
+        TextView value = Tv.oneLine(Tv.text(context, item.value, 17, R.color.tv_on_glass_secondary)); value.setDuplicateParentStateEnabled(true);
         row.addView(value);
-        return wrapRow(item, row, R.drawable.tv_field, 1.02f);
+        return wrapRow(item, row, R.drawable.tv_field, Tv.LIFT_ROW);
     }
+    /** A focusable platter around a row: transparent until focused, then white with dark text (no live blur). */
     private View wrapRow(Item item, LinearLayout row, int background, float lift) {
         FrameLayout box = new FrameLayout(context); box.setClipChildren(false); box.setClipToPadding(false);
-        box.setPadding(gutterStart, dp(6), gutterEnd, dp(6));
-        GlassView glass = new GlassView(context);
-        glass.setBackgroundResource(background);
-        glass.setContentDescription(row.getContentDescription());
+        box.setPadding(gutterStart, dp(2), gutterEnd, dp(2));
+        FrameLayout platter = new FrameLayout(context);
+        platter.setBackgroundResource(background);
+        platter.setContentDescription(row.getContentDescription());
         row.setContentDescription(null);
         row.setDuplicateParentStateEnabled(true);
-        glass.addView(row, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        box.addView(glass, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        platter.addView(row, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        box.addView(platter, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         if (item.action != null) {
-            Tv.control(glass, item.key, item.action, this::focused, lift);
-            if (item.key.equals(restore)) glass.post(glass::requestFocus);
-        } else glass.setTag(item.key);
+            Tv.control(platter, item.key, item.action, this::focused, lift);
+            if (item.key.equals(restore)) platter.post(platter::requestFocus);
+        } else platter.setTag(item.key);
         box.setLayoutParams(fill());
         return box;
     }
 
     // States.
     private View message(Item item) {
-        LinearLayout root = column(); root.setGravity(Gravity.CENTER_HORIZONTAL); root.setPadding(gutterStart, dp(44), gutterEnd, dp(12));
+        LinearLayout root = column(); root.setGravity(Gravity.CENTER_HORIZONTAL); root.setPadding(gutterStart, dp(52), gutterEnd, dp(12));
         if (item.icon != 0) {
-            GlassView disc = new GlassView(context); disc.setBackgroundResource(R.drawable.tv_icon_disc);
-            ImageView icon = Tv.icon(context, item.icon, 36, R.color.tv_text);
-            disc.addView(icon, new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.CENTER));
-            root.addView(disc, new LinearLayout.LayoutParams(dp(76), dp(76)));
+            FrameLayout disc = new FrameLayout(context); disc.setBackgroundResource(R.drawable.tv_icon_disc);
+            ImageView icon = Tv.icon(context, item.icon, 30, R.color.tv_text);
+            disc.addView(icon, new FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER));
+            root.addView(disc, new LinearLayout.LayoutParams(dp(64), dp(64)));
         }
-        TextView title = Tv.heading(context, item.title, 26, R.color.tv_text); title.setGravity(Gravity.CENTER); title.setPadding(0, dp(20), 0, 0);
+        TextView title = Tv.heading(context, item.title, 22, R.color.tv_text); title.setGravity(Gravity.CENTER); title.setPadding(0, dp(18), 0, 0);
         root.addView(title, wrap());
         if (!item.detail.isEmpty()) {
-            TextView detail = Tv.text(context, item.detail, 17, R.color.tv_text_secondary); detail.setGravity(Gravity.CENTER);
-            detail.setLineSpacing(0, 1.22f); detail.setMaxWidth(dp(600)); detail.setPadding(0, dp(10), 0, dp(6)); root.addView(detail, wrap());
+            TextView detail = Tv.text(context, item.detail, 15, R.color.tv_text_secondary); detail.setGravity(Gravity.CENTER);
+            detail.setLineSpacing(0, 1.22f); detail.setMaxWidth(dp(520)); detail.setPadding(0, dp(8), 0, dp(8)); root.addView(detail, wrap());
         }
         if (!item.actions.isEmpty()) root.addView(actions(item, Gravity.CENTER_HORIZONTAL));
         root.setLayoutParams(fill());
@@ -639,34 +710,33 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     private View notice(Item item) {
         LinearLayout box = new LinearLayout(context); box.setOrientation(LinearLayout.HORIZONTAL); box.setGravity(Gravity.CENTER_VERTICAL);
         box.setClipChildren(false); box.setClipToPadding(false);
-        box.setPadding(dp(22), dp(14), dp(10), dp(14));
-        box.addView(Tv.icon(context, item.icon == 0 ? R.drawable.ic_tv_info : item.icon, 28, R.color.tv_text));
-        LinearLayout text = new LinearLayout(context); text.setOrientation(LinearLayout.VERTICAL); text.setPadding(dp(18), 0, dp(12), 0);
-        text.addView(Tv.heading(context, item.title, 18, R.color.tv_text));
-        if (!item.detail.isEmpty()) { TextView detail = Tv.lines(Tv.text(context, item.detail, 15, R.color.tv_text_secondary), 3); detail.setPadding(0, dp(6), 0, 0); text.addView(detail); }
+        box.setBackgroundResource(R.drawable.tv_notice);
+        box.setPadding(dp(18), dp(12), dp(8), dp(12));
+        box.addView(Tv.icon(context, item.icon == 0 ? R.drawable.ic_tv_info : item.icon, 22, R.color.tv_text));
+        LinearLayout text = new LinearLayout(context); text.setOrientation(LinearLayout.VERTICAL); text.setPadding(dp(14), 0, dp(12), 0);
+        text.addView(Tv.heading(context, item.title, 15.5f, R.color.tv_text));
+        if (!item.detail.isEmpty()) { TextView detail = Tv.lines(Tv.text(context, item.detail, 13.5f, R.color.tv_text_secondary), 3); detail.setPadding(0, dp(4), 0, 0); text.addView(detail); }
         box.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         if (!item.actions.isEmpty()) {
             Item inline = Item.actions(item.key + ":actions", item.actions);
             View buttons = actions(inline, Gravity.END);
             buttons.setPadding(0, 0, 0, 0);
-            ((ViewGroup) ((ViewGroup) buttons).getChildAt(0)).setPadding(0, dp(6), dp(8), dp(6));
+            ((ViewGroup) ((ViewGroup) buttons).getChildAt(0)).setPadding(0, dp(4), dp(8), dp(4));
             box.addView(buttons, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
-        GlassView glass = new GlassView(context); glass.setBackgroundResource(R.drawable.tv_tile_button);
-        glass.addView(box, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         FrameLayout wrap = new FrameLayout(context); wrap.setClipChildren(false); wrap.setClipToPadding(false);
-        wrap.setPadding(gutterStart, dp(12), gutterEnd, dp(8));
-        wrap.addView(glass, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        wrap.setPadding(gutterStart, dp(14), gutterEnd, dp(6));
+        wrap.addView(box, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         wrap.setLayoutParams(fill());
         return wrap;
     }
     private View text(Item item) {
-        LinearLayout root = column(); root.setPadding(gutterStart, dp(14), gutterEnd, dp(4));
+        LinearLayout root = column(); root.setPadding(gutterStart + (inList(item) ? dp(ROW_INSET) : 0), dp(14), gutterEnd, dp(2));
         if (!item.title.isEmpty()) {
-            TextView title = Tv.heading(context, item.title, 13, R.color.tv_text_tertiary); title.setLetterSpacing(0.12f); title.setAllCaps(true);
+            TextView title = Tv.heading(context, item.title, 12, R.color.tv_text_tertiary); title.setLetterSpacing(0.1f); title.setAllCaps(true);
             root.addView(title);
         }
-        TextView detail = Tv.text(context, item.detail, 16, R.color.tv_text_secondary); detail.setLineSpacing(0, 1.22f); detail.setPadding(0, dp(6), 0, 0);
+        TextView detail = Tv.text(context, item.detail, 15, R.color.tv_text_secondary); detail.setLineSpacing(0, 1.22f); detail.setPadding(0, dp(5), 0, 0);
         detail.setTextIsSelectable(false); root.addView(detail);
         root.setLayoutParams(fill());
         return root;
@@ -688,10 +758,16 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         LinearLayout results = new LinearLayout(context); results.setOrientation(LinearLayout.VERTICAL);
         results.setClipChildren(false); results.setClipToPadding(false);
         results.setPadding(0, dp(8), 0, 0);
-        root.addView(results, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        // Results run to the screen's edge, through this block's and the page list's bottom padding (40dp).
+        LinearLayout.LayoutParams resultsParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
+        resultsParams.bottomMargin = -dp(12 + 40); resultsParams.gravity = Gravity.TOP;
+        root.addView(results, resultsParams);
 
         LinearLayout heading = new LinearLayout(context); heading.setGravity(Gravity.CENTER_VERTICAL);
-        TextView label = Tv.heading(context, "Results", 21, R.color.tv_text);
+        boolean asked = item.loading || !item.tiles.isEmpty() || !item.detail.isEmpty();
+        // Before a search there is nothing to head: a quiet prompt stands in for the results.
+        TextView label = asked ? Tv.heading(context, "Results", 21, R.color.tv_text)
+                : Tv.text(context, "Type a title to search films, series and imports.", 16, R.color.tv_text_secondary);
         heading.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         if (!item.detail.isEmpty()) {
             TextView count = Tv.oneLine(Tv.text(context, item.detail, 14, R.color.tv_text_secondary));
@@ -707,11 +783,15 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         if (item.loading || !item.tiles.isEmpty()) {
             RecyclerView list = new RecyclerView(context);
             list.setLayoutManager(new GridLayoutManager(context, SEARCH_COLUMNS)); list.setItemAnimator(null);
-            list.setClipChildren(false); list.setClipToPadding(false); list.setPadding(0, dp(8), 0, dp(8));
+            // The bottom padding keeps a focused row inside the TV's safe area while unfocused rows run to the edge.
+            list.setPadding(0, dp(8), 0, dp(28));
             list.setVerticalScrollBarEnabled(false); list.setNestedScrollingEnabled(true);
             if (item.loading) list.setAdapter(skeletonCards(6));
-            else list.setAdapter(new TileAdapter(item.tiles, Item.Tile.Style.POSTER, 0, 8, true, SEARCH_COLUMNS, 16));
-            results.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+            else list.setAdapter(new TileAdapter(item.tiles, Item.Tile.Style.POSTER, 0, 14, true, SEARCH_COLUMNS, 18));
+            // Rows scrolled up must not draw over the heading or the search bar; the edge columns keep room to lift.
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1);
+            params.leftMargin = params.rightMargin = -dp(12);
+            results.addView(Tv.clipped(list, dp(12)), params);
         } else if (!item.detail.isEmpty()) {
             FrameLayout empty = new FrameLayout(context);
             TextView message = Tv.heading(context, item.detail, 20, R.color.tv_text_secondary);
@@ -787,7 +867,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         key.setGravity(Gravity.CENTER);
         key.setSingleLine(true);
         key.setContentDescription(description);
-        key.setBackgroundResource(label.equals("Search") ? R.drawable.tv_chip : R.drawable.tv_button);
+        key.setBackgroundResource(label.equals("Search") ? R.drawable.tv_chip : R.drawable.keycap);
         key.setDefaultFocusHighlightEnabled(false);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(width), dp(34));
         params.setMargins(dp(2), dp(2), dp(2), dp(2));
@@ -801,7 +881,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         ProgressBar spinner = new ProgressBar(context);
         spinner.setIndeterminateDrawable(context.getDrawable(R.drawable.tv_loading_indicator));
         spinner.setContentDescription("Loading");
-        root.addView(spinner, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        root.addView(spinner, new LinearLayout.LayoutParams(dp(44), dp(44)));
         return root;
     }
 
@@ -823,6 +903,22 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             Rect grown = new Rect(rect);
             if (getOrientation() == VERTICAL) { grown.top -= margin; grown.bottom += margin; } else { grown.left -= margin; grown.right += margin; }
             return super.requestChildRectangleOnScreen(parent, child, grown, immediate, focusedChildVisible);
+        }
+        /**
+         * As on tvOS, left and right never leave the content: a shelf keeps focus at its ends, and the page refuses a
+         * sideways move out of itself (the framework would otherwise jump from the last tile or button up to a tab).
+         */
+        @Override public View onInterceptFocusSearch(View focused, int direction) {
+            if (direction != View.FOCUS_LEFT && direction != View.FOCUS_RIGHT) return null;
+            View item = findContainingItemView(focused);
+            if (item == null) return null;
+            if (getOrientation() == HORIZONTAL) {
+                boolean forward = (direction == View.FOCUS_RIGHT) != (getLayoutDirection() == View.LAYOUT_DIRECTION_RTL);
+                int position = getPosition(item);
+                return (forward && position == getItemCount() - 1) || (!forward && position == 0) ? focused : null;
+            }
+            View next = FocusFinder.getInstance().findNextFocus((ViewGroup) focused.getRootView(), focused, direction);
+            return next != null && findContainingItemView(next) == null ? focused : null;
         }
     }
 }

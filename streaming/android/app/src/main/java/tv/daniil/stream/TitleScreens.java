@@ -130,7 +130,7 @@ final class TitleScreens {
 
     Page sources(Route route, Cancellation scope) throws Exception {
         Title title = route.title;
-        Page page = new Page().title("Sources"); page.backdrop = title;
+        Page page = new Page().title("Sources"); page.backdrop = title; page.blurBackdrop = true;
         page.add(Item.header(title.name, title.type.equals("series") ? episodeName(title, route.video) : ""));
         List<InstalledAddon> providers = services.addons.providers("stream", title.type, route.video);
         AddonRepository.Result<MediaSource> found = providers.isEmpty() ? null : services.addons.streams(title.type, route.video, scope);

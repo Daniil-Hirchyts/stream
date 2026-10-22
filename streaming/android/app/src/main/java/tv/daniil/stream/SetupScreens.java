@@ -120,6 +120,7 @@ final class SetupScreens {
         services.store.clearMetadata();
         delete(new File(context.getCacheDir(), "payload"));
         delete(new File(context.getCacheDir(), "subtitles"));
+        delete(new File(context.getCacheDir(), "artwork"));
     }
 
     Page addon(Route route) {

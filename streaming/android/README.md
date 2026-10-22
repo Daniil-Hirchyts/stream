@@ -32,12 +32,36 @@ Developer views.
 The browse UI follows tvOS. Artwork fills the screen behind a dark scrim. On
 Home, a spotlight shows the focused card's logo or title, facts and
 description, and the backdrop cross-fades to its art once focus settles.
-Shelves scroll horizontally. Focused cards, buttons and rows grow and lift,
-and buttons turn white with dark text. Settings, Imports and Developer use the
-tvOS split layout: a large icon on the left, rows on the right. Dialogs use the
-`TvDialog` sheet style. The shared player gets the same neutral palette through
-app resource overrides (`res/values/colors.xml`, `bg_panel`, `pill`,
-`bg_card_soft`), so Daniil Cast keeps its own look.
+Shelves scroll horizontally. Page titles scroll with their page.
+
+- **Tab bar:** Search and the tabs sit in one floating pill. It slides away
+  once content scrolls under it and returns when focus reaches it or the page
+  is back at its top.
+- **Controls:** buttons, chips and keys rest on translucent platters. List
+  rows are transparent until focused. The focused control turns white with
+  dark text, grows and casts a shadow.
+- **Headings:** list headings are small and grey and line up with the row
+  labels below them. Shelf headings are white.
+- **Focus:** left and right never leave the content. A shelf holds focus at
+  its ends instead of jumping to a tab.
+- **Split layout:** Settings, Imports, Add-ons and Developer show a large
+  icon on the left and rows on the right.
+- **Alerts:** dialogs are `Tv.Alert` sheets with a centred title and stacked
+  full-width buttons. A long choice list or message scrolls, clipped, above the buttons.
+  Sources shows the title's artwork heavily blurred.
+
+Blur is reserved for floating chrome. The tab bar and search field blur live
+only on Android 12+ (a RenderEffect GPU pass); earlier versions, including Fire
+TV's Android 9, use a denser static material. There BlurView would blur on the
+CPU before every frame, which is what made the UI stall, so rows, buttons and
+cards never blur. Alerts blur the screen behind them through the window
+(Android 12+) and dim it elsewhere. Artwork is cached on disk (40 MiB, least
+recently shown evicted) as well as in memory. Off-screen shelves keep their
+views, so scrolling back neither rebuilds a row nor reloads its art.
+
+The shared player gets the same neutral palette through app resource overrides
+(`res/values/colors.xml`, `bg_panel`, `pill`, `bg_card_soft`), so Daniil Cast
+keeps its own look.
 
 Screens are built off the main thread as `ui.Page` lists of `ui.Item` blocks
 (`BrowseScreens`, `TitleScreens`, `SetupScreens`), and `ui.PageAdapter` turns
@@ -209,7 +233,14 @@ separate and is never an import descriptor or library asset.
 cd streaming/android
 ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:testDebugUnitTest :app:lintDebug :app:lintRelease
 ./gradlew :app:testDebugUnitTest -PliveAddons=true  # optional: real films via live add-ons, archive.org and FFmpeg
+./gradlew :app:testDebugUnitTest --tests '*UiSnapshotTest' -PuiSnapshots=true  # optional: screen renders (internet)
 ```
+
+`UiSnapshotTest` renders the real browse screens at 1920×1080 with Robolectric
+into `app/build/ui-snapshots/` for design review: Home, details, Sources,
+Library, store, Settings with an alert, Search, Welcome and Imports. It uses
+live Cinemeta and Internet Archive data. It asserts nothing; it does not
+replace instrumentation on the emulator, and it cannot show live blur.
 
 `:app:testDebugUnitTest` runs JVM tests of the store protocol, listing rules,
 built-in add-on and torrent discovery without a device or network. With

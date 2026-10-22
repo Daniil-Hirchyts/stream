@@ -108,7 +108,8 @@ final class StoreScreens {
         String status = present ? "Installed" : l.manifest.configurationRequired ? "Needs setup" : "Review";
         String types = types(l.manifest.types);
         return Item.source("store:" + l.url, l.manifest.name, kinds(l.manifest) + (l.torrents() ? " · Torrent/P2P" : "") + (types.isEmpty() ? "" : "  ·  " + types),
-                l.manifest.description.replace('\n', ' '), status, true, () -> { Route r = new Route("Add-on review"); r.value = l.url; nav.push(r); });
+                l.manifest.description.replace('\n', ' '), status, true, () -> { Route r = new Route("Add-on review"); r.value = l.url; nav.push(r); })
+                .status(present ? R.drawable.ic_tv_check : l.manifest.configurationRequired ? R.drawable.ic_tv_info : -1);
     }
 
     /** The add-on's own current manifest, what it supplies and what it receives, then Install. */

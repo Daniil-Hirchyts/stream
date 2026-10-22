@@ -1,7 +1,6 @@
 package tv.daniil.stream;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
@@ -67,15 +66,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private static final java.util.Set<String> HOST_ERRORS = new java.util.HashSet<>(java.util.Arrays.asList(
             "unsupported", "opening", "buffering", "provider", "no-sources", "storage"));
 
-    private AlertDialog showStyledDialog(AlertDialog dialog) {
-        dialog.show(); Tv.styleDialog(dialog); return dialog;
-    }
-    private Dialog showStyledGlassDialog(Dialog dialog) {
-        dialog.show(); Tv.styleDialog(dialog);
-        View first = dialog.getWindow().getDecorView().findViewWithTag("choice:0");
-        if (first != null) first.requestFocus();
-        return dialog;
-    }
+    private Dialog show(Tv.Alert alert) { alert.show(); return alert.dialog; }
 
     public static Intent intent(Context context, Title title, String video, String sourceKey) {
         return new Intent(context, WatchActivity.class).putExtra("provider", title.provider).putExtra("titleId", title.id)
@@ -115,7 +106,10 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                     screen = new PlayerScreen(this, session, this); screen.setTitle(title.name);
                     resolve(true); main.post(tick);
                 });
-            } catch (Exception e) { main.post(() -> { if (current(mine)) { choiceDialog = showStyledDialog(new AlertDialog.Builder(this).setMessage(Failures.message(e)).setPositiveButton("Close", (d, w) -> finish()).create()); } }); }
+            } catch (Exception e) { main.post(() -> { if (current(mine)) {
+                Tv.Alert alert = Tv.alert(this, "Could not open this title", Failures.message(e));
+                alert.button("close", "Close", this::finish); alert.dialog.setOnCancelListener(d -> finish()); choiceDialog = show(alert);
+            } }); }
         });
     }
     private boolean current(int mine) { return visible && !releasing && mine == generation && !isFinishing(); }
@@ -243,7 +237,8 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             } catch (Exception e) {
                 if (!current(mine)) return;
                 if (e instanceof TorrentException && ((TorrentException) e).kind == TorrentException.LOW_STORAGE) {
-                    main.post(() -> { if (current(mine)) lowStorage(); });
+                    String cache = services.store.preference("cacheMiB", "256");
+                    main.post(() -> { if (current(mine)) lowStorage(cache); });
                     return;
                 }
                 main.post(() -> { if (current(mine)) attemptFailed(Failures.message(e), "opening"); });
@@ -251,22 +246,20 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         });
     }
     /** Offers this app's own cleanup, or a smaller cache, then tries the same source again. */
-    private void lowStorage() {
+    private void lowStorage(String size) {
         failure("Not enough storage", Failures.message(new TorrentException(TorrentException.LOW_STORAGE, "")), "storage");
-        String size = services.store.preference("cacheMiB", "256");
-        AlertDialog.Builder builder = new AlertDialog.Builder(this).setTitle("Not enough storage")
-                .setMessage("Playback needs room for its cache plus 512 MiB kept free for the TV. Clearing removes only this app's "
-                        + "temporary video, subtitle and catalogue files; your library, imports and history stay.")
-                .setPositiveButton("Clear and retry", (d, w) -> loader.execute(() -> {
-                    closeNative(); SetupScreens.clearCaches(this, services);
-                    main.post(() -> { if (visible && !releasing) onRetry(); });
-                }))
-                .setNegativeButton("Close", null);
-        if (!size.equals("128")) builder.setNeutralButton("Use a 128 MiB cache", (d, w) -> app.persistence.execute(() -> {
+        Tv.Alert alert = Tv.alert(this, "Not enough storage", "Playback needs room for its cache plus 512 MiB kept free for the TV. Clearing removes only "
+                + "this app's temporary video, subtitle and catalogue files; your library, imports and history stay.");
+        alert.button("clear", "Clear and retry", () -> { alert.dialog.dismiss(); loader.execute(() -> {
+            closeNative(); SetupScreens.clearCaches(this, services);
+            main.post(() -> { if (visible && !releasing) onRetry(); });
+        }); });
+        if (!size.equals("128")) alert.button("smaller-cache", "Use a 128 MiB cache", () -> { alert.dialog.dismiss(); app.persistence.execute(() -> {
             services.store.setPreference("cacheMiB", "128");
             main.post(() -> { if (visible && !releasing) onRetry(); });
-        }));
-        choiceDialog = showStyledDialog(builder.create());
+        }); });
+        alert.button("close", "Close", alert.dialog::dismiss);
+        choiceDialog = show(alert);
     }
     private static boolean sameLanguage(String one, String two) {
         if (one == null || two == null || two.isEmpty()) return false;
@@ -276,15 +269,14 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private String episodeLabel() { for (Title.Episode e : title.episodes) if (e.id.equals(video)) return "S" + e.season + " E" + e.number + " · " + e.name; return ""; }
     private void chooseFile(MediaSource source, List<TorrentFile> files) {
         String[] names = new String[files.size()]; for (int i = 0; i < names.length; i++) names[i] = files.get(i).name() + " · " + files.get(i).size / (1 << 20) + " MiB";
-        choiceDialog = showStyledGlassDialog(Tv.glassChoices(this, "Choose a video file", names,
-                which -> open(source, files.get(which).index), this::finish));
+        choiceDialog = show(Tv.choices(this, "Choose a video file", names, which -> open(source, files.get(which).index), this::finish));
     }
     private void chooseSources() {
         if (session == null) return;
         save(session.snapshot()); session.stop(); cancelPreparation(); loader.execute(this::closeNative);
         if (candidates.isEmpty()) { failure("No sources available", "Return to the title and refresh its sources.", "no-sources"); return; }
         String[] names = new String[candidates.size()]; for (int i = 0; i < names.length; i++) names[i] = candidates.get(i).name + " · " + SourcePolicy.assess(candidates.get(i)).label;
-        choiceDialog = showStyledGlassDialog(Tv.glassChoices(this, "Choose source", names, which -> {
+        choiceDialog = show(Tv.choices(this, "Choose source", names, which -> {
             automatic = false; explicitKey = SourcePolicy.key(candidates.get(which)); candidate = which; attempts = 0; open(candidates.get(which), -1);
         }, this::finish));
     }
@@ -415,7 +407,10 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         return result;
     }
     PlaybackSnapshot playbackSnapshot() { return session == null ? null : session.snapshot(); }
-    private void diagnostics() { choiceDialog = showStyledDialog(new AlertDialog.Builder(this).setTitle("Playback diagnostics").setMessage(diagnosticSnapshot().toString()).setPositiveButton("Close", null).create()); }
+    private void diagnostics() {
+        Tv.Alert alert = Tv.alert(this, "Playback diagnostics", diagnosticSnapshot().toString().replace(",\"", ", \""));
+        alert.button("close", "Close", alert.dialog::dismiss); choiceDialog = show(alert);
+    }
     @Override public boolean dispatchKeyEvent(KeyEvent event) { return screen != null && screen.dispatchKeyEvent(event) || super.dispatchKeyEvent(event); }
     @Override public void onBackPressed() { if (screen != null && screen.onRemoteKey(KeyEvent.KEYCODE_BACK)) return; finish(); }
     @Override protected void onStop() {

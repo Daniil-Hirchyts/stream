@@ -10,7 +10,7 @@ import tv.daniil.stream.addon.Title;
 
 /** One block of a page. Screens build these on workers; {@link PageAdapter} turns them into views. */
 public final class Item {
-    public enum Kind { SPOTLIGHT, DETAILS, INTRO, HEADER, SHELF, GRID, ACTIONS, CHIPS, LIST, SOURCE, FIELD, KEYBOARD, SKELETON, MESSAGE, NOTICE, TEXT, LOADING }
+    public enum Kind { SPOTLIGHT, DETAILS, INTRO, TITLE, HEADER, SHELF, GRID, ACTIONS, CHIPS, LIST, SOURCE, FIELD, KEYBOARD, SKELETON, MESSAGE, NOTICE, TEXT, LOADING }
 
     /** A poster, landscape thumbnail or catalogue card. */
     public static final class Tile {
@@ -59,6 +59,8 @@ public final class Item {
     @DrawableRes public int icon;
     /** Marks unusable sources and other rows that stay selectable but are not the expected choice. */
     public boolean muted;
+    /** A source row's status icon: 0 for the default (a check, or info when muted), -1 for none. */
+    public int statusIcon;
     /** Centres a row of actions, as on onboarding. */
     public boolean centered;
     public Tile.Style style = Tile.Style.POSTER;
@@ -75,6 +77,8 @@ public final class Item {
     public static Item intro(String overline, String title, String detail) {
         Item i = new Item(Kind.INTRO, "intro:" + title); i.meta = overline; i.title = title; i.detail = detail; return i;
     }
+    /** A pushed page's large title, scrolling with its content. */
+    public static Item pageTitle(String title) { Item i = new Item(Kind.TITLE, "title:" + title); i.title = title; return i; }
     public static Item header(String title) { Item i = new Item(Kind.HEADER, "header:" + title); i.title = title; return i; }
     public static Item header(String title, String detail) { Item i = header(title); i.detail = detail; return i; }
     public static Item shelf(String key, String title, String detail, Tile.Style style, List<Tile> tiles) {
@@ -92,6 +96,7 @@ public final class Item {
     public static Item actions(String key, Action... actions) { Item i = new Item(Kind.ACTIONS, key); i.actions = list(actions); return i; }
     public static Item actions(String key, List<Action> actions) { Item i = new Item(Kind.ACTIONS, key); i.actions = actions; return i; }
     public Item centered() { centered = true; return this; }
+    public Item status(int icon) { statusIcon = icon; return this; }
     public static Item chips(String key, String title, List<Action> actions) { Item i = new Item(Kind.CHIPS, key); i.title = title; i.actions = actions; return i; }
     public static Item row(String key, @DrawableRes int icon, String title, String value, Runnable action) {
         Item i = new Item(Kind.LIST, key); i.icon = icon; i.title = title; i.value = value; i.action = action; return i;

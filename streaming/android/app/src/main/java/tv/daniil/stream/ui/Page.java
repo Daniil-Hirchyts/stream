@@ -14,6 +14,8 @@ public final class Page {
     @Nullable public String title;
     /** Full-screen artwork behind the page. */
     @Nullable public Title backdrop;
+    /** Blur the artwork, as tvOS does behind lists that belong to a title (its sources). */
+    public boolean blurBackdrop;
     /** tvOS-style settings layout: a large icon and description on the left, rows on the right. */
     @DrawableRes public int panelIcon;
     public String panelTitle = "", panelText = "";

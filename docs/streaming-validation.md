@@ -361,3 +361,65 @@ withdrawn items linked from Wikidata (skipped); Wikimedia refusing a
 User-Agent sent after `Accept`/`Accept-Encoding` (caller headers now come
 first) and throttling bursts (one retry); archive.org answering 5xx under load
 (the live test retries FFmpeg once).
+
+## tvOS interface pass and responsiveness, 2026-10-22
+
+**Freezes.** Every button, chip, row and card was its own BlurView. Below
+Android 12, BlurView blurs on the CPU before every frame, once per control,
+so a Fire TV (Android 9) stalled while scrolling. Fixes:
+- **Blur:** only the floating tab bar and search field blur, and only live on
+  Android 12+ (RenderEffect). Earlier versions draw a static material.
+  Controls are plain platters.
+- **Blocked screen loads:** `AddonRepository.newRequest()` runs on the UI
+  thread for every screen, but it locked the monitor that catalogue workers
+  hold while writing the SQLite cache. Request bookkeeping now has its own lock.
+- **Main-thread read:** the player's low-storage prompt read its cache
+  preference from SQLite on the main thread; it now reads it on the loader.
+- **Repeated work:** artwork is cached on disk (40 MiB, LRU) as well as in
+  memory, and off-screen shelves keep their views, so scrolling back no longer
+  rebuilds rows or downloads art again.
+
+**Look.** The interface follows tvOS:
+- **Focus:** focused controls turn white with dark text, grow and cast a
+  shadow. Others rest on translucent platters; list rows are transparent.
+- **Tab bar:** Search sits inside the tab pill, which hides as content
+  scrolls under it.
+- **Spacing:** page titles scroll with the page. List headings are small and
+  grey and align with row labels. Spacing, sizes and grid gutters are evened
+  out, and logos are trimmed of transparent margins so they align with text.
+- **Alerts and backdrops:** alerts have a centred title and stacked
+  full-width buttons. Sources shows blurred artwork. HTML entities in add-on
+  text are decoded.
+
+**Bugs the snapshot harness exposed:**
+- **Choice lists:** a long list in an alert drew over Cancel and past the
+  alert's edge. The alert surface does not clip, so focused buttons can grow;
+  that also left the ScrollView unclipped. A clipping frame with room for the
+  focus lift fixes it. The licence alert and the search results grid had the
+  same flaw; scrolled results drew over the heading and search field.
+- **Long messages:** an alert's message did not scroll, so a long one (such as
+  playback diagnostics) pushed its buttons off screen. The old AlertDialog
+  scrolled; the message now scrolls inside the alert once it would overflow.
+- **Search results:** they stopped 52 dp above the screen. They now run to
+  the bottom edge, and the focused row stays inside the safe area.
+- **Focus jumps:** right on a shelf's last card, or on the last button of a
+  details page, jumped to a tab. Left and right now stay in the content, a
+  shelf holds focus at its ends, and so do the tab bar's ends.
+
+**Tests.** `AppFlowTest` still tapped the removed History tab; it now taps
+Library. `AcceptanceTest`'s search step still uses the old search row and
+dialog rather than the on-screen keyboard. It needs rewriting against the
+current Search screen before `./streaming/simulator.sh acceptance` can pass.
+
+**Results in this environment** (Linux container, no emulator or device):
+- **Builds:** `:app:assembleDebug`, `:app:assembleRelease` and
+  `:app:assembleDebugAndroidTest` pass.
+- **Lint:** `:app:lintDebug` and `:app:lintRelease` report 0 errors and 20
+  warnings.
+- **Unit tests:** `:app:testDebugUnitTest` passes 10 offline JVM tests.
+- **Snapshots:** `UiSnapshotTest` with `-PuiSnapshots=true` renders 17
+  screens and alerts in Robolectric's native graphics at 1920×1080. These are the
+  renders the fixes above were checked against. Robolectric does not run
+  RenderEffect, so live blur and the dialog's window blur are not shown.
+- **Not run:** emulator instrumentation, smoke, soak and on-device frame
+  timing. They need the verified AVD.

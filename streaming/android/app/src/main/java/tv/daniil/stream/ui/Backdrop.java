@@ -7,6 +7,7 @@ import android.view.View;
 import android.widget.ImageView;
 import androidx.annotation.Nullable;
 import java.util.Objects;
+import java.util.function.Consumer;
 import tv.daniil.stream.addon.Title;
 
 /**
@@ -33,15 +34,16 @@ public final class Backdrop {
         return title.background != null ? title.background : title.poster;
     }
 
-    /** Shows the title's artwork, or the plain canvas for null. */
-    public void show(@Nullable Title title, boolean immediately) {
-        String url = art(title);
-        if (Objects.equals(url, wanted)) return;
-        wanted = url;
+    /** Shows the title's artwork, sharp or blurred, or the plain canvas for null. */
+    public void show(@Nullable Title title, boolean immediately, boolean blurred) {
+        String url = art(title), key = url == null ? null : blurred ? url + "#blurred" : url;
+        if (Objects.equals(key, wanted)) return;
+        wanted = key;
         int mine = ++generation;
         main.removeCallbacksAndMessages(null);
         if (url == null) { clear(); return; }
-        main.postDelayed(() -> artwork.fetch(url, Artwork.BACKDROP, false, bitmap -> { if (mine == generation) swap(url, bitmap); }),
+        Consumer<Bitmap> done = bitmap -> { if (mine == generation) swap(key, bitmap); };
+        main.postDelayed(() -> { if (blurred) artwork.blurred(url, done); else artwork.fetch(url, Artwork.BACKDROP, false, done); },
                 immediately ? 0 : SETTLE_MS);
     }
 

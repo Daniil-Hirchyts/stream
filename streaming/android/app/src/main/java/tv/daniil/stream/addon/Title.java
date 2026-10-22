@@ -18,9 +18,9 @@ public final class Title {
 
         private Episode(String provider, JSONObject o) {
             id = Json.string(o, "id", "");
-            name = Json.string(o, "title", Json.string(o, "name", id));
+            name = Json.text(o, "title", Json.text(o, "name", id));
             released = Json.string(o, "released", "");
-            overview = Json.string(o, "overview", "");
+            overview = Json.text(o, "overview", "");
             season = integer(o, "season");
             number = integer(o, "episode");
             thumbnail = Json.webUrl(Json.string(o, "thumbnail"));
@@ -38,9 +38,9 @@ public final class Title {
         this.provider = provider;
         id = Json.string(o, "id", "");
         type = Json.string(o, "type", "");
-        name = Json.string(o, "name", id);
-        description = Json.string(o, "description", "");
-        releaseInfo = Json.string(o, "releaseInfo", "");
+        name = Json.text(o, "name", id);
+        description = Json.text(o, "description", "");
+        releaseInfo = Json.text(o, "releaseInfo", "");
         rating = Json.string(o, "imdbRating", "");
         poster = Json.webUrl(Json.string(o, "poster"));
         background = Json.webUrl(Json.string(o, "background"));
@@ -48,9 +48,9 @@ public final class Title {
         String external = Json.string(o, "imdb_id");
         if (external == null && id.matches("tt[0-9]+")) external = id;
         imdbId = external != null && external.matches("tt[0-9]+") ? external : null;
-        genres = Json.strings(o, "genres");
-        cast = Json.strings(o, "cast");
-        directors = Json.strings(o, "director");
+        genres = Json.texts(o, "genres");
+        cast = Json.texts(o, "cast");
+        directors = Json.texts(o, "director");
         List<Episode> videos = new ArrayList<>();
         for (JSONObject video : Json.objects(o, "videos")) {
             if (Json.string(video, "id") != null) videos.add(new Episode(provider, video));
