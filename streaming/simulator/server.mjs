@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { join, resolve, sep, extname } from 'node:path';
 import { addonFixtures } from './addon-fixtures.mjs';
+import { liveRoom, inputCommand } from './live-room.mjs';
 
 const run = promisify(execFile);
 const [adb, serial, avd, fixtureTool] = process.argv.slice(2);
@@ -55,7 +56,8 @@ async function buildIndex() {
 await verify();
 const index = await buildIndex();
 const serveAddon = addonFixtures(index, origin);
-const types = { '.mp4': 'video/mp4', '.mkv': 'video/x-matroska', '.torrent': 'application/x-bittorrent' };
+let capture;
+const types = { '.m3u8': 'application/x-mpegURL', '.mpd': 'application/dash+xml', '.ts': 'video/mp2t', '.m4s': 'video/iso.segment', '.vtt': 'text/vtt', '.jpg': 'image/jpeg', '.mp4': 'video/mp4', '.mkv': 'video/x-matroska', '.torrent': 'application/x-bittorrent' };
 
 function serveFile(req, res, root, relative) {
   const file = resolve(root, '.' + relative);
@@ -81,9 +83,22 @@ function serveFile(req, res, root, relative) {
 
 const server = createServer(async (req, res) => {
   try {
+    if (req.method === 'POST' && req.url === '/input') {
+      if (req.headers.origin !== origin || req.headers['content-type'] !== 'application/json') { res.writeHead(403).end('Same-origin JSON required'); return; }
+      let body = ''; for await (const chunk of req) { body += chunk; if (body.length > 1024) { res.writeHead(413).end(); return; } }
+      const input = JSON.parse(body); await verify();
+      const { stdout: size } = await run(adb, ['-s', serial, 'shell', 'wm', 'size']);
+      const command = inputCommand(input, size); await verify(); await run(adb, ['-s', serial, 'shell', 'input', ...command]);
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}'); return;
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405).end(); return; }
     const path = decodeURIComponent(new URL(req.url, origin).pathname);
     res.setHeader('Cache-Control', 'no-store');
+    if (path === '/') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(liveRoom(serial, avd)); return; }
+    if (path === '/screen.png') {
+      capture ??= verify().then(() => run(adb, ['-s', serial, 'exec-out', 'screencap', '-p'], { encoding: 'buffer', maxBuffer: 12 << 20 })).finally(() => { capture = null; });
+      const { stdout } = await capture; res.writeHead(200, { 'Content-Type': 'image/png' }).end(stdout); return;
+    }
     if (path === '/addon/subtitle.vtt') {
       res.writeHead(200, { 'Content-Type': 'text/vtt' }).end('WEBVTT\n\n00:00:00.000 --> 00:00:30.000\nGenerated subtitle\n');
       return;

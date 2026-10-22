@@ -117,15 +117,24 @@ public final class PlaybackSession {
      * @param userAgent sent with HTTP requests unless a request supplies its own.
      */
     public PlaybackSession(Context context, SharedPreferences prefs, String name, String userAgent, PlaybackHost host) {
+        this(context, prefs, name, userAgent, host, 0);
+    }
+
+    /** Hosts with a constrained streaming budget may cap compressed Media3 buffers; zero keeps defaults. */
+    public PlaybackSession(Context context, SharedPreferences prefs, String name, String userAgent, PlaybackHost host, int bufferBytes) {
         this.context = context;
         this.prefs = prefs;
         this.userAgent = userAgent;
         this.host = host;
-        subtitleRoot = new File(context.getCacheDir(), "subtitles");
+        subtitleRoot = new File(new File(context.getCacheDir(), "subtitles"), java.util.UUID.randomUUID().toString());
         Capabilities.load(context);
         // Decoders hidden for testing stay hidden from playback too.
-        player = new ExoPlayer.Builder(context, new SubtitlePlayback(context)
-                .setMediaCodecSelector(Capabilities.selector()).setEnableDecoderFallback(true)).build();
+        ExoPlayer.Builder builder = new ExoPlayer.Builder(context, new SubtitlePlayback(context)
+                .setMediaCodecSelector(Capabilities.selector()).setEnableDecoderFallback(true));
+        if (bufferBytes > 0) builder.setLoadControl(new androidx.media3.exoplayer.DefaultLoadControl.Builder()
+                .setTargetBufferBytes(bufferBytes).setPrioritizeTimeOverSizeThresholds(false)
+                .setBufferDurationsMs(3000, 15_000, 1000, 1000).build());
+        player = builder.build();
         player.setAudioAttributes(new AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true);
         player.addListener(new Player.Listener() {
@@ -303,8 +312,14 @@ public final class PlaybackSession {
         if (released) return;
         reportProgress();
         released = true;
+        generation++;
         handler.removeCallbacksAndMessages(null);
         background.shutdownNow();
+        Thread cleanup = new Thread(() -> {
+            try { if (background.awaitTermination(15, java.util.concurrent.TimeUnit.SECONDS)) delete(subtitleRoot); }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+        }, "subtitle-cleanup");
+        cleanup.setDaemon(true); cleanup.start();
         listeners.clear();
         player.stop();
         player.release();

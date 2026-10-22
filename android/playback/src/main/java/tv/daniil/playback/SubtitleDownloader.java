@@ -87,10 +87,11 @@ public final class SubtitleDownloader {
         if (old != null) for (File file : old) file.delete();
         directory.mkdirs();
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(4, sources.size()));
+        java.util.concurrent.atomic.AtomicBoolean accepting = new java.util.concurrent.atomic.AtomicBoolean(true);
         List<Future<MediaItem.SubtitleConfiguration>> pending = new ArrayList<>();
         for (int i = 0; i < sources.size(); i++) {
             int index = i;
-            pending.add(pool.submit(() -> fetch(directory, index, sources.get(index), headers)));
+            pending.add(pool.submit(() -> fetch(directory, index, sources.get(index), headers, accepting)));
         }
         pool.shutdown();
         long deadline = SystemClock.elapsedRealtime() + DEADLINE_MS;
@@ -105,18 +106,23 @@ public final class SubtitleDownloader {
             }
         }
         pool.shutdownNow();
+        // A timed-out HTTP worker can finish later. It must never recreate a retired session's directory.
+        synchronized (directory) { accepting.set(false); }
         return result;
     }
 
     @Nullable private static MediaItem.SubtitleConfiguration fetch(File directory, int index, Source source,
-            Map<String, String> headers) throws IOException {
+            Map<String, String> headers, java.util.concurrent.atomic.AtomicBoolean accepting) throws IOException {
         byte[] bytes = get(source.url, headers);
         if (bytes == null) return null;
         Text text = identify(decode(bytes), source.mime);
         if (text == null) return null;
         File file = new File(directory, "subtitle-" + index + extension(text.mime));
-        try (OutputStream out = new FileOutputStream(file)) {
-            out.write(text.body.getBytes(StandardCharsets.UTF_8));
+        synchronized (directory) {
+            if (!accepting.get()) return null;
+            try (OutputStream out = new FileOutputStream(file)) {
+                out.write(text.body.getBytes(StandardCharsets.UTF_8));
+            }
         }
         return new MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(file))
                 .setId(SubtitleTracks.SIDELOADED + index)
