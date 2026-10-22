@@ -54,6 +54,7 @@
                 android:layout_gravity="center"
                 android:background="@drawable/tv_tabs"
                 android:clipChildren="false"
+                android:clipToPadding="false"
                 android:orientation="horizontal"
                 android:padding="4dp" />
             <TextClock
