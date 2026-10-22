@@ -27,7 +27,6 @@ import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
 import org.robolectric.annotation.LooperMode;
 import org.robolectric.shadows.ShadowDialog;
-import tv.daniil.stream.addon.AddonUrl;
 import tv.daniil.stream.addon.BuiltinAddons;
 import tv.daniil.stream.addon.Cancellation;
 import tv.daniil.stream.addon.Title;
@@ -55,43 +54,61 @@ public final class UiSnapshotTest {
     @Test public void browseScreens() throws Exception {
         TvApplication app = ApplicationProvider.getApplicationContext();
         TvApplication.Services services = app.services();
+        ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup();
+        activity = controller.get();
+        settle(3000);
+        snap("00-welcome");
+        // The real first run: Start watching installs the listed starter add-ons from their live manifests.
+        click("Start watching");
+        waitFor(() -> services.store.addons().size() >= 3, 30_000);
+        settle(2000);
+        StringBuilder names = new StringBuilder();
+        for (tv.daniil.stream.data.InstalledAddon a : services.store.addons()) names.append(a.manifest.name).append("; ");
+        System.out.println("starter add-ons: " + names);
+
         Title film, series;
-        try (Cancellation scope = services.addons.newRequest()) {
-            services.addons.install(AddonUrl.CINEMETA, services.addons.preview(AddonUrl.CINEMETA, scope));
-        }
-        try (Cancellation scope = services.addons.newRequest()) {
-            services.addons.install(BuiltinAddons.INTERNET_ARCHIVE, services.addons.preview(BuiltinAddons.INTERNET_ARCHIVE, scope));
-        }
         try (Cancellation scope = services.addons.newRequest()) {
             String cinemeta = services.store.addons().get(0).id;
             film = services.addons.metadata(cinemeta, "movie", "tt0063350", scope).items.get(0);
             series = services.addons.metadata(cinemeta, "series", "tt0052520", scope).items.get(0);
         }
-        services.store.setPreference("onboardingDone", "true");
         services.store.progress(film, film.id, 41 * 60_000, 96 * 60_000, false);
         services.store.progress(series, series.episodes.get(3).id, 12 * 60_000, 25 * 60_000, false);
         services.store.favourite(film, true);
 
-        ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup();
-        activity = controller.get();
-        settle(9000);
+        activity.root("Home"); settle(9000);
         snap("01-home");
         key(KeyEvent.KEYCODE_DPAD_RIGHT); key(KeyEvent.KEYCODE_DPAD_RIGHT); settle(2500);
         snap("02-home-focus-moved");
         key(KeyEvent.KEYCODE_DPAD_DOWN); key(KeyEvent.KEYCODE_DPAD_DOWN); settle(3000);
         snap("03-home-scrolled");
+        for (int i = 0; i < 6; i++) key(KeyEvent.KEYCODE_DPAD_DOWN);
+        settle(3000);
+        snap("03b-home-bottom");
 
         activity.openTitle(film, ""); settle(6000);
         snap("04-details-film");
+        for (int i = 0; i < 2; i++) key(KeyEvent.KEYCODE_DPAD_RIGHT);
+        settle(1000);
+        snap("04b-details-buttons");
         activity.openTitle(series, ""); settle(6000);
         snap("05-details-series");
+        for (int i = 0; i < 3; i++) key(KeyEvent.KEYCODE_DPAD_DOWN);
+        settle(3000);
+        snap("05b-series-episodes");
         activity.sources(film, film.id); settle(9000);
         snap("06-sources");
 
         activity.root("Library"); settle(4000);
         snap("07-library");
+        for (int i = 0; i < 3; i++) key(KeyEvent.KEYCODE_DPAD_DOWN);
+        settle(2000);
+        snap("07b-library-scrolled");
         activity.root("Add-ons"); settle(9000);
         snap("08-store");
+        for (int i = 0; i < 8; i++) key(KeyEvent.KEYCODE_DPAD_DOWN);
+        settle(2000);
+        snap("08b-store-scrolled");
         Route review = new Route("Add-on review"); review.value = BuiltinAddons.INTERNET_ARCHIVE;
         activity.push(review); settle(3000);
         snap("09-store-review");
@@ -104,20 +121,34 @@ public final class UiSnapshotTest {
         settle(1000);
         snapDialog("10c-long-alert");
         ShadowDialog.getLatestDialog().dismiss(); settle(500);
+        for (int i = 0; i < 12; i++) key(KeyEvent.KEYCODE_DPAD_DOWN);
+        settle(2000);
+        snap("10d-settings-scrolled");
         activity.search(); settle(2000);
         snap("11-search");
-        for (int code : new int[]{KeyEvent.KEYCODE_DPAD_CENTER}) key(code);
+        click("Show 123 keys"); settle(800);
+        snap("11b-search-symbols");
+        click("Show àéü keys"); settle(800);
+        snap("11c-search-accents");
+        // Typing re-renders the page; the keyboard stays on the page being typed from.
+        click("Type é"); settle(1500);
+        if (activity.getWindow().getDecorView().findViewWithTag("keyboard:é") == null) throw new AssertionError("Keyboard left the accents page");
+        click("Clear search"); click("Show abc keys"); settle(800);
         activity.searchInput("night"); settle(7000);
         snap("12-search-results");
-        for (int i = 0; i < 6; i++) key(KeyEvent.KEYCODE_DPAD_RIGHT);
+        for (int i = 0; i < 7; i++) key(KeyEvent.KEYCODE_DPAD_RIGHT);
         for (int i = 0; i < 3; i++) key(KeyEvent.KEYCODE_DPAD_DOWN);
         settle(1500);
         snap("12b-search-results-scrolled");
-        activity.root("Welcome"); settle(2000);
-        snap("13-welcome");
         activity.openImports(); settle(2500);
         snap("14-imports");
         controller.pause().stop().destroy();
+    }
+
+    /** Settles until {@code done} holds or {@code ms} pass. */
+    private static void waitFor(java.util.function.BooleanSupplier done, long ms) throws InterruptedException {
+        long end = System.currentTimeMillis() + ms;
+        while (!done.getAsBoolean() && System.currentTimeMillis() < end) settle(100);
     }
 
     /** D-pad: arrows move focus the way the framework's focus search does; other keys go to the focused view. */

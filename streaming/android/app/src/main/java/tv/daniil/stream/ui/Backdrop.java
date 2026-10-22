@@ -18,6 +18,8 @@ public final class Backdrop {
     private static final long SETTLE_MS = 280, FADE_MS = 420;
     private final Artwork artwork;
     private final View scrim;
+    /** The softened (lower-half blurred) copy of the current artwork, cross-faded above the sharp layers. */
+    private final ImageView soft;
     /** {@code top} is drawn above {@code bottom}; the newest image alternates between them. */
     private final ImageView top, bottom;
     private boolean topCurrent;
@@ -25,8 +27,8 @@ public final class Backdrop {
     @Nullable private String shown, wanted;
     private int generation;
 
-    public Backdrop(Artwork artwork, ImageView top, ImageView bottom, View scrim) {
-        this.artwork = artwork; this.top = top; this.bottom = bottom; this.scrim = scrim;
+    public Backdrop(Artwork artwork, ImageView top, ImageView bottom, ImageView soft, View scrim) {
+        this.artwork = artwork; this.top = top; this.bottom = bottom; this.soft = soft; this.scrim = scrim;
     }
 
     @Nullable public static String art(@Nullable Title title) {
@@ -43,8 +45,11 @@ public final class Backdrop {
         main.removeCallbacksAndMessages(null);
         if (url == null) { clear(); return; }
         Consumer<Bitmap> done = bitmap -> { if (mine == generation) swap(key, bitmap); };
-        main.postDelayed(() -> { if (blurred) artwork.blurred(url, done); else artwork.fetch(url, Artwork.BACKDROP, false, done); },
-                immediately ? 0 : SETTLE_MS);
+        main.postDelayed(() -> {
+            if (blurred) { artwork.blurred(url, done); soften(null); return; }
+            artwork.fetch(url, Artwork.BACKDROP, false, done);
+            artwork.softened(url, bitmap -> { if (mine == generation) soften(bitmap); });
+        }, immediately ? 0 : SETTLE_MS);
     }
 
     private void swap(String url, Bitmap bitmap) {
@@ -64,8 +69,22 @@ public final class Backdrop {
         scrim.animate().cancel(); scrim.animate().alpha(1f).setDuration(FADE_MS).start();
     }
 
+    /** Cross-fades the softened layer to {@code bitmap}, or away for none. */
+    private void soften(@Nullable Bitmap bitmap) {
+        android.graphics.drawable.Drawable before = soft.getDrawable() instanceof android.graphics.drawable.TransitionDrawable
+                ? ((android.graphics.drawable.TransitionDrawable) soft.getDrawable()).getDrawable(1) : soft.getDrawable();
+        if (before == null) before = new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT);
+        android.graphics.drawable.Drawable after = bitmap == null ? new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+                : new android.graphics.drawable.BitmapDrawable(soft.getResources(), bitmap);
+        android.graphics.drawable.TransitionDrawable fade = new android.graphics.drawable.TransitionDrawable(new android.graphics.drawable.Drawable[]{before, after});
+        fade.setCrossFadeEnabled(true);
+        soft.setImageDrawable(fade);
+        fade.startTransition((int) FADE_MS);
+    }
+
     private void clear() {
         shown = null;
+        soften(null);
         for (View layer : new View[]{top, bottom, scrim}) { layer.animate().cancel(); layer.animate().alpha(0f).setDuration(FADE_MS).start(); }
     }
 

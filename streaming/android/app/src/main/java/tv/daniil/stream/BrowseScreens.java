@@ -57,16 +57,14 @@ final class BrowseScreens {
         }
         if (shelves.isEmpty()) {
             page.add(Item.message(R.drawable.ic_tv_tv, "Make yourself at home",
-                    catalogues.isEmpty() ? "Add a catalogue add-on from Add-ons, or import a torrent to start your library."
-                            : "Your catalogue add-ons returned nothing right now. Refresh, or import a torrent.",
+                    catalogues.isEmpty() ? "Add a catalogue to fill this page." : "Your catalogues are empty right now.",
                     new Item.Action("home-add-addon", Item.Action.Style.PRIMARY, "Browse add-ons", () -> nav.root("Add-ons")).icon(R.drawable.ic_tv_extension),
                     new Item.Action("home-import", Item.Action.Style.SECONDARY, "Import a torrent", nav::openImports).icon(R.drawable.ic_tv_download)));
         } else {
             page.add(Item.spotlight(null));
             page.addAll(shelves);
         }
-        if (failed) page.add(Item.notice(R.drawable.ic_tv_offline, stale ? "Showing saved catalogues" : "Some providers are unavailable",
-                "Other rows are still available. Refresh to try again."));
+        if (failed) page.add(Item.notice(R.drawable.ic_tv_offline, stale ? "Showing saved catalogues" : "Some providers are unavailable", ""));
         page.add(Item.actions("home-actions",
                 new Item.Action("browse", Item.Action.Style.SECONDARY, "Browse catalogues", () -> nav.push(new Route("Catalogues"))).icon(R.drawable.ic_tv_list),
                 new Item.Action("refresh", Item.Action.Style.ICON, "Refresh", nav::refresh).icon(R.drawable.ic_tv_refresh)));
@@ -77,7 +75,7 @@ final class BrowseScreens {
         Page page = new Page();
         Item search = searchItem(route);
         page.add(search);
-        page.initialFocus = "keyboard:A";
+        page.initialFocus = "keyboard:a";
         if (route.value.trim().length() < 2) return page;
         AddonRepository.Result<Title> found = services.addons.search(route.value, scope);
         List<Tile> tiles = new ArrayList<>();
@@ -104,11 +102,7 @@ final class BrowseScreens {
     }
 
     private Item searchItem(Route route) {
-        return Item.keyboard("keyboard", route.value, text -> {
-            route.value = text; route.searchSubmitted = false; route.scroll = null; nav.searchInput(text);
-        }, () -> {
-            route.searchSubmitted = true; route.scroll = null; nav.refresh();
-        });
+        return Item.keyboard("keyboard", route.value, text -> { route.value = text; route.scroll = null; nav.searchInput(text); });
     }
 
     Page library() {
@@ -126,14 +120,13 @@ final class BrowseScreens {
             if (title != null) history.add(progressTile("history", title, progress));
         }
         if (favourites.isEmpty() && others.isEmpty() && history.isEmpty()) {
-            return page.add(Item.message(R.drawable.ic_tv_heart_outline, "Your library is empty",
-                    "Titles you play, favourite or import appear here.",
+            return page.add(Item.message(R.drawable.ic_tv_heart_outline, "Your library is empty", "",
                     new Item.Action("library-search", Item.Action.Style.PRIMARY, "Find titles", nav::search).icon(R.drawable.ic_tv_search)));
         }
         if (!favourites.isEmpty()) { page.add(Item.header("Favourites")); page.addAll(Item.grid("favourites", Tile.Style.POSTER, POSTER_COLUMNS, favourites)); }
         if (!others.isEmpty()) { page.add(Item.header("Recently played")); page.addAll(Item.grid("played", Tile.Style.POSTER, POSTER_COLUMNS, others)); }
         if (!history.isEmpty()) {
-            page.add(Item.header("Watch history", "Most recent first"));
+            page.add(Item.header("Watch history"));
             page.addAll(Item.grid("history", Tile.Style.LANDSCAPE, LANDSCAPE_COLUMNS, history));
         }
         return page;

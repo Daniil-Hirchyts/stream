@@ -29,8 +29,11 @@ import tv.daniil.stream.R;
 public final class Tv {
     private Tv() {}
     private static final DecelerateInterpolator EASE = new DecelerateInterpolator(2.2f);
-    /** Focus growth: posters and cards, buttons, and list rows (which span the page and so grow least). */
-    public static final float LIFT_TILE = 1.08f, LIFT_BUTTON = 1.06f, LIFT_ROW = 1.02f;
+    /**
+     * Focus growth. Artwork grows most; buttons a little. List rows and tabs don't grow at all: they are wide, so any
+     * scale visibly shifts their text sideways. They show focus by turning white instead.
+     */
+    public static final float LIFT_TILE = 1.1f, LIFT_BUTTON = 1.05f, LIFT_ROW = 1f;
 
     public static int dp(Context context, float value) { return Math.round(value * context.getResources().getDisplayMetrics().density); }
 
@@ -123,7 +126,7 @@ public final class Tv {
                     ((LinearLayout.LayoutParams) icon.getLayoutParams()).bottomMargin = dp(context, 12);
                     content.addView(icon);
                 }
-                TextView label = oneLine(heading(context, action.label, 17, R.color.tv_on_glass));
+                TextView label = oneLine(heading(context, action.shown(), 17, R.color.tv_on_glass));
                 label.setDuplicateParentStateEnabled(true);
                 content.addView(label);
                 if (!action.detail.isEmpty()) {
@@ -148,11 +151,12 @@ public final class Tv {
                     ((LinearLayout.LayoutParams) icon.getLayoutParams()).rightMargin = dp(context, 8);
                     content.addView(icon);
                 }
-                TextView label = oneLine(heading(context, action.label, chip ? 14.5f : 16, R.color.tv_on_glass));
+                TextView label = oneLine(heading(context, action.shown(), chip ? 14.5f : 16, R.color.tv_on_glass));
                 label.setDuplicateParentStateEnabled(true);
                 content.addView(label);
-                if (chip && !action.detail.isEmpty()) {
-                    TextView value = oneLine(text(context, action.detail, 14.5f, R.color.tv_on_glass_secondary));
+                // A short value after the label: a chip's current filter, or the episode a Play button starts.
+                if (!action.detail.isEmpty()) {
+                    TextView value = oneLine(text(context, action.detail, chip ? 14.5f : 16, R.color.tv_on_glass_secondary));
                     value.setDuplicateParentStateEnabled(true);
                     value.setPadding(dp(context, 6), 0, 0, 0);
                     content.addView(value);
@@ -187,15 +191,41 @@ public final class Tv {
             control(button, key, action, ignored -> {}, 1.03f, false);
             return button;
         }
+        /**
+         * Shows the alert over a blurred copy of the screen behind it, on every Android version: one small screenshot,
+         * blurred once off the main thread, rather than a live window blur (Android 12+ only, and often disabled).
+         */
         public void show() {
+            Context context = dialog.getContext();
+            FrameLayout root = new FrameLayout(context);
+            ImageView behind = new ImageView(context);
+            behind.setScaleType(ImageView.ScaleType.FIT_XY); behind.setAlpha(0f);
+            behind.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            root.addView(behind, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            View tint = new View(context); tint.setBackgroundColor(context.getColor(R.color.tv_alert_tint));
+            root.addView(tint, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            // A press outside the alert dismisses it, as a tap outside a dialog window would.
+            root.setOnClickListener(v -> dialog.cancel());
+            root.setFocusable(false);
+            surface.setBackgroundResource(R.drawable.tv_dialog);
+            // Clickable only to absorb presses on its padding; never a focus stop of its own.
+            surface.setElevation(dp(context, 24)); surface.setClickable(true); surface.setFocusable(false);
+            int width = Math.min(dp(context, 500), context.getResources().getDisplayMetrics().widthPixels - dp(context, 64));
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+            params.topMargin = params.bottomMargin = dp(context, 32);
+            root.addView(surface, params);
+            dialog.setContentView(root);
             Window window = dialog.getWindow();
-            dialog.setContentView(surface);
             if (window != null) {
-                window.setBackgroundDrawableResource(R.drawable.tv_dialog);
+                window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+                window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+                window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
                 window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+                window.setWindowAnimations(android.R.style.Animation_Dialog);
             }
+            blurBehind(context, behind);
             dialog.show();
-            styleDialog(dialog);
+            if (window != null) window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
             View first = buttons.getChildCount() > 0 ? buttons.getChildAt(0) : null;
             if (first != null && surface.findFocus() == null) first.requestFocus();
         }
@@ -275,17 +305,32 @@ public final class Tv {
         return frame;
     }
 
-    /** Centres the alert, dims the screen and, on Android 12+, blurs the content behind the alert's rounded material. */
-    public static void styleDialog(Dialog dialog) {
-        Window window = dialog.getWindow();
-        if (window == null) return;
-        window.setGravity(Gravity.CENTER);
-        window.setDimAmount(GlassView.LIVE_BLUR ? 0.38f : 0.6f);
-        window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-        Context context = dialog.getContext();
-        int availableWidth = context.getResources().getDisplayMetrics().widthPixels - dp(context, 64);
-        window.setLayout(Math.min(dp(context, 500), availableWidth), ViewGroup.LayoutParams.WRAP_CONTENT);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) window.setBackgroundBlurRadius(dp(context, 30));
+    private static final java.util.concurrent.ExecutorService BLUR = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "alert-blur"); thread.setDaemon(true); return thread;
+    });
+    /**
+     * Copies the activity's window at an eighth of its size, blurs that on a worker and fades it in behind the
+     * alert. Video surfaces aren't part of the copy and stay dark, as under a dimmed alert.
+     */
+    private static void blurBehind(Context context, ImageView target) {
+        // A dialog's context is its activity wrapped in the dialog theme.
+        while (!(context instanceof android.app.Activity) && context instanceof android.content.ContextWrapper) context = ((android.content.ContextWrapper) context).getBaseContext();
+        if (!(context instanceof android.app.Activity)) return;
+        Window window = ((android.app.Activity) context).getWindow();
+        View decor = window.getDecorView();
+        if (decor.getWidth() == 0 || decor.getHeight() == 0) return;
+        android.graphics.Bitmap small = android.graphics.Bitmap.createBitmap(Math.max(1, decor.getWidth() / 8), Math.max(1, decor.getHeight() / 8),
+                android.graphics.Bitmap.Config.ARGB_8888);
+        android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+        try {
+            android.view.PixelCopy.request(window, small, result -> {
+                if (result != android.view.PixelCopy.SUCCESS) return;
+                BLUR.execute(() -> {
+                    android.graphics.Bitmap blurred = Artwork.blur(small);
+                    main.post(() -> { target.setImageBitmap(blurred); target.animate().alpha(1f).setDuration(220).start(); });
+                });
+            }, main);
+        } catch (IllegalArgumentException noSurface) { /* the tint alone still separates the alert */ }
     }
 
     public static ColorStateList colors(Context context, @ColorRes int color) { return context.getColorStateList(color); }

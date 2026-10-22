@@ -18,7 +18,9 @@
     <color name="tv_focus_pressed">#D9FFFFFF</color>
     <color name="tv_material_thin">#52222227</color>
     <color name="tv_material">#E6202024</color>
-    <color name="tv_material_dialog">#D91E1E22</color>
+    <!-- Alerts: translucent glass over a blurred, slightly darkened copy of the screen. -->
+    <color name="tv_material_dialog">#A62A2A30</color>
+    <color name="tv_alert_tint">#59000000</color>
 
     <!-- The shared player takes the same neutral palette in this app only; Daniil Cast keeps its own. -->
     <color name="ink" tools:ignore="UnusedResources">#FF000000</color>

@@ -16,12 +16,11 @@ installs/opens it. No helper, extension, pairing, debrid account or home server
 is needed. Development requires Java 21/17, Node, FFmpeg, a C++ toolchain and
 Android SDK/NDK/CMake versions pinned in `streaming/native/deps.lock`.
 
-Welcome offers Cinemeta for explicit review/acceptance, the add-on store,
-manual imports and language preferences. Skipping providers leaves
-imports available, and a profile that already has an add-on or import goes
-straight to Home. Home, Library, Add-ons and Settings are tabs in a floating
-bar at the top; search opens from the header, and Imports and add-on
-management live under Settings. Details provide Play/Resume, Sources,
+Welcome lists the starter add-ons and installs them when the viewer chooses
+Start watching; a profile that already has an add-on or import goes straight to
+Home. Home, Library and Settings are tabs in a floating bar at the top; search
+opens from the same bar, and the add-on store, add-on management and Imports
+live under Settings. Details provide Play/Resume, Sources,
 watched/favourite controls and seasons/episodes. Settings manage add-ons,
 catalogue visibility, languages, subtitle style, cache size (128/256/512 MiB),
 autoplay and app-cache cleanup. Versions, statistics and license texts live in
@@ -34,30 +33,48 @@ Home, a spotlight shows the focused card's logo or title, facts and
 description, and the backdrop cross-fades to its art once focus settles.
 Shelves scroll horizontally. Page titles scroll with their page.
 
-- **Tab bar:** Search and the tabs sit in one floating pill. It slides away
-  once content scrolls under it and returns when focus reaches it or the page
-  is back at its top.
-- **Controls:** buttons, chips and keys rest on translucent platters. List
-  rows are transparent until focused. The focused control turns white with
-  dark text, grows and casts a shadow.
-- **Headings:** list headings are small and grey and line up with the row
-  labels below them. Shelf headings are white.
-- **Focus:** left and right never leave the content. A shelf holds focus at
-  its ends instead of jumping to a tab.
-- **Split layout:** Settings, Imports, Add-ons and Developer show a large
-  icon on the left and rows on the right.
-- **Alerts:** dialogs are `Tv.Alert` sheets with a centred title and stacked
-  full-width buttons. A long choice list or message scrolls, clipped, above the buttons.
-  Sources shows the title's artwork heavily blurred.
 
-Blur is reserved for floating chrome. The tab bar and search field blur live
-only on Android 12+ (a RenderEffect GPU pass); earlier versions, including Fire
-TV's Android 9, use a denser static material. There BlurView would blur on the
-CPU before every frame, which is what made the UI stall, so rows, buttons and
-cards never blur. Alerts blur the screen behind them through the window
-(Android 12+) and dim it elsewhere. Artwork is cached on disk (40 MiB, least
-recently shown evicted) as well as in memory. Off-screen shelves keep their
-views, so scrolling back neither rebuilds a row nor reloads its art.
+- **First run:** one screen lists the starter add-ons (Cinemeta, Internet
+  Archive, OpenSubtitles) and one button, Start watching, which installs them
+  from their current manifests and opens Home. Local-only instrumentation lists
+  none, so tests never reach public providers.
+- **Tab bar:** Search, Home, Library and Settings sit in one floating pill. It
+  slides away once content scrolls under it and returns when focus reaches it
+  or the page is back at its top. Content scrolling up fades into the top edge.
+- **Settings:** installed add-ons come first, then the add-on store, imports,
+  languages, subtitles and playback, as plain rows in a centred column. Lists
+  and forms (Settings, Imports, the store, add-on pages, Sources) use that
+  column; shelves and grids use the full width.
+- **Details:** every button is labelled: Play or Resume (with the episode),
+  Sources, Favourite, Mark watched, and More for refresh and removal.
+- **Sources:** only sources this TV can play, best first. When none can, the
+  page says how many were found and why.
+- **Search keyboard:** a six-column grid with no gaps, on three pages
+  (letters, digits and punctuation, accented letters); Space, Delete, the page
+  switches and Clear each span exactly two keys. Results update as you type.
+- **Focus:** the focused control turns white with dark text. Artwork grows,
+  gains a white rim and a deep shadow while its caption keeps its size; buttons
+  grow slightly; list rows and tabs don't grow, so their text never shifts.
+  Left and right never leave the content, and shelves hold focus at their ends.
+- **Alerts:** `Tv.Alert` sheets of translucent glass over a blurred copy of
+  the screen, with a centred title and stacked full-width buttons. A long
+  choice list or message scrolls, clipped, above the buttons.
+
+Glass comes from cheap, static blurs rather than live per-frame ones:
+- **Artwork:** each title's artwork also has a softened layer, blurred and
+  fading in towards the bottom where text, buttons and shelves sit, so
+  translucent controls over it read as glass. Sources shows the artwork fully
+  blurred.
+- **Alerts:** an alert copies the screen at an eighth of its size, blurs that
+  once on a worker and fades it in.
+- **Tab bar and search field:** only these blur live, and only on Android 12+
+  (a RenderEffect GPU pass). Earlier versions, including Fire TV's Android 9,
+  use a static material, because BlurView there blurs on the CPU before every
+  frame, which is what made the UI stall.
+
+Artwork is cached on disk (40 MiB, least recently shown evicted) as well as in
+memory. Off-screen shelves keep their views, so scrolling back neither rebuilds
+a row nor reloads its art.
 
 The shared player gets the same neutral palette through app resource overrides
 (`res/values/colors.xml`, `bg_panel`, `pill`, `bg_card_soft`), so Daniil Cast
@@ -105,7 +122,7 @@ offer constant; constructing the store/repository installs nothing.
 
 ### Store
 
-The Add-ons tab (`StoreScreens`) lists, by section: built-in add-ons, a curated
+The add-on store (`StoreScreens`, Settings → Add-on store) lists, by section: built-in add-ons, a curated
 Torrent/P2P section (Torrentio, Comet, Meteor, MediaFusion, StremThru Torz,
 Peerflix and TorrentsDB), the lists
 installed add-ons publish through the protocol's `addon_catalog` resource, and

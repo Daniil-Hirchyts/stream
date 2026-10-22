@@ -24,7 +24,7 @@ public final class LiveFilmTest extends AppHarness {
     }
     /** Installs through the store's real rows and review page, then opens the film's details from that provider. */
     private void installAndOpen(String addon, String imdb, String name) throws Exception {
-        tap("Add-ons", true); tap(addon, false); tap("Install", true);
+        tap("Settings", true); tap("Add-on store", false); tap(addon, false); tap("Install", true);
         waitUntil(addon + " installed", 20_000, () -> services.store.addons().stream().anyMatch(a -> a.manifest.name.equals(addon)));
         String provider = services.store.addons().stream().filter(a -> a.manifest.name.equals(addon)).findFirst().get().id;
         Title film = Title.parse(provider, new JSONObject().put("id", imdb).put("type", "movie").put("name", name));

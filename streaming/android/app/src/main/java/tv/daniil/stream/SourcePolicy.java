@@ -43,9 +43,12 @@ public final class SourcePolicy {
             return new Assessment(true, hardware ? "Supported hardware decoder; format checked when opened" : "Supported decoder; format checked when opened", rank + (hardware ? 40 : 5));
         } catch (Exception e) { return new Assessment(true, "Compatibility unknown; checked when opened", 0); }
     }
+    /** The playable sources, best first. Each source is assessed once: a torrent add-on can return a hundred results. */
     public static List<MediaSource> ranked(List<MediaSource> sources) {
-        List<MediaSource> result = new ArrayList<>(); for (MediaSource s : sources) if (assess(s).usable) result.add(s);
-        result.sort(Comparator.comparingInt((MediaSource s) -> assess(s).rank).reversed()); return result;
+        java.util.Map<MediaSource, Integer> ranks = new java.util.IdentityHashMap<>();
+        for (MediaSource s : sources) { Assessment a = assess(s); if (a.usable) ranks.put(s, a.rank); }
+        List<MediaSource> result = new ArrayList<>(); for (MediaSource s : sources) if (ranks.containsKey(s)) result.add(s);
+        result.sort(Comparator.comparingInt((MediaSource s) -> ranks.get(s)).reversed()); return result;
     }
     public static boolean actualSupported(android.content.Context context, Format format) {
         if (format == null || format.sampleMimeType == null) return true;

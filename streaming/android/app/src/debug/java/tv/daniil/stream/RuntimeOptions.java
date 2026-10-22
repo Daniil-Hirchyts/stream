@@ -16,6 +16,16 @@ public final class RuntimeOptions {
         String fixture = test.getString("addonDirectory", "");
         return fixture.isEmpty() ? java.util.Collections.emptyList() : java.util.Collections.singletonList(fixture);
     }
+    /**
+     * What onboarding offers to add. Local-only instrumentation must not reach public providers, so it offers only
+     * the fixture add-ons it names (none by default).
+     */
+    static java.util.List<String> starterAddons(Context context) {
+        android.content.SharedPreferences test = context.getSharedPreferences("instrumentation", Context.MODE_PRIVATE);
+        if (!test.getBoolean("localOnly", false)) return StarterAddons.ALL;
+        String fixtures = test.getString("starterAddons", "");
+        return fixtures.isEmpty() ? java.util.Collections.emptyList() : java.util.Arrays.asList(fixtures.split(" "));
+    }
     public final boolean localOnly;
     public final String peer;
     public final long cacheBytes;

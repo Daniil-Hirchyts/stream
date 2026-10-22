@@ -56,7 +56,7 @@ public final class AppFlowTest extends AppHarness {
     }
     @Test public void addonStoreReviewsInstallsAndFiltersListedAddons() throws Exception {
         services.store.setPreference("onboardingDone", "true"); launch();
-        tap("Add-ons", true); waitUntil("store lists", 15_000, () -> visible("Setup fixture") || visible("Local fixtures"));
+        tap("Settings", true); tap("Add-on store", false); waitUntil("store lists", 15_000, () -> visible("Setup fixture") || visible("Local fixtures"));
         assertTrue(visible("Internet Archive"));
         assertFalse(visible("Torrentio")); // Local-only instrumentation must never offer public scraper endpoints.
         int loadedLists = storeRequests();

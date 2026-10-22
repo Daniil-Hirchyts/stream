@@ -27,65 +27,58 @@ final class SetupScreens {
 
     SetupScreens(Context context, Navigator nav, TvApplication.Services services) { this.context = context; this.nav = nav; this.services = services; }
 
+    /** One screen and one choice: Start watching adds the listed starter add-ons and opens Home. */
     Page welcome() {
-        Page page = new Page();
-        page.add(Item.intro("Welcome to Daniil TV", "Your TV. Your library.",
-                "Browse catalogues from add-ons you choose, or bring your own torrents. This TV downloads and plays everything itself: no computer, home server or debrid account."));
-        page.add(Item.actions("welcome-options",
-                new Action("cinemeta", Action.Style.TILE, "Add Cinemeta", () -> nav.previewAddon(AddonUrl.CINEMETA)).icon(R.drawable.ic_tv_movie)
-                        .detail("Free film and series catalogues. You review it before it installs."),
-                new Action("store", Action.Style.TILE, "Browse add-ons", () -> nav.push(StoreScreens.route("All"))).icon(R.drawable.ic_tv_extension)
-                        .detail("Video sources, subtitles and more catalogues. You review each one first."),
-                new Action("import", Action.Style.TILE, "Import a torrent", () -> nav.push(new Route("Imports"))).icon(R.drawable.ic_tv_download)
-                        .detail("A magnet link, torrent URL or .torrent file.")).centered());
-        page.add(Item.actions("welcome-finish",
-                new Action("audio", Action.Style.CHIP, "Audio", () -> language("audioLanguage", "Preferred audio language")).icon(R.drawable.ic_tv_audio)
-                        .detail(languageName(services.store.preference("audioLanguage", ""))),
-                new Action("subtitles", Action.Style.CHIP, "Subtitles", () -> language("subtitleLanguage", "Preferred subtitle language")).icon(R.drawable.ic_tv_subtitles)
-                        .detail(languageName(services.store.preference("subtitleLanguage", ""))),
-                new Action("continue", Action.Style.PRIMARY, "Start watching", () -> nav.then(() -> {
-                    services.store.setPreference("onboardingDone", "true"); return null;
-                }, () -> nav.root("Home"))).icon(R.drawable.ic_tv_play)).centered());
-        page.initialFocus = "cinemeta";
+        Page page = new Page().narrow();
+        page.add(Item.intro("", "Daniil TV", "Films and series, ready to watch."));
+        List<String> starters = RuntimeOptions.starterAddons(context);
+        if (!starters.isEmpty()) {
+            page.add(Item.header("Included"));
+            for (String url : starters) {
+                String[] about = StarterAddons.describe(url);
+                page.add(Item.row("starter:" + url, R.drawable.ic_tv_check, about[0], about[1], null));
+            }
+        }
+        page.add(Item.actions("welcome-start", new Action("continue", Action.Style.PRIMARY, "Start watching", () -> nav.startWatching(starters))
+                .icon(R.drawable.ic_tv_play)).centered());
+        page.initialFocus = "continue";
         return page;
     }
 
     Page imports() throws Exception {
-        Page page = new Page().panel(R.drawable.ic_tv_download, "Imports",
-                "Magnet links, torrent URLs and .torrent files. Nothing downloads until you press Play.");
-        page.add(Item.row("import-address", R.drawable.ic_tv_link, "Add magnet or torrent URL", "", nav::importAddress));
-        page.add(Item.row("import-file", R.drawable.ic_tv_file, "Choose a .torrent file", "", nav::importFile));
+        Page page = new Page().title("Imports").narrow();
+        page.add(Item.row("import-address", 0, "Add magnet or torrent URL", "", nav::importAddress));
+        page.add(Item.row("import-file", 0, "Choose a .torrent file", "", nav::importFile));
         List<String> ids = services.store.importIds();
-        page.add(Item.header("Your imports", ids.isEmpty() ? "" : Integer.toString(ids.size())));
+        if (!ids.isEmpty()) page.add(Item.header("Your imports"));
         for (String id : ids) {
             JSONObject d = services.store.importDescriptor(id);
             Title t = Title.parse("local", new JSONObject().put("id", id).put("type", "movie").put("name", d.optString("name", "Import")));
-            page.add(Item.row("import:" + id, R.drawable.ic_tv_movie, t.name, d.has("fileIdx") ? "File chosen" : "", () -> nav.openTitle(t, "")));
+            page.add(Item.row("import:" + id, 0, t.name, d.has("fileIdx") ? "File chosen" : "", () -> nav.openTitle(t, "")));
         }
-        if (ids.isEmpty()) page.add(Item.text("", "No imports yet. Add one above; it appears here and in Search."));
         return page;
     }
 
+    /** tvOS Settings: plain rows in a centred column, grouped under small headings. Installed add-ons come first. */
     Page settings() {
-        Page page = new Page().panel(R.drawable.ic_tv_settings, "Settings", "Imports, add-ons, languages, subtitles, playback and storage.");
+        Page page = new Page().narrow();
         page.add(Item.header("Add-ons"));
-        page.add(Item.row("addon-store", R.drawable.ic_tv_extension, "Add-on store", "", () -> nav.root("Add-ons")));
-        page.add(Item.row("add-addon", R.drawable.ic_tv_add, "Add add-on", "", nav::addAddon));
         for (InstalledAddon a : services.store.addons()) {
-            page.add(Item.row("addon:" + a.id, R.drawable.ic_tv_extension, a.manifest.name, a.enabled ? "On" : "Off", () -> {
+            page.add(Item.row("addon:" + a.id, 0, a.manifest.name, a.enabled ? "" : "Off", () -> {
                 Route r = new Route("Add-on"); r.value = a.id; nav.push(r);
             }));
         }
+        page.add(Item.row("addon-store", 0, "Add-on store", "", () -> nav.push(StoreScreens.route("All"))));
+        page.add(Item.row("add-addon", 0, "Add add-on", "By address", nav::addAddon));
         int importCount = services.store.importIds().size();
-        page.add(Item.header("Imports"));
-        page.add(Item.row("manage-imports", R.drawable.ic_tv_download, "Imports",
-                importCount == 0 ? "No imports" : importCount + (importCount == 1 ? " title" : " titles"), nav::openImports));
+        page.add(Item.header("Library"));
+        page.add(Item.row("manage-imports", 0, "Imports", importCount == 0 ? "" : Integer.toString(importCount), nav::openImports));
         page.add(Item.header("Languages"));
-        page.add(Item.row("audio-language", R.drawable.ic_tv_audio, "Audio language", languageName(services.store.preference("audioLanguage", "")),
+        page.add(Item.row("audio-language", 0, "Audio language", languageName(services.store.preference("audioLanguage", "")),
                 () -> language("audioLanguage", "Audio language")));
-        page.add(Item.row("subtitle-language", R.drawable.ic_tv_subtitles, "Subtitle language", languageName(services.store.preference("subtitleLanguage", "")),
+        page.add(Item.row("subtitle-language", 0, "Subtitle language", languageName(services.store.preference("subtitleLanguage", "")),
                 () -> language("subtitleLanguage", "Subtitle language")));
-        page.add(Item.header("Subtitle style"));
+        page.add(Item.header("Subtitles"));
         for (String[] style : SUBTITLE_STYLES) {
             String setting = style[0];
             String[] values = Arrays.copyOfRange(style, 1, style.length);
@@ -101,18 +94,17 @@ final class SetupScreens {
             }));
         }
         page.add(Item.header("Playback"));
-        page.add(Item.row("cache-size", R.drawable.ic_tv_storage, "Playback cache", services.store.preference("cacheMiB", "256") + " MiB",
+        page.add(Item.row("cache-size", 0, "Playback cache", services.store.preference("cacheMiB", "256") + " MiB",
                 () -> nav.choose("Playback cache", new String[]{"128 MiB", "256 MiB", "512 MiB"},
                         i -> nav.mutate(() -> { services.store.setPreference("cacheMiB", new String[]{"128", "256", "512"}[i]); return null; }))));
         boolean autoplay = services.store.preference("autoplay", "true").equals("true");
-        page.add(Item.row("autoplay", R.drawable.ic_tv_next, "Play next episode", autoplay ? "On" : "Off",
+        page.add(Item.row("autoplay", 0, "Play next episode", autoplay ? "On" : "Off",
                 () -> nav.mutate(() -> { services.store.setPreference("autoplay", autoplay ? "false" : "true"); return null; })));
-        page.add(Item.header("Storage"));
-        page.add(Item.row("clear-cache", R.drawable.ic_tv_delete, "Clear app playback and metadata cache", "",
+        // Clearing keeps imports, favourites and watch history.
+        page.add(Item.row("clear-cache", 0, "Clear app playback and metadata cache", "",
                 () -> nav.mutate(() -> { clearCaches(context, services); return null; })));
-        page.add(Item.text("", "Clearing keeps imports, favourites and watch history."));
         page.add(Item.header("About"));
-        page.add(Item.row("developer", R.drawable.ic_tv_code, "Developer", "", () -> nav.push(new Route("Developer"))));
+        page.add(Item.row("developer", 0, "Developer", "", () -> nav.push(new Route("Developer"))));
         return page;
     }
     /** Removes only this app's disposable payload/subtitle files and cached metadata. */
@@ -126,12 +118,10 @@ final class SetupScreens {
     Page addon(Route route) {
         InstalledAddon addon = null;
         for (InstalledAddon a : services.store.addons()) if (a.id.equals(route.value)) addon = a;
-        if (addon == null) return new Page().title("Add-on").add(Item.message(R.drawable.ic_tv_extension, "Add-on removed", "Return to Settings."));
+        if (addon == null) return new Page().title("Add-on").narrow().add(Item.message(R.drawable.ic_tv_extension, "Add-on removed", ""));
         InstalledAddon a = addon;
-        boolean streams = false;
-        for (AddonManifest.Resource r : a.manifest.resources) if (r.name.equals("stream")) streams = true;
-        Page page = new Page().panel(R.drawable.ic_tv_extension, a.manifest.name,
-                (a.manifest.description.isEmpty() ? "" : a.manifest.description + "\n\n") + (streams ? "Supplies streams for playback." : "Catalogues and details only; it doesn't supply streams."));
+        Page page = new Page().title(a.manifest.name).narrow();
+        page.add(Item.text("", StoreScreens.kinds(a.manifest)));
         page.add(Item.row("enable", 0, a.enabled ? "Disable add-on" : "Enable add-on", a.enabled ? "On" : "Off",
                 () -> nav.mutate(() -> { services.addons.enable(a.id, !a.enabled); return null; })));
         page.add(Item.row("move:-1", 0, "Move earlier", "", () -> move(a.id, -1)));
@@ -139,11 +129,11 @@ final class SetupScreens {
         if (!a.manifest.catalogs.isEmpty()) page.add(Item.header("Home rows"));
         for (AddonManifest.Catalog c : a.manifest.catalogs) {
             boolean visible = services.store.catalogVisible(a.id, c.type, c.id);
-            page.add(Item.row("visibility:" + c.type + c.id, R.drawable.ic_tv_movie, c.name, (visible ? "Shown" : "Hidden") + " · " + BrowseScreens.typeLabel(c.type),
+            page.add(Item.row("visibility:" + c.type + c.id, 0, BrowseScreens.shelfTitle(c), visible ? "Shown" : "Hidden",
                     () -> nav.mutate(() -> { services.addons.visible(a.id, c.type, c.id, !visible); return null; })));
         }
-        page.add(Item.header("Remove"));
-        page.add(Item.row("remove", R.drawable.ic_tv_delete, "Remove add-on", "Keeps library and history",
+        page.add(Item.header(""));
+        page.add(Item.row("remove", 0, "Remove add-on", "",
                 () -> nav.then(() -> { services.addons.remove(a.id); return null; }, nav::back)));
         return page;
     }
@@ -158,7 +148,7 @@ final class SetupScreens {
     }
 
     Page developer() throws Exception {
-        Page page = new Page().panel(R.drawable.ic_tv_code, "Developer", "Versions, device, storage and add-on diagnostics. Addresses are shown without their private paths.");
+        Page page = new Page().title("Developer").narrow();
         page.add(Item.text("Version", "Daniil TV " + context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName
                 + "\n" + tv.daniil.torrent.TorrentEngine.version()));
         page.add(Item.text("Device", android.os.Build.MODEL + " · Android API " + android.os.Build.VERSION.SDK_INT + " · " + String.join(", ", android.os.Build.SUPPORTED_ABIS)));
@@ -166,7 +156,7 @@ final class SetupScreens {
                 + " MiB playback cache · 512 MiB kept free"));
         for (InstalledAddon a : services.store.addons()) page.add(Item.text(a.manifest.name, a.address.toString()));
         page.add(Item.text("Third-party software", "Media3 (Apache-2.0), libtorrent and Boost (BSD/Boost), OpenSSL (Apache-2.0)."));
-        page.add(Item.row("notices", R.drawable.ic_tv_info, "Open source notices", "", nav::notices));
+        page.add(Item.row("notices", 0, "Open source notices", "", nav::notices));
         return page;
     }
 

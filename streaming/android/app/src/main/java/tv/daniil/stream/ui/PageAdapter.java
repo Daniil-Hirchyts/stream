@@ -555,12 +555,20 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         subtitle.setPadding(dp(2), dp(3), dp(2), 0);
         root.addView(subtitle, new LinearLayout.LayoutParams(fill, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.setLayoutParams(new LinearLayout.LayoutParams(width > 0 ? width : fill, ViewGroup.LayoutParams.WRAP_CONTENT));
-        // The artwork lifts with a soft shadow; the caption below grows with it and brightens.
-        Tv.control(root, tile.key, tile.action, key -> { focused(key); feature(tile); }, Tv.LIFT_TILE, false);
-        View.OnFocusChangeListener lift = root.getOnFocusChangeListener();
+        // Only the artwork grows, rimmed in white over a deep shadow; the caption keeps its size and moves down with
+        // the artwork's lower edge, so nothing around the card shifts or rescales.
+        frame.setDuplicateParentStateEnabled(true);
+        frame.setForeground(context.getDrawable(R.drawable.tv_focus_rim));
+        Tv.control(root, tile.key, tile.action, key -> { focused(key); feature(tile); }, 1f, false);
+        View.OnFocusChangeListener focus = root.getOnFocusChangeListener();
         root.setOnFocusChangeListener((v, has) -> {
-            lift.onFocusChange(v, has);
-            frame.animate().translationZ(has ? dp(16) : 0).setDuration(200).start();
+            focus.onFocusChange(v, has);
+            float scale = has ? Tv.LIFT_TILE : 1f;
+            frame.animate().cancel();
+            frame.animate().scaleX(scale).scaleY(scale).translationZ(has ? dp(18) : 0).setDuration(has ? 200 : 160).start();
+            float drop = frame.getHeight() * (scale - 1f) / 2f;
+            title.animate().translationY(drop).setDuration(has ? 200 : 160).start();
+            subtitle.animate().translationY(drop).setDuration(has ? 200 : 160).start();
         });
         if (tile.key.equals(restore)) root.post(root::requestFocus);
         return root;
@@ -611,7 +619,8 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     private View chips(Item item) {
         LinearLayout root = new LinearLayout(context); root.setOrientation(LinearLayout.VERTICAL);
         root.setClipChildren(false); root.setClipToPadding(false);
-        if (!item.title.isEmpty()) root.addView(sectionHeader(item.title, ""));
+        // Chips are buttons, not rows: their heading lines up with the page edge, like a shelf's.
+        if (!item.title.isEmpty()) root.addView(header(item.title, "", 14));
         root.addView(actions(item, Gravity.START));
         root.setLayoutParams(fill());
         return root;
@@ -748,7 +757,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
 
         LinearLayout keyboardPanel = new LinearLayout(context); keyboardPanel.setGravity(Gravity.CENTER);
         keyboardPanel.setClipChildren(false); keyboardPanel.setClipToPadding(false);
-        root.addView(keyboardPanel, new LinearLayout.LayoutParams(dp(236), ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(keyboardPanel, new LinearLayout.LayoutParams(dp(KEY_COLUMNS * KEY + (KEY_COLUMNS - 1) * KEY_GAP + 12), ViewGroup.LayoutParams.MATCH_PARENT));
         keyboardPanel.addView(keyboardKeys(item), wrap());
 
         View divider = new View(context); divider.setBackgroundColor(context.getColor(R.color.tv_hairline));
@@ -805,74 +814,78 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         return root;
     }
 
+    /** Letters, then digits and punctuation, then accented letters: 26 characters each, six to a row. */
+    private static final String[] KEY_PAGES = {
+            "abcdefghijklmnopqrstuvwxyz",
+            "1234567890-':&!?.,()#+@/\"_",
+            "àáâäãåçèéêëíîïñóôöõøùúûüßæ"};
+    private static final String[] KEY_PAGE_NAMES = {"abc", "123", "àéü"};
+    private static final int KEY_COLUMNS = 6, KEY = 34, KEY_GAP = 4;
+    /** The keyboard page survives the re-render each keystroke causes, so symbols can be typed one after another. */
+    private int keyboardPage;
+
+    /**
+     * A tvOS-style grid with no gaps: every key is one cell, or exactly two cells for Space, Delete and the page
+     * switches, so the rows line up on both edges.
+     */
     private LinearLayout keyboardKeys(Item item) {
         LinearLayout keys = new LinearLayout(context); keys.setOrientation(LinearLayout.VERTICAL);
-        keys.setGravity(Gravity.CENTER_HORIZONTAL); keys.setClipChildren(false); keys.setClipToPadding(false);
+        keys.setClipChildren(false); keys.setClipToPadding(false);
         StringBuilder query = new StringBuilder(item.value);
-        boolean[] symbols = {false};
         Runnable[] rebuild = new Runnable[1];
         rebuild[0] = () -> {
             keys.removeAllViews();
-            String[][] rows = symbols[0]
-                    ? new String[][]{{"1", "2", "3", "4", "5"}, {"6", "7", "8", "9", "0"},
-                            {"@", "#", "$", "%", "&"}, {"-", "+", "(", ")", "/"},
-                            {".", ",", "?", "!", "'"}, {":", ";", "=", "⌫"}}
-                    : new String[][]{{"A", "B", "C", "D", "E"}, {"F", "G", "H", "I", "J"},
-                            {"K", "L", "M", "N", "O"}, {"P", "Q", "R", "S", "T"},
-                            {"U", "V", "W", "X", "Y"}, {"Z", "⌫"}};
-            for (String[] row : rows) addKeyboardRow(keys, item, row, query);
-            LinearLayout row = new LinearLayout(context); row.setGravity(Gravity.CENTER);
-            keys.addView(row, wrap());
-            addKeyboardButton(row, item, symbols[0] ? "ABC" : "123", symbols[0] ? "Switch to letters" : "Switch to numbers and symbols", 36,
-                    () -> {
-                        symbols[0] = !symbols[0]; rebuild[0].run();
-                        keys.post(() -> {
-                            View firstKey = keys.findViewWithTag(item.key + ":" + (symbols[0] ? "1" : "A"));
-                            if (firstKey != null) firstKey.requestFocus();
-                        });
-                    });
-            addKeyboardButton(row, item, "Space", "Insert a space", 46, () -> {
-                if (query.length() < 120) query.append(' ');
+            String characters = KEY_PAGES[keyboardPage];
+            LinearLayout row = null;
+            for (int i = 0; i < characters.length(); i++) {
+                if (i % KEY_COLUMNS == 0) row = keyboardRow(keys);
+                String character = characters.substring(i, i + 1);
+                addKeyboardButton(row, item, character, "Type " + character, 1, () -> type(item, query, character));
+            }
+            addKeyboardButton(row, item, "Space", "Insert a space", 2, () -> type(item, query, " "));
+            addKeyboardButton(row, item, "⌫", "Delete last character", 2, () -> {
+                if (query.length() > 0) query.deleteCharAt(query.length() - 1);
                 if (item.keyboardInput != null) item.keyboardInput.accept(query.toString());
             });
-            addKeyboardButton(row, item, "Clear", "Clear search", 40, () -> {
+            row = keyboardRow(keys);
+            for (int other = 0; other < KEY_PAGES.length; other++) if (other != keyboardPage) {
+                int target = other;
+                addKeyboardButton(row, item, KEY_PAGE_NAMES[other], "Show " + KEY_PAGE_NAMES[other] + " keys", 2, () -> {
+                    keyboardPage = target; rebuild[0].run();
+                    keys.post(() -> {
+                        View first = keys.findViewWithTag(item.key + ":" + KEY_PAGES[target].charAt(0));
+                        if (first != null) first.requestFocus();
+                    });
+                });
+            }
+            addKeyboardButton(row, item, "Clear", "Clear search", 2, () -> {
                 query.setLength(0);
                 if (item.keyboardInput != null) item.keyboardInput.accept("");
-            });
-            addKeyboardButton(row, item, "Search", "Search", 48, () -> {
-                if (item.keyboardSubmit != null) item.keyboardSubmit.run();
             });
         };
         rebuild[0].run();
         return keys;
     }
-
-    private void addKeyboardRow(LinearLayout keys, Item item, String[] labels, StringBuilder query) {
-        LinearLayout row = new LinearLayout(context); row.setGravity(Gravity.CENTER);
-        keys.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)));
-        for (String label : labels) {
-            boolean backspace = label.equals("⌫");
-            addKeyboardButton(row, item, label, backspace ? "Delete last character" : "Type " + label,
-                    36, () -> {
-                        if (backspace) {
-                            if (query.length() > 0) query.deleteCharAt(query.length() - 1);
-                        } else if (query.length() < 120) query.append(label);
-                        if (item.keyboardInput != null) item.keyboardInput.accept(query.toString());
-                    });
-        }
+    private LinearLayout keyboardRow(LinearLayout keys) {
+        LinearLayout row = new LinearLayout(context); row.setClipChildren(false); row.setClipToPadding(false);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(KEY));
+        if (keys.getChildCount() > 0) params.topMargin = dp(KEY_GAP);
+        keys.addView(row, params);
+        return row;
     }
-
-    private void addKeyboardButton(LinearLayout row, Item item, String label, String description, int width, Runnable action) {
-        TextView key = Tv.heading(context, label, label.length() == 1 ? 14 : 10, R.color.tv_on_glass);
-        key.setGravity(Gravity.CENTER);
-        key.setSingleLine(true);
+    private static void type(Item item, StringBuilder query, String character) {
+        if (query.length() < 120) query.append(character);
+        if (item.keyboardInput != null) item.keyboardInput.accept(query.toString());
+    }
+    private void addKeyboardButton(LinearLayout row, Item item, String label, String description, int cells, Runnable action) {
+        TextView key = Tv.heading(context, label, label.length() == 1 ? 16 : 12, R.color.tv_on_glass);
+        key.setGravity(Gravity.CENTER); key.setSingleLine(true); key.setIncludeFontPadding(false);
         key.setContentDescription(description);
-        key.setBackgroundResource(label.equals("Search") ? R.drawable.tv_chip : R.drawable.keycap);
-        key.setDefaultFocusHighlightEnabled(false);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(width), dp(34));
-        params.setMargins(dp(2), dp(2), dp(2), dp(2));
+        key.setBackgroundResource(R.drawable.keycap);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(cells * KEY + (cells - 1) * KEY_GAP), dp(KEY));
+        if (row.getChildCount() > 0) params.leftMargin = dp(KEY_GAP);
         row.addView(key, params);
-        Tv.control(key, item.key + ":" + label, action, this::focused, 1.04f, false);
+        Tv.control(key, item.key + ":" + label, action, this::focused, 1.1f, false);
         if (key.getTag() != null && key.getTag().equals(restore)) key.post(key::requestFocus);
     }
 

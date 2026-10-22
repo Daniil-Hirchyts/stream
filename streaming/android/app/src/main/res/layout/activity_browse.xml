@@ -24,6 +24,13 @@
             android:alpha="0"
             android:importantForAccessibility="no"
             android:scaleType="centerCrop" />
+        <!-- The same artwork, blurred and fading in towards the bottom, where text, buttons and shelves sit. -->
+        <ImageView
+            android:id="@+id/backdrop_soft"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="centerCrop" />
         <View
             android:id="@+id/backdrop_scrim"
             android:layout_width="match_parent"
@@ -34,82 +41,23 @@
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent">
-        <LinearLayout
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/page_rows"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:orientation="horizontal">
-            <LinearLayout
-                android:id="@+id/side_panel"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="0.38"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:paddingStart="48dp"
-                android:paddingTop="76dp"
-                android:paddingEnd="20dp"
-                android:paddingBottom="36dp"
-                android:visibility="gone">
-                <!-- tvOS Settings: a large lit icon over the section's name, beside its rows. -->
-                <ImageView
-                    android:id="@+id/side_icon"
-                    android:layout_width="120dp"
-                    android:layout_height="120dp"
-                    android:background="@drawable/tv_panel_icon"
-                    android:elevation="12dp"
-                    android:importantForAccessibility="no"
-                    android:padding="32dp"
-                    android:tint="@color/tv_text" />
-                <TextView
-                    android:id="@+id/side_title"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="22dp"
-                    android:ellipsize="end"
-                    android:fontFamily="sans-serif-medium"
-                    android:gravity="center"
-                    android:maxLines="2"
-                    android:textColor="@color/tv_text"
-                    android:textSize="25sp" />
-                <TextView
-                    android:id="@+id/side_text"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:ellipsize="end"
-                    android:gravity="center"
-                    android:lineSpacingMultiplier="1.2"
-                    android:maxLines="7"
-                    android:maxWidth="300dp"
-                    android:textColor="@color/tv_text_secondary"
-                    android:textSize="14sp" />
-            </LinearLayout>
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/page_rows"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:clipChildren="false"
-                android:clipToPadding="false"
-                android:paddingTop="80dp"
-                android:paddingBottom="40dp"
-                android:scrollbars="none" />
-        </LinearLayout>
-        <TextView
-            android:id="@+id/page_title"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:paddingTop="80dp"
+            android:paddingBottom="40dp"
+            android:scrollbars="none" />
+        <View
+            android:id="@+id/scroll_fade"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="72dp"
             android:layout_gravity="top"
-            android:ellipsize="end"
-            android:fontFamily="sans-serif-medium"
-            android:maxLines="1"
-            android:paddingStart="48dp"
-            android:paddingTop="8dp"
-            android:paddingEnd="48dp"
-            android:paddingBottom="4dp"
-            android:textColor="@color/tv_text"
-            android:textSize="28sp"
-            android:visibility="gone" />
+            android:alpha="0"
+            android:background="@drawable/tv_scroll_fade"
+            android:importantForAccessibility="no" />
         <!-- The floating tab bar (tvOS): one blurred capsule, search first, centred; it slides away while content scrolls. -->
         <FrameLayout
             android:id="@+id/top_bar"

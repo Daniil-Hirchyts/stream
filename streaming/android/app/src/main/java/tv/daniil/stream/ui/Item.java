@@ -41,6 +41,8 @@ public final class Item {
         public final Runnable action;
         @DrawableRes public int icon;
         public String detail = "";
+        /** The visible label when it differs from the accessible one ("Favourite" for "Add favourite"). */
+        @Nullable public String text;
         public boolean selected;
 
         public Action(String key, Style style, String label, Runnable action) {
@@ -48,6 +50,8 @@ public final class Item {
         }
         public Action icon(@DrawableRes int value) { icon = value; return this; }
         public Action detail(String value) { detail = value; return this; }
+        public Action text(String value) { text = value; return this; }
+        public String shown() { return text != null ? text : label; }
         public Action selected(boolean value) { selected = value; return this; }
     }
 
@@ -67,7 +71,6 @@ public final class Item {
     public List<Tile> tiles = Collections.emptyList();
     public List<Action> actions = Collections.emptyList();
     @Nullable public Consumer<String> keyboardInput;
-    @Nullable public Runnable keyboardSubmit;
     public boolean loading;
 
     private Item(Kind kind, String key) { this.kind = kind; this.key = key; }
@@ -108,8 +111,8 @@ public final class Item {
     public static Item field(String key, String label, String value, Runnable action) {
         Item i = new Item(Kind.FIELD, key); i.title = label; i.value = value; i.action = action; return i;
     }
-    public static Item keyboard(String key, String value, Consumer<String> input, Runnable submit) {
-        Item i = new Item(Kind.KEYBOARD, key); i.value = value; i.keyboardInput = input; i.keyboardSubmit = submit; return i;
+    public static Item keyboard(String key, String value, Consumer<String> input) {
+        Item i = new Item(Kind.KEYBOARD, key); i.value = value; i.keyboardInput = input; return i;
     }
     public static Item skeleton(String screen) { Item i = new Item(Kind.SKELETON, "skeleton:" + screen); i.value = screen; return i; }
     /** A centred empty, error or loading state with its next steps. */

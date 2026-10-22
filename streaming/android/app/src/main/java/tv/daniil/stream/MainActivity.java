@@ -46,7 +46,9 @@ import tv.daniil.stream.ui.Tv;
  * route render owns a cancellable provider scope and a generation, so late results never reach a newer screen.
  */
 public final class MainActivity extends Activity implements Navigator, PageAdapter.Listener {
-    private static final String[] TABS = {"Home", "Library", "Add-ons", "Settings"};
+    private static final String[] TABS = {"Home", "Library", "Settings"};
+    /** Width of the centred column that lists and forms use, in dp of the 960 dp canvas. */
+    private static final int COLUMN = 620;
     private static final int PICK_TORRENT = 21;
     private TvApplication app;
     private TvApplication.Services services;
@@ -55,7 +57,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private Artwork artwork;
     private Backdrop backdrop;
     private LinearLayout navigation;
-    private View topBar, topBarControls, searchButton, searchExpandedView, searchClose;
+    private View topBar, topBarControls, searchButton, searchExpandedView, searchClose, scrollFade;
     private boolean topBarHidden;
     private TextView searchQuery;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -83,7 +85,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         incomingFile = incomingHandled ? null : incoming(getIntent());
         setContentView(R.layout.activity_browse);
         artwork = new Artwork(new java.io.File(getCacheDir(), "artwork"));
-        backdrop = new Backdrop(artwork, findViewById(R.id.backdrop), findViewById(R.id.backdrop_back), findViewById(R.id.backdrop_scrim));
+        backdrop = new Backdrop(artwork, findViewById(R.id.backdrop), findViewById(R.id.backdrop_back), findViewById(R.id.backdrop_soft), findViewById(R.id.backdrop_scrim));
         list = findViewById(R.id.page_rows);
         list.setLayoutManager(new PageAdapter.Layout(this, RecyclerView.VERTICAL, 40));
         list.setItemAnimator(null);
@@ -93,6 +95,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         list.setAdapter(adapter);
         navigation = findViewById(R.id.navigation);
         topBar = findViewById(R.id.top_bar);
+        scrollFade = findViewById(R.id.scroll_fade);
         topBarControls = findViewById(R.id.top_bar_controls);
         searchButton = findViewById(R.id.search_button);
         searchExpandedView = findViewById(R.id.search_expanded);
@@ -110,7 +113,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             @Override public void onScrolled(RecyclerView view, int dx, int dy) { updateTopBar(); }
         });
         list.getViewTreeObserver().addOnGlobalFocusChangeListener((old, now) -> updateTopBar());
-        Tv.control(searchButton, "nav:search", this::search, key -> {}, 1.06f, false);
+        Tv.control(searchButton, "nav:search", this::search, key -> {}, Tv.LIFT_ROW, false);
         Tv.control(searchClose, "search:close", this::closeSearch, key -> {}, 1.04f, false);
         if (android.os.Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackPressed);
@@ -131,7 +134,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, Tv.dp(this, 38));
         params.setMarginStart(Tv.dp(this, 2)); params.setMarginEnd(Tv.dp(this, 2));
         tab.setLayoutParams(params);
-        Tv.control(tab, "nav:" + screen, () -> { stayOnTabs = true; root(screen); }, key -> {}, 1.04f, false);
+        Tv.control(tab, "nav:" + screen, () -> { stayOnTabs = true; root(screen); }, key -> {}, Tv.LIFT_ROW, false);
         return tab;
     }
     private void initialize() {
@@ -153,8 +156,12 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         if (screen.equals("Search")) { search(); return; }
         if (services == null) return;
         searchExpanded = false;
-        if (isPrimaryTab(screen)) searchReturnTab = screen;
-        rememberFocus(); stack.clear(); stack.add(new Route(screen)); render();
+        rememberFocus(); stack.clear();
+        // The add-on store lives inside Settings rather than in a tab of its own.
+        if (screen.equals("Add-ons")) { stack.add(new Route("Settings")); stack.add(StoreScreens.route("All")); }
+        else stack.add(new Route(screen));
+        if (isPrimaryTab(stack.get(0).screen)) searchReturnTab = stack.get(0).screen;
+        render();
     }
     @Override public void search() {
         if (services == null) return;
@@ -167,7 +174,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     }
     @Override public void searchInput(String value) {
         for (Route saved : stack) if (saved.screen.equals("Search")) {
-            saved.value = value; saved.searchSubmitted = false;
+            saved.value = value;
         }
         syncSearchQuery();
         if (stack.isEmpty() || !route().screen.equals("Search")) return;
@@ -195,8 +202,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     }
     private String primaryTab(String screen) {
         if (screen.equals("History")) return "Library";
-        if (screen.equals("Imports") || screen.equals("Add-on") || screen.equals("Developer")) return "Settings";
-        if (screen.equals("Add-on review")) return "Add-ons";
+        if (screen.equals("Imports") || screen.equals("Add-on") || screen.equals("Developer") || screen.equals("Add-ons") || screen.equals("Add-on review")) return "Settings";
         if (screen.equals("Search")) return isPrimaryTab(searchReturnTab) ? searchReturnTab : "Home";
         return isPrimaryTab(screen) ? screen : "Home";
     }
@@ -255,7 +261,9 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     }
     /** Hides the tab bar once content has scrolled under it, unless it has focus; shows it again at the top. */
     private void updateTopBar() {
-        boolean hide = !searchExpanded && !topBar.hasFocus() && list.computeVerticalScrollOffset() > Tv.dp(this, 24);
+        int offset = list.computeVerticalScrollOffset();
+        scrollFade.setAlpha(Math.min(1f, offset / (float) Tv.dp(this, 32)));
+        boolean hide = !searchExpanded && !topBar.hasFocus() && offset > Tv.dp(this, 24);
         if (hide == topBarHidden) return;
         topBarHidden = hide;
         topBar.animate().cancel();
@@ -265,19 +273,13 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         contentReady = false;
         Route route = route();
         // Titles scroll with their page, as on tvOS, rather than floating over it.
-        findViewById(R.id.page_title).setVisibility(View.GONE);
         List<Item> items = page.items;
         if (page.title != null) { items = new ArrayList<>(page.items); items.add(0, Item.pageTitle(page.title)); }
         int headerHeight = topBar.getHeight();
         if (headerHeight == 0) headerHeight = Tv.dp(this, 76);
-        View panel = findViewById(R.id.side_panel);
-        panel.setVisibility(page.hasPanel() ? View.VISIBLE : View.GONE);
-        if (page.hasPanel()) {
-            ((ImageView) findViewById(R.id.side_icon)).setImageResource(page.panelIcon);
-            ((TextView) findViewById(R.id.side_title)).setText(page.panelTitle);
-            ((TextView) findViewById(R.id.side_text)).setText(page.panelText);
-        }
-        adapter.gutter(page.hasPanel() ? 8 : 48, 48);
+        float widthDp = getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density;
+        int side = page.narrow ? Math.max(48, Math.round((widthDp - COLUMN) / 2)) : 48;
+        adapter.gutter(side, side);
         // Home's spotlight sets the artwork itself; clearing it first would flash the plain canvas.
         boolean spotlight = !page.items.isEmpty() && page.items.get(0).kind == Item.Kind.SPOTLIGHT;
         int contentTop = spotlight ? 0 : headerHeight + Tv.dp(this, 2);
@@ -333,7 +335,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             Route current = route();
             if (current.screen.equals("Search") && browse != null) {
                 Item search = browse.searchLoading(current);
-                String focus = current.focus.isEmpty() ? "keyboard:A" : current.focus;
+                String focus = current.focus.isEmpty() ? "keyboard:a" : current.focus;
                 adapter.set(java.util.Collections.singletonList(search), focus);
                 return;
             }
@@ -455,6 +457,26 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         } catch (android.content.ActivityNotFoundException unavailable) {
             alert("Open on a phone or computer", address + "\n\nCopy the manifest address from that page, then choose Enter configured address on this TV.");
         } catch (AddonException invalid) { alert("Unable to open setup", "This add-on supplied an invalid setup address."); }
+    }
+    /**
+     * Onboarding's single choice: installs the starter add-ons it lists, then opens Home. Each install reads the
+     * add-on's current manifest first; one that can't be reached is skipped and named, and can be added later.
+     */
+    @Override public void startWatching(List<String> addons) {
+        loading();
+        work(() -> {
+            List<String> missed = new ArrayList<>();
+            for (String url : addons) {
+                // Installing cancels open requests, so each add-on is read with a request of its own.
+                try (Cancellation request = services.addons.newRequest()) { services.addons.install(url, services.addons.preview(url, request)); }
+                catch (AddonException e) { missed.add(StarterAddons.describe(url)[0]); }
+            }
+            services.store.setPreference("onboardingDone", "true");
+            return missed;
+        }, missed -> {
+            root("Home");
+            if (!missed.isEmpty()) alert("Some add-ons weren't added", String.join(", ", missed) + " didn't respond. Add them later in Settings.");
+        });
     }
     @Override public void addAddon() { edit("Add add-on", "https://… or stremio://…/manifest.json", "", this::previewAddon); }
     @Override public void previewAddon(String input) {

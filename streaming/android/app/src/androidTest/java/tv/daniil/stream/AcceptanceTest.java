@@ -132,7 +132,8 @@ public final class AcceptanceTest extends AppHarness {
         waitUntil("watched persisted", 5000, () -> services.store.history(false).stream().anyMatch(p -> p.watched));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
         waitUntil("Card focus restored", 10_000, () -> { java.util.concurrent.atomic.AtomicBoolean focused = new java.util.concurrent.atomic.AtomicBoolean(); browse.onActivity(activity -> focused.set(activity.getCurrentFocus() != null && String.valueOf(activity.getCurrentFocus().getTag()).contains("fixture:film"))); return focused.get(); });
-        tap("Search", true); waitUntil("search query", 5000, () -> visible("Search. Films, series and local imports")); row("query", false); enter("Generated"); tap("Continue", true);
+        tap("Search", true); waitUntil("search keyboard", 5000, () -> visible("Type g"));
+        for (char c : "generated".toCharArray()) tap("Type " + c, c % 2 == 0);
         waitUntil("search results", 10_000, () -> visible("Generated Film")); tap("Home", false); tap("Browse catalogues", true); tap("Generated films", false);
         tap("genre", true); tap("Generated", false); tap("Next page", true);
         waitUntil("next page", 10_000, () -> visible("Previous page")); tap("Previous page", false);

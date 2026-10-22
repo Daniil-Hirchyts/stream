@@ -60,13 +60,20 @@ public final class Artwork implements AutoCloseable {
      * Decodes {@code url} no larger than {@code maxSide} pixels and calls {@code done} on the main thread.
      * Opaque artwork uses RGB_565; logos keep their transparency and lose transparent margins, so they align with text.
      */
-    public void fetch(String url, int maxSide, boolean transparent, Consumer<Bitmap> done) { fetch(url, maxSide, transparent, false, done); }
+    public void fetch(String url, int maxSide, boolean transparent, Consumer<Bitmap> done) { fetch(url, maxSide, transparent, SHARP, done); }
 
     /** A heavily blurred version, for artwork behind lists (Sources). Computed once per image on a worker. */
-    public void blurred(String url, Consumer<Bitmap> done) { fetch(url, BLURRED, false, true, done); }
+    public void blurred(String url, Consumer<Bitmap> done) { fetch(url, BLURRED, false, BLUR, done); }
 
-    private void fetch(String url, int maxSide, boolean transparent, boolean blur, Consumer<Bitmap> done) {
-        String key = url + "@" + maxSide + (blur ? "@blur" : "");
+    /**
+     * The blurred version fading from clear at the top to opaque lower down: laid over the sharp artwork, it blurs
+     * the part behind text, buttons and shelves, as tvOS does, at the cost of one tiny bitmap.
+     */
+    public void softened(String url, Consumer<Bitmap> done) { fetch(url, BLURRED, false, SOFT, done); }
+
+    private static final int SHARP = 0, BLUR = 1, SOFT = 2;
+    private void fetch(String url, int maxSide, boolean transparent, int mode, Consumer<Bitmap> done) {
+        String key = url + "@" + maxSide + (mode == BLUR ? "@blur" : mode == SOFT ? "@soft" : "");
         Bitmap known = cache.get(key);
         if (known != null) { done.accept(known); return; }
         Cancellation request = cancellation;
@@ -81,12 +88,12 @@ public final class Artwork implements AutoCloseable {
                 options.inSampleSize = 1;
                 while (Math.max(options.outWidth, options.outHeight) / options.inSampleSize > maxSide * 2) options.inSampleSize *= 2;
                 options.inJustDecodeBounds = false;
-                options.inPreferredConfig = transparent || blur ? Bitmap.Config.ARGB_8888 : Bitmap.Config.RGB_565;
+                options.inPreferredConfig = transparent || mode != SHARP ? Bitmap.Config.ARGB_8888 : Bitmap.Config.RGB_565;
                 Bitmap decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
                 if (decoded == null || request.isCancelled()) return;
                 Bitmap bitmap = fit(decoded, maxSide);
                 if (transparent) bitmap = trim(bitmap);
-                if (blur) bitmap = blur(bitmap);
+                if (mode != SHARP) bitmap = blur(bitmap, mode == SOFT);
                 Bitmap ready = bitmap;
                 cache.put(key, ready);
                 main.post(() -> { if (!request.isCancelled()) done.accept(ready); });
@@ -155,11 +162,18 @@ public final class Artwork implements AutoCloseable {
     }
 
     /** Three box-blur passes over a tiny bitmap approximate a wide Gaussian blur once it is scaled to the screen. */
-    static Bitmap blur(Bitmap source) {
+    static Bitmap blur(Bitmap source) { return blur(source, false); }
+    /** @param fade make the top transparent, easing to opaque from 30% to 75% of the height */
+    static Bitmap blur(Bitmap source, boolean fade) {
         int width = source.getWidth(), height = source.getHeight(), radius = Math.max(2, Math.min(width, height) / 12);
         int[] pixels = new int[width * height], buffer = new int[width * height];
         source.getPixels(pixels, 0, width, 0, 0, width, height);
         for (int pass = 0; pass < 3; pass++) { box(pixels, buffer, width, height, radius, true); box(buffer, pixels, width, height, radius, false); }
+        if (fade) for (int y = 0; y < height; y++) {
+            float t = Math.max(0f, Math.min(1f, (y / (float) Math.max(1, height - 1) - 0.3f) / 0.45f));
+            int alpha = Math.round(255 * t * t * (3 - 2 * t));
+            for (int x = 0; x < width; x++) pixels[y * width + x] = alpha << 24 | (pixels[y * width + x] & 0xFFFFFF);
+        }
         Bitmap out = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888);
         source.recycle();
         return out;

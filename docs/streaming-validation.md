@@ -423,3 +423,63 @@ current Search screen before `./streaming/simulator.sh acceptance` can pass.
   RenderEffect, so live blur and the dialog's window blur are not shown.
 - **Not run:** emulator instrumentation, smoke, soak and on-device frame
   timing. They need the verified AVD.
+
+## Simpler screens, glass and torrent add-on checks, 2026-10-22
+
+What changed, following the owner's review:
+- **First run:** one screen and one button. Start watching installs the listed
+  starter add-ons (Cinemeta, Internet Archive, OpenSubtitles v3) from their
+  live manifests, then opens Home. That button is the viewer's acceptance.
+  Local-only instrumentation lists none (`RuntimeOptions.starterAddons`).
+- **Navigation:** the Add-ons tab is gone. Settings lists installed add-ons
+  first, then the add-on store. Side panels (large icon and text) are removed.
+  Lists and forms sit in a centred 620 dp column with plain rows and less text.
+- **Details:** every button is labelled (Play/Resume with the episode,
+  Sources, Favourite, Mark watched, More).
+- **Sources:** only playable sources are listed, best first. When none can
+  play, a count and the reason are shown instead.
+- **Keyboard:** a gap-free six-column grid with letter, symbol and accent
+  pages. The Search key is gone because results update as you type.
+- **Focus:** list rows and tabs no longer scale, so their text no longer
+  shifts sideways. Posters grow alone with a white rim and deep shadow, and
+  their captions keep their size.
+- **Glass and blur:** artwork gains a softened layer, blurred towards the
+  bottom. Alerts sit over a blurred copy of the screen on every Android
+  version. Content scrolling under the top edge fades out.
+
+Problems found and fixed while checking the renders:
+- **Alert blur never ran:** a dialog's context is a theme wrapper, not the
+  activity, so the screen copy was skipped; the code now unwraps it.
+- **Ranking cost:** `SourcePolicy.ranked` re-assessed each source on every
+  sort comparison. It now assesses each source once, which matters for a
+  hundred torrent results.
+
+**Torrent add-ons.** `TorrentSourcesTest` (Robolectric, no network) sends a
+Torrentio/Comet/Peerflix-shaped answer with made-up hashes through the app's
+parser and source policy. The fake TV has an H.264 hardware decoder and no
+HEVC decoder. The test checks that:
+- the info hash, file index, file name and tracker hints are parsed;
+- a result naming no trackers falls back to the public trackers;
+- 1080p H.264 comes first, then 720p, then the result whose codec is unknown;
+- the 4K Dolby Vision and HEVC results are hidden;
+- 200 results rank in well under a second.
+
+`./streaming/native/build-host.sh dev` passed all 30 engine tests over
+loopback BitTorrent. They cover v1, v2 and hybrid streaming, magnet metadata,
+seeks and rewinds into evicted data, bounded cache turnover, corrupt-peer
+recovery, offsets beyond 4 GiB and concurrent readers.
+
+**Tests.** The instrumentation now reaches the store through Settings → Add-on
+store and types searches on the on-screen keyboard ("Type g", …).
+
+**Results here** (Linux container, no emulator or device):
+- **Builds:** `:app:assembleDebug`, `:app:assembleRelease` and
+  `:app:assembleDebugAndroidTest` pass.
+- **Unit tests:** `:app:testDebugUnitTest` passes 14 tests.
+- **Lint:** `:app:lintDebug` and `:app:lintRelease` report 0 errors and 20
+  warnings, after removing the icons the old rows and buttons used.
+- **Snapshots:** `UiSnapshotTest -PuiSnapshots=true` renders 25 screens. It
+  includes the real first run, whose live installs succeeded for Cinemeta,
+  Internet Archive and OpenSubtitles v3.
+- **Not run:** emulator instrumentation, smoke and soak. They need the
+  verified AVD.

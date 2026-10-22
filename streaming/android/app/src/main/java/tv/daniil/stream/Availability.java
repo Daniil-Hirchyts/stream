@@ -11,8 +11,7 @@ import tv.daniil.stream.data.InstalledAddon;
 /** Explains an empty source list: no source add-on, failing providers, only unsupported results, or none at all. */
 final class Availability {
     static final String NO_PROVIDER = "No source add-on installed";
-    static final String NO_PROVIDER_DETAIL = "Catalogue add-ons describe titles but don't supply video. "
-            + "Install a source add-on from Add-ons to find video for this title, or import a torrent yourself.";
+    static final String NO_PROVIDER_DETAIL = "Add a source add-on to play titles.";
 
     final String heading, detail;
     private Availability(String heading, String detail) { this.heading = heading; this.detail = detail; }
@@ -29,9 +28,8 @@ final class Availability {
             Map<String, Integer> reasons = new LinkedHashMap<>();
             for (MediaSource s : found) { String reason = SourcePolicy.assess(s).label; reasons.merge(reason, 1, Integer::sum); }
             List<String> parts = new ArrayList<>();
-            for (Map.Entry<String, Integer> e : reasons.entrySet()) parts.add(e.getKey().toLowerCase(java.util.Locale.ROOT) + " (" + e.getValue() + ")");
-            return new Availability("No compatible sources", found.size() + (found.size() == 1 ? " source was" : " sources were")
-                    + " found, but this TV can't play " + (found.size() == 1 ? "it" : "them") + ": " + String.join(", ", parts) + ".");
+            for (Map.Entry<String, Integer> e : reasons.entrySet()) parts.add(e.getKey() + (reasons.size() > 1 ? " (" + e.getValue() + ")" : ""));
+            return new Availability("No playable sources", found.size() + " found · " + String.join(" · ", parts));
         }
         return new Availability("No sources found", "Your source add-ons have nothing for this title yet. Try again later or choose another title.");
     }

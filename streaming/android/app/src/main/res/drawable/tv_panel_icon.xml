@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Settings-style panel artwork: a soft lit tile, like a tvOS app icon. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <gradient android:angle="315" android:startColor="#FF4A4A52" android:endColor="#FF1E1E23" />
-    <corners android:radius="28dp" />
-</shape>

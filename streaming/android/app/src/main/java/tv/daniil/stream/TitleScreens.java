@@ -47,14 +47,19 @@ final class TitleScreens {
 
         Page page = new Page(); page.backdrop = title;
         page.add(Item.details(title, note));
+        // Every button says what it does; the two toggles show their state by their look ("Favourite" lit when set).
         List<Action> actions = new ArrayList<>();
-        actions.add(new Action("play", Action.Style.PRIMARY, resume ? "Resume" : "Play", () -> nav.play(chosen, selected, "")).icon(R.drawable.ic_tv_play));
+        boolean series = title.type.equals("series") && !title.episodes.isEmpty();
+        actions.add(new Action("play", Action.Style.PRIMARY, resume ? "Resume" : "Play", () -> nav.play(chosen, selected, "")).icon(R.drawable.ic_tv_play)
+                .detail(series ? shortEpisode(title, video) : ""));
         if (!local) actions.add(new Action("sources", Action.Style.SECONDARY, "Sources", () -> nav.sources(chosen, selected)).icon(R.drawable.ic_tv_list));
         boolean isFavourite = favourite, watched = progress != null && progress.watched;
-        actions.add(new Action("favourite", Action.Style.ICON, isFavourite ? "Remove favourite" : "Add favourite",
-                () -> nav.mutate(() -> { services.store.favourite(chosen, !isFavourite); return null; })).icon(isFavourite ? R.drawable.ic_tv_heart : R.drawable.ic_tv_heart_outline));
-        actions.add(new Action("watched", Action.Style.ICON, watched ? "Mark unwatched" : "Mark watched",
-                () -> nav.mutate(() -> { services.store.watched(chosen, selected, !watched); return null; })).icon(watched ? R.drawable.ic_tv_watched : R.drawable.ic_tv_unwatched));
+        actions.add(new Action("favourite", Action.Style.SECONDARY, isFavourite ? "Remove favourite" : "Add favourite",
+                () -> nav.mutate(() -> { services.store.favourite(chosen, !isFavourite); return null; }))
+                .text("Favourite").icon(isFavourite ? R.drawable.ic_tv_heart : R.drawable.ic_tv_heart_outline).selected(isFavourite));
+        actions.add(new Action("watched", Action.Style.SECONDARY, watched ? "Mark unwatched" : "Mark watched",
+                () -> nav.mutate(() -> { services.store.watched(chosen, selected, !watched); return null; }))
+                .text(watched ? "Watched" : "Mark watched").icon(R.drawable.ic_tv_check).selected(watched));
         if (local) {
             actions.add(new Action("rename", Action.Style.SECONDARY, "Rename import", () -> nav.edit("Rename import", "Title", chosen.name, name -> nav.mutate(() -> {
                 services.imports.rename(chosen.id, name);
@@ -64,21 +69,19 @@ final class TitleScreens {
             actions.add(new Action("remove-import", Action.Style.SECONDARY, "Remove import", () -> nav.then(() -> { services.imports.remove(chosen.id); return null; }, nav::back))
                     .icon(R.drawable.ic_tv_delete));
         } else {
-            actions.add(new Action("refresh-details", Action.Style.ICON, "Refresh details", nav::refresh).icon(R.drawable.ic_tv_refresh));
-            actions.add(new Action("remove-library", Action.Style.ICON, "Remove from library and history",
-                    () -> nav.then(() -> { services.store.removeLibrary(chosen.key()); return null; }, () -> nav.root("Library"))).icon(R.drawable.ic_tv_delete));
+            actions.add(new Action("more", Action.Style.ICON, "More", () -> nav.choose(chosen.name, new String[]{"Refresh details", "Remove from library"}, which -> {
+                if (which == 0) nav.refresh();
+                else nav.then(() -> { services.store.removeLibrary(chosen.key()); return null; }, () -> nav.root("Library"));
+            })).icon(R.drawable.ic_tv_more));
         }
         page.add(Item.actions("title-actions", actions));
         page.initialFocus = "play";
-        if (title.type.equals("series") && !title.episodes.isEmpty()) {
-            page.add(Item.text("", (resume ? "Resume " : "Play ") + episodeName(title, video) + (resume ? " at " + BrowseScreens.minutes(progress.positionMs) : "")));
-        }
         if (!local && noSources(title, video)) {
-            page.add(Item.notice(R.drawable.ic_tv_info, Availability.NO_PROVIDER, Availability.NO_PROVIDER_DETAIL,
-                    new Action("add-source", Action.Style.SECONDARY, "Find a source add-on", () -> nav.push(StoreScreens.route("Sources"))).icon(R.drawable.ic_tv_extension)));
+            page.add(Item.notice(R.drawable.ic_tv_info, Availability.NO_PROVIDER, "",
+                    new Action("add-source", Action.Style.SECONDARY, "Get add-ons", () -> nav.push(StoreScreens.route("Sources"))).icon(R.drawable.ic_tv_extension)));
         }
         if (title.type.equals("series")) episodes(page, route, title);
-        if (!title.cast.isEmpty()) page.add(Item.text("Starring", String.join(", ", title.cast.subList(0, Math.min(8, title.cast.size())))));
+        if (!title.cast.isEmpty()) page.add(Item.text("Starring", String.join(", ", title.cast.subList(0, Math.min(4, title.cast.size())))));
         return page;
     }
 
@@ -130,27 +133,26 @@ final class TitleScreens {
 
     Page sources(Route route, Cancellation scope) throws Exception {
         Title title = route.title;
-        Page page = new Page().title("Sources"); page.backdrop = title; page.blurBackdrop = true;
+        Page page = new Page().title("Sources").narrow(); page.backdrop = title; page.blurBackdrop = true;
         page.add(Item.header(title.name, title.type.equals("series") ? episodeName(title, route.video) : ""));
         List<InstalledAddon> providers = services.addons.providers("stream", title.type, route.video);
         AddonRepository.Result<MediaSource> found = providers.isEmpty() ? null : services.addons.streams(title.type, route.video, scope);
         List<MediaSource> sources = new ArrayList<>(found == null ? new ArrayList<>() : found.items);
         for (Title.Episode e : title.episodes) if (e.id.equals(route.video)) sources.addAll(e.streams);
         List<InstalledAddon> installed = services.store.addons();
-        // Compatible first, in ranked order; unsupported sources stay listed with their reason.
-        List<MediaSource> ordered = new ArrayList<>(SourcePolicy.ranked(sources));
-        for (MediaSource s : sources) if (!ordered.contains(s)) ordered.add(s);
-        for (MediaSource source : ordered) {
-            SourcePolicy.Assessment assessment = SourcePolicy.assess(source);
+        // Only what this TV can play, best first. The rest is counted, not listed.
+        List<MediaSource> playable = SourcePolicy.ranked(sources);
+        for (MediaSource source : playable) {
             String provider = "Provider";
             for (InstalledAddon a : installed) if (a.id.equals(source.provider)) provider = a.manifest.name;
             String meta = provider + "  ·  " + kind(source) + (source.videoSize > 0 ? "  ·  " + size(source.videoSize) : "");
-            page.add(Item.source("source:" + SourcePolicy.key(source), source.name, meta, source.description.replace('\n', ' '), assessment.label, assessment.usable, () -> {
-                if (!assessment.usable) nav.alert("Source unavailable", assessment.label);
-                else nav.play(title, route.video, SourcePolicy.key(source));
-            }));
+            page.add(Item.source("source:" + SourcePolicy.key(source), source.name.replace('\n', ' '), meta, "", "", true,
+                    () -> nav.play(title, route.video, SourcePolicy.key(source))).status(-1));
         }
-        if (sources.isEmpty()) {
+        if (playable.isEmpty() && !sources.isEmpty()) {
+            Availability why = Availability.of(providers, sources, found == null ? new java.util.HashMap<>() : found.failures, installed);
+            page.add(Item.message(R.drawable.ic_tv_info, why.heading, why.detail));
+        } else if (sources.isEmpty()) {
             Availability why = Availability.of(providers, sources, found == null ? new java.util.HashMap<>() : found.failures, installed);
             page.add(providers.isEmpty()
                     ? Item.message(R.drawable.ic_tv_extension, why.heading, why.detail,
@@ -174,6 +176,11 @@ final class TitleScreens {
     static String size(long bytes) {
         double gib = bytes / (double) (1L << 30);
         return gib >= 1 ? String.format(java.util.Locale.ROOT, "%.1f GB", gib) : (bytes >> 20) + " MB";
+    }
+    /** "S1 E4", for a Play button. */
+    static String shortEpisode(Title title, String video) {
+        for (Title.Episode e : title.episodes) if (e.id.equals(video)) return "S" + e.season + " E" + e.number;
+        return "";
     }
     static String episodeName(Title title, String video) {
         for (Title.Episode e : title.episodes) if (e.id.equals(video)) return "S" + e.season + " E" + e.number + " · " + e.name;

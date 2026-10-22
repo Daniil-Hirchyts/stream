@@ -39,28 +39,15 @@ final class StoreScreens {
 
     Page store(Route route, Cancellation scope) throws Exception {
         String filter = route.extras.getOrDefault("filter", "All");
-        Page page = new Page().panel(R.drawable.ic_tv_extension, "Add-ons",
-                "Catalogues such as Cinemeta describe films and series. Sources find the video to play, and subtitle add-ons add captions. "
-                        + "Nothing installs until you review it.");
+        Page page = new Page().title("Add-on store").narrow();
         List<Action> chips = new ArrayList<>();
         for (String f : FILTERS) chips.add(new Action("filter:" + f, Action.Style.CHIP, f, () -> {
             route.extras.put("filter", f); route.scroll = null; route.focus = "filter:" + f; nav.refresh();
         }).selected(f.equals(filter)));
         page.add(Item.chips("store-filters", "", chips));
         page.initialFocus = "filter:" + filter;
-        if (filter.equals(TorrentAddons.COLLECTION)) page.add(Item.text("Torrent sources",
-                "These add-ons find torrents for films and series. Daniil TV plays torrent results directly on this TV; no debrid account is needed for P2P. "
-                        + "Provider settings can also return cloud streams. Review an add-on to install it or change its setup."));
-
+        // Installed add-ons are managed in Settings; here they show as Installed in their list.
         List<InstalledAddon> installed = services.store.addons();
-        List<InstalledAddon> matchingInstalled = new ArrayList<>();
-        for (InstalledAddon a : installed) if (matches(a.manifest, a.manifest.p2p || TorrentAddons.find(a.address.manifest) != null, filter)) matchingInstalled.add(a);
-        if (!matchingInstalled.isEmpty()) {
-            page.add(Item.header("Installed", Integer.toString(matchingInstalled.size())));
-            for (InstalledAddon a : matchingInstalled) page.add(Item.row("installed:" + a.id, R.drawable.ic_tv_extension, a.manifest.name,
-                    (a.enabled ? "On" : "Off") + " · " + kinds(a.manifest), () -> { Route r = new Route("Add-on"); r.value = a.id; nav.push(r); }));
-        }
-        page.add(Item.row("store-address", R.drawable.ic_tv_link, "Install from address", "Any compatible manifest.json", nav::addAddon));
 
         // A filter changes what is displayed, not the directory request. Keep the lists briefly between renders,
         // invalidating them when installed providers change or the user explicitly refreshes.
@@ -78,16 +65,13 @@ final class StoreScreens {
             List<Item> rows = new ArrayList<>();
             for (AddonListing l : list.getValue()) if (matches(l, filter)) rows.add(listing(l, installed));
             if (rows.isEmpty()) continue;
-            page.add(Item.header(list.getKey(), rows.size() + (rows.size() == 1 ? " add-on" : " add-ons")));
+            page.add(Item.header(list.getKey()));
             page.addAll(rows); shown += rows.size();
         }
-        if (shown == 0) page.add(Item.text("", "No " + filter.toLowerCase(java.util.Locale.ROOT) + " add-ons are listed right now."));
-        if (!found.failures.isEmpty()) page.add(Item.notice(R.drawable.ic_tv_offline, found.stale ? "Showing saved add-on lists" : "Some add-on lists are unavailable",
-                "Check the connection and refresh. You can still install an add-on from its address.",
+        if (shown == 0) page.add(Item.message(R.drawable.ic_tv_extension, "Nothing listed", ""));
+        if (!found.failures.isEmpty()) page.add(Item.notice(R.drawable.ic_tv_offline, found.stale ? "Showing saved lists" : "Some lists are unavailable", "",
                 new Action("refresh-store", Action.Style.SECONDARY, "Refresh", this::refreshLists).icon(R.drawable.ic_tv_refresh)));
-        else page.add(Item.row("refresh-store", R.drawable.ic_tv_refresh, "Refresh add-on lists", "Check for updates", this::refreshLists));
-        page.add(Item.text("About these lists", "Built-in add-ons are part of this app. The Torrent/P2P section is included with Daniil TV and stays available if the directory is offline. "
-                + "The Official and Community lists come from Stremio's public add-on directory. Third-party providers receive the titles you open and your searches."));
+        else { page.add(Item.header("")); page.add(Item.row("refresh-store", 0, "Refresh add-on lists", "", this::refreshLists)); }
         return page;
     }
     private void refreshLists() { lists = null; nav.refresh(); }
@@ -107,8 +91,9 @@ final class StoreScreens {
         boolean present = installed(l.url, l.manifest.id, installed) != null;
         String status = present ? "Installed" : l.manifest.configurationRequired ? "Needs setup" : "Review";
         String types = types(l.manifest.types);
-        return Item.source("store:" + l.url, l.manifest.name, kinds(l.manifest) + (l.torrents() ? " · Torrent/P2P" : "") + (types.isEmpty() ? "" : "  ·  " + types),
-                l.manifest.description.replace('\n', ' '), status, true, () -> { Route r = new Route("Add-on review"); r.value = l.url; nav.push(r); })
+        // One line of what it adds; the description waits for the review page.
+        return Item.source("store:" + l.url, l.manifest.name, kinds(l.manifest) + (l.torrents() ? " · Torrent" : "") + (types.isEmpty() ? "" : "  ·  " + types),
+                "", present ? status : l.manifest.configurationRequired ? status : "", true, () -> { Route r = new Route("Add-on review"); r.value = l.url; nav.push(r); })
                 .status(present ? R.drawable.ic_tv_check : l.manifest.configurationRequired ? R.drawable.ic_tv_info : -1);
     }
 
@@ -120,15 +105,11 @@ final class StoreScreens {
         try { manifest = services.addons.preview(url, scope); }
         catch (AddonException e) {
             if (e.kind == AddonException.Kind.CANCELLED) throw e;
-            Page page = new Page().title("Add-on");
-            page.add(Item.message(R.drawable.ic_tv_offline, "This add-on isn't responding", tv.daniil.stream.ui.Failures.message(e)
-                    + " Its provider may be offline; try again later.",
+            Page page = new Page().title("Add-on").narrow();
+            page.add(Item.message(R.drawable.ic_tv_offline, "This add-on isn't responding", tv.daniil.stream.ui.Failures.message(e),
                     new Action("retry-review", Action.Style.PRIMARY, "Retry", nav::refresh).icon(R.drawable.ic_tv_refresh),
                     new Action("review-back", Action.Style.SECONDARY, "Back", nav::back)));
-            if (curated != null) {
-                page.add(Item.text("Provider setup", "You can also set up " + curated.listing.manifest.name + " at " + curated.configureUrl + " and enter the manifest address it gives you."));
-                page.add(Item.actions("offline-setup", setupActions(curated.configureUrl)));
-            }
+            if (curated != null) page.add(Item.actions("offline-setup", setupActions(curated.configureUrl)));
             page.initialFocus = "retry-review";
             return page;
         }
@@ -136,24 +117,19 @@ final class StoreScreens {
         InstalledAddon present = installed(url, manifest.id, installed);
         boolean builtin = url.startsWith(AddonUrl.BUILTIN);
         boolean torrents = manifest.p2p || curated != null;
-        Page page = new Page().panel(R.drawable.ic_tv_extension, manifest.name, manifest.description.isEmpty() ? "No description supplied." : manifest.description);
-        page.add(Item.text("Supplies", supplies(manifest)));
-        List<String> catalogues = new ArrayList<>();
-        for (AddonManifest.Catalog c : manifest.catalogs) catalogues.add(BrowseScreens.shelfTitle(c));
-        if (!catalogues.isEmpty()) page.add(Item.text("Catalogues", String.join(", ", catalogues)));
-        page.add(Item.text("Provider", (builtin ? "Built into Daniil TV; it contacts the service it names." : AddonUrl.redacted(url) + " · run by a third party.")
-                + (manifest.version.isEmpty() ? "" : "  Version " + manifest.version + ".")
-                + "\nIt receives the titles you open" + (manifest.declares(AddonManifest.CATALOG) ? " and your searches." : ".")
-                + (torrents ? "\nTorrent sources play directly on this TV: while you watch, it downloads from and uploads to peers. Provider settings may also return HTTP streams." : "")));
+        // What it is, what it adds and who runs it: three short lines, then the one decision.
+        Page page = new Page().title(manifest.name).narrow();
+        if (!manifest.description.isEmpty()) page.add(Item.text("", manifest.description));
+        page.add(Item.text("", kinds(manifest) + (torrents ? " · Torrent" : "") + (types(manifest.types).isEmpty() ? "" : "  ·  " + types(manifest.types))
+                + "\n" + (builtin ? "Built into Daniil TV" : AddonUrl.redacted(url)) + (manifest.version.isEmpty() ? "" : "  ·  Version " + manifest.version)));
         List<Action> actions = new ArrayList<>();
         if (present != null) {
-            page.add(Item.notice(R.drawable.ic_tv_check, "Installed", present.enabled ? "It's on. Manage it to turn it off, reorder or remove it." : "It's installed but turned off."));
-            actions.add(new Action("manage", Action.Style.PRIMARY, "Manage add-on", () -> { Route r = new Route("Add-on"); r.value = present.id; nav.push(r); }).icon(R.drawable.ic_tv_settings));
+            actions.add(new Action("manage", Action.Style.PRIMARY, "Manage add-on", () -> { Route r = new Route("Add-on"); r.value = present.id; nav.push(r); }).icon(R.drawable.ic_tv_settings)
+                    .detail(present.enabled ? "Installed" : "Off"));
             page.initialFocus = "manage";
         } else if (manifest.configurationRequired) {
             String configure = configurationAddress(url);
-            page.add(Item.notice(R.drawable.ic_tv_info, "Needs setup first", "Set it up on a phone or computer at " + configure
-                    + ", then enter the manifest address it gives you."));
+            page.add(Item.text("Set up first", configure));
             actions.addAll(setupActions(configure));
             page.initialFocus = "configured";
         } else {
@@ -162,15 +138,17 @@ final class StoreScreens {
             }, nav::refresh)).icon(R.drawable.ic_tv_add));
             page.initialFocus = "install-addon";
         }
-        actions.add(new Action("review-back", Action.Style.SECONDARY, "Back", nav::back));
-        page.add(Item.actions("review-actions", actions));
         if ((manifest.configurable || curated != null) && (present != null || !manifest.configurationRequired) && !builtin) {
             String configure = configurationAddress(url);
-            page.add(Item.text("Provider setup", "Choose languages, quality or playback services at " + configure
-                    + ". For direct torrent playback, choose the provider's P2P option if it offers one, then enter its configured manifest address. "
-                    + "Availability and account requirements depend on the provider."));
-            page.add(Item.actions("optional-setup", setupActions(configure)));
+            actions.add(new Action("set-up", Action.Style.SECONDARY, "Set up", () -> nav.choose("Set up " + manifest.name,
+                    new String[]{"Open setup page", "Enter configured address"}, which -> {
+                        if (which == 0) nav.openWebsite(configure);
+                        else nav.edit("Configured add-on address", "https://… or stremio://…/manifest.json", "", nav::previewAddon);
+                    })).icon(R.drawable.ic_tv_settings));
         }
+        page.add(Item.actions("review-actions", actions));
+        // Providers see what is asked of them; say so once, quietly.
+        page.add(Item.text("", "The provider receives the titles you open" + (manifest.declares(AddonManifest.CATALOG) ? " and your searches." : ".")));
         return page;
     }
 
