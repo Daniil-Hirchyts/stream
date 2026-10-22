@@ -51,13 +51,13 @@ final class BrowseScreens {
                 String key = query.addon.id + ":" + query.catalog.type + ":" + query.catalog.id;
                 List<Tile> tiles = new ArrayList<>();
                 for (Title t : found.byResource.getOrDefault(key, Collections.emptyList())) tiles.add(poster(key, t));
-                if (!tiles.isEmpty()) shelves.add(Item.shelf("catalogue:" + key, shelfTitle(query.catalog), query.addon.manifest.name, Tile.Style.POSTER, tiles));
+                if (!tiles.isEmpty()) shelves.add(Item.shelf("catalogue:" + key, shelfTitle(query.catalog), "", Tile.Style.POSTER, tiles));
             }
             failed = !found.failures.isEmpty(); stale = found.stale;
         }
         if (shelves.isEmpty()) {
             page.add(Item.message(R.drawable.ic_tv_tv, "Make yourself at home",
-                    catalogues.isEmpty() ? "Add a catalogue add-on such as Cinemeta, or import a torrent to start your library."
+                    catalogues.isEmpty() ? "Add a catalogue add-on, or import a torrent to start your library."
                             : "Your catalogue add-ons returned nothing right now. Refresh, or import a torrent.",
                     new Item.Action("home-add-addon", Item.Action.Style.PRIMARY, "Add an add-on", nav::addAddon).icon(R.drawable.ic_tv_add),
                     new Item.Action("home-import", Item.Action.Style.SECONDARY, "Import a torrent", nav::openImports).icon(R.drawable.ic_tv_download)));
@@ -157,7 +157,7 @@ final class BrowseScreens {
     Page catalogues() {
         Page page = new Page().title("Browse");
         for (InstalledAddon a : services.store.addons()) if (a.enabled) for (AddonManifest.Catalog c : a.manifest.catalogs) {
-            page.add(Item.row("catalogue:" + a.id + c.type + c.id, R.drawable.ic_tv_movie, shelfTitle(c), a.manifest.name, () -> {
+            page.add(Item.row("catalogue:" + a.id + c.type + c.id, R.drawable.ic_tv_movie, shelfTitle(c), "", () -> {
                 Route next = new Route("Catalogue"); next.value = new JSONArray().put(a.id).put(c.type).put(c.id).toString(); nav.push(next);
             }));
         }
