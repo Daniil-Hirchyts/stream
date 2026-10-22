@@ -1,8 +1,9 @@
 # Daniil TV — Complete Standalone Streaming App
 
-**Status:** all application layers and standalone screens are implemented;
-the complete local acceptance and finalized thirty-minute soak are in progress. See
+**Status:** all five implementation and verification phases are complete locally,
+including the full thirty-minute playback/seek soak. See
 [streaming-validation.md](streaming-validation.md) for executed checks.
+Remote CI and physical Fire OS performance remain separately unverified.
 Repository facts in section 2 describe the original planning baseline, and the
 native dependency pins in section 3 were checked against the sources, the
 local AVD configuration and upstream tags on 2026-10-21.
