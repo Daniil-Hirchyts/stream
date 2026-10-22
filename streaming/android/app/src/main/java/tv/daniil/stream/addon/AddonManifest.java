@@ -15,7 +15,7 @@ import java.util.List;
  * Malformed optional entries are skipped; the identity fields and resources are required.
  */
 public final class AddonManifest {
-    public static final String CATALOG = "catalog", META = "meta", STREAM = "stream", SUBTITLES = "subtitles";
+    public static final String CATALOG = "catalog", META = "meta", STREAM = "stream", SUBTITLES = "subtitles", ADDON_CATALOG = "addon_catalog";
 
     public static final class Resource {
         public final String name;
@@ -83,11 +83,13 @@ public final class AddonManifest {
     public final List<String> types;
     public final List<String> idPrefixes;
     public final List<Catalog> catalogs;
+    /** Lists of other add-ons this add-on publishes through {@code addon_catalog}, such as Cinemeta's Official and Community. */
+    public final List<Catalog> addonCatalogs;
     public final boolean configurable, configurationRequired, adult, p2p;
     /** The manifest as received, kept so an installed add-on survives restarts without refetching. */
     public final String json;
 
-    private AddonManifest(JSONObject o, List<Resource> resources, List<Catalog> catalogs) {
+    private AddonManifest(JSONObject o, List<Resource> resources, List<Catalog> catalogs, List<Catalog> addonCatalogs) {
         id = Json.string(o, "id", "");
         version = Json.string(o, "version", "");
         name = Json.string(o, "name", "");
@@ -98,6 +100,7 @@ public final class AddonManifest {
         idPrefixes = Json.strings(o, "idPrefixes");
         this.resources = resources;
         this.catalogs = catalogs;
+        this.addonCatalogs = addonCatalogs;
         JSONObject hints = o.optJSONObject("behaviorHints");
         configurable = Json.bool(hints, "configurable");
         configurationRequired = Json.bool(hints, "configurationRequired");
@@ -153,7 +156,18 @@ public final class AddonManifest {
             }
             catalogs.add(new Catalog(type, id, Json.string(c, "name", id), Collections.unmodifiableList(extras)));
         }
-        return new AddonManifest(o, Collections.unmodifiableList(resources), Collections.unmodifiableList(catalogs));
+        List<Catalog> addonCatalogs = new ArrayList<>();
+        for (JSONObject c : Json.objects(o, "addonCatalogs")) {
+            String type = Json.string(c, "type"), id = Json.string(c, "id");
+            if (type != null && id != null) addonCatalogs.add(new Catalog(type, id, Json.string(c, "name", id), Collections.emptyList()));
+        }
+        return new AddonManifest(o, Collections.unmodifiableList(resources), Collections.unmodifiableList(catalogs), Collections.unmodifiableList(addonCatalogs));
+    }
+
+    /** Declares {@code resource} at all, for any type or id. */
+    public boolean declares(String resource) {
+        for (Resource r : resources) if (r.name.equals(resource)) return true;
+        return false;
     }
 
     /** Whether the add-on answers `resource` for this type, and this id when one is given. */

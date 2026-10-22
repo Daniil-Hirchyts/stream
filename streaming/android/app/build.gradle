@@ -19,6 +19,8 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     buildFeatures { buildConfig true }
+    // JVM tests of the add-on protocol code; Android stubs answer defaults and org.json comes from its own artifact.
+    testOptions { unitTests.returnDefaultValues = true }
     testBuildType releaseValidation ? 'release' : 'debug'
     buildTypes {
         release {
@@ -34,8 +36,18 @@ android {
 dependencies {
     implementation project(':torrent')
     implementation 'androidx.recyclerview:recyclerview:1.4.0'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20250517'
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test:core:1.6.1'
     androidTestCompileOnly 'com.google.errorprone:error_prone_annotations:2.18.0'
+}
+
+// Live tests reach real add-ons and archive.org with real films; only `-PliveAddons=true` runs them.
+tasks.withType(Test).configureEach {
+    systemProperty 'dtv.live', providers.gradleProperty('liveAddons').getOrElse('false')
+    systemProperty 'dtv.evidence', layout.buildDirectory.dir('live-evidence').get().asFile.path
+    outputs.upToDateWhen { !providers.gradleProperty('liveAddons').isPresent() }
+    testLogging { events 'passed', 'skipped', 'failed'; showStandardStreams = providers.gradleProperty('liveAddons').isPresent() }
 }

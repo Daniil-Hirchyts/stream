@@ -52,12 +52,19 @@ public final class AddonRepository implements AutoCloseable {
         final boolean stale;
         Part(String key, List<T> items, AddonException.Kind failure, boolean stale) { this.key = key; this.items = items; this.failure = failure; this.stale = stale; }
     }
+    /** Stremio's add-on directory: Cinemeta publishes the Official and Community lists through addon_catalog. */
+    public static final String DIRECTORY = AddonUrl.CINEMETA;
+    private static final String[][] DIRECTORY_LISTS = {{"official", "Official"}, {"community", "Community"}};
     private final TvStore store;
+    private final List<String> directory;
     private final AddonClient client = new AddonClient();
     private final ThreadPoolExecutor workers = new ThreadPoolExecutor(4, 4, 0, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(64));
     private final List<Cancellation> scopes = new ArrayList<>();
 
-    public AddonRepository(TvStore store) { this.store = store; }
+    /** No default directory: the store lists built-in add-ons and lists published by installed add-ons. */
+    public AddonRepository(TvStore store) { this(store, Collections.emptyList()); }
+    /** @param directory manifest addresses whose Official and Community add-on lists the store always shows */
+    public AddonRepository(TvStore store, List<String> directory) { this.store = store; this.directory = Collections.unmodifiableList(new ArrayList<>(directory)); }
     public synchronized Cancellation newRequest() {
         scopes.removeIf(Cancellation::isCancelled);
         Cancellation scope = new Cancellation(); scopes.add(scope); return scope;
@@ -156,6 +163,59 @@ public final class AddonRepository implements AutoCloseable {
             });
         }
         return collect(tasks, keys, scope, deadline);
+    }
+    /**
+     * The add-on store, by list: built-in add-ons, then each list that installed add-ons publish through
+     * {@code addon_catalog}, then the default directory's. An add-on appears once, in the first list naming it.
+     * Lists are cached like catalogues, so a provider failure falls back to the saved list, marked stale.
+     */
+    public Result<AddonListing> store(Cancellation scope) throws AddonException {
+        long deadline = AddonClient.deadline();
+        Map<String, String> lists = new LinkedHashMap<>();
+        for (InstalledAddon a : store.addons()) if (a.enabled && a.manifest.declares(AddonManifest.ADDON_CATALOG)) {
+            boolean combined = false;
+            for (AddonManifest.Catalog c : a.manifest.addonCatalogs) combined |= c.type.equals("all");
+            // A list per type repeats the combined one; show the combined list when there is one.
+            for (AddonManifest.Catalog c : a.manifest.addonCatalogs) if (!combined || c.type.equals("all")) {
+                lists.putIfAbsent(a.address.resource(AddonManifest.ADDON_CATALOG, c.type, c.id, Collections.emptyMap()), c.name);
+            }
+        }
+        for (String manifest : directory) {
+            AddonUrl address = new AddonUrl(manifest);
+            for (String[] list : DIRECTORY_LISTS) lists.putIfAbsent(address.resource(AddonManifest.ADDON_CATALOG, "all", list[0], Collections.emptyMap()), list[1]);
+        }
+        List<Callable<Part<AddonListing>>> tasks = new ArrayList<>(); List<String> keys = new ArrayList<>();
+        for (Map.Entry<String, String> list : lists.entrySet()) {
+            String address = list.getKey(), name = list.getValue();
+            String key = keys.contains(name) ? name + " " + (keys.size() + 1) : name;
+            keys.add(key);
+            tasks.add(() -> {
+                try {
+                    JSONObject json = client.json(address, scope, deadline);
+                    List<AddonListing> found = AddonListing.parse(name, address, json);
+                    synchronized (this) { scope.check(); store.cache(address, json.toString()); }
+                    return new Part<>(key, found, null, false);
+                } catch (AddonException e) {
+                    String saved = e.kind == AddonException.Kind.CANCELLED ? null : store.cached(address);
+                    if (saved != null) try { return new Part<>(key, AddonListing.parse(name, address, new JSONObject(saved)), e.kind, true); }
+                    catch (JSONException | AddonException ignored) { /* fall through to the provider error */ }
+                    return new Part<>(key, Collections.emptyList(), e.kind, false);
+                }
+            });
+        }
+        Result<AddonListing> remote = collect(tasks, keys, scope, deadline);
+        Map<String, List<AddonListing>> groups = new LinkedHashMap<>();
+        List<AddonListing> all = new ArrayList<>();
+        java.util.Set<String> shown = new java.util.HashSet<>();
+        groups.put("Built in", BuiltinAddons.listings());
+        for (AddonListing l : BuiltinAddons.listings()) { shown.add(l.manifest.id); all.add(l); }
+        for (Map.Entry<String, List<AddonListing>> group : remote.byResource.entrySet()) {
+            List<AddonListing> unique = new ArrayList<>();
+            for (AddonListing l : group.getValue()) if (shown.add(l.manifest.id)) unique.add(l);
+            all.addAll(unique);
+            if (!unique.isEmpty()) groups.put(group.getKey(), Collections.unmodifiableList(unique));
+        }
+        return new Result<>(all, remote.failures, remote.stale, groups);
     }
     /** Enabled add-ons declaring {@code resource} for this type and ID. Catalogue-only add-ons such as Cinemeta have no streams. */
     public List<InstalledAddon> providers(String resource, String type, String id) {

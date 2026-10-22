@@ -32,7 +32,7 @@ public final class TvApplication extends Application {
             clear(new java.io.File(app.getCacheDir(), "payload"));
             clear(new java.io.File(app.getCacheDir(), "subtitles"));
             store = new TvStore(app, database);
-            addons = new AddonRepository(store);
+            addons = new AddonRepository(store, RuntimeOptions.addonDirectory(app));
             imports = new ImportRepository(app, store);
             playerPreferences = app.getSharedPreferences(RuntimeOptions.playerPreferences(database), MODE_PRIVATE);
             tv.daniil.playback.Capabilities.load(app);

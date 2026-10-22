@@ -28,7 +28,14 @@ public final class AddonClient implements AutoCloseable {
     public static long deadline() { return SystemClock.elapsedRealtime() + DISCOVERY_MS; }
 
     public JSONObject json(String address, Cancellation cancellation, long aggregateDeadline) throws AddonException {
-        byte[] bytes = fetch(address, MAX_JSON_BYTES, cancellation, aggregateDeadline);
+        // Built-in add-ons make their own requests, each holding a request permit only while it runs.
+        if (address.startsWith(AddonUrl.BUILTIN)) return BuiltinAddons.answer(address, this, cancellation, aggregateDeadline);
+        return json(address, java.util.Collections.emptyMap(), cancellation, aggregateDeadline);
+    }
+
+    /** With extra request headers, such as the identifying User-Agent some public APIs require of built-in add-ons. */
+    JSONObject json(String address, java.util.Map<String, String> headers, Cancellation cancellation, long aggregateDeadline) throws AddonException {
+        byte[] bytes = fetch(address, MAX_JSON_BYTES, headers, cancellation, aggregateDeadline);
         try { return new JSONObject(new String(bytes, java.nio.charset.StandardCharsets.UTF_8)); }
         catch (JSONException | StackOverflowError e) {
             throw new AddonException(AddonException.Kind.MALFORMED, "The add-on returned invalid JSON");
@@ -36,6 +43,10 @@ public final class AddonClient implements AutoCloseable {
     }
 
     public byte[] fetch(String address, int limit, Cancellation cancellation, long aggregateDeadline) throws AddonException {
+        return fetch(address, limit, java.util.Collections.emptyMap(), cancellation, aggregateDeadline);
+    }
+
+    private byte[] fetch(String address, int limit, java.util.Map<String, String> headers, Cancellation cancellation, long aggregateDeadline) throws AddonException {
         AddonUrl.web(address);
         long end = Math.min(aggregateDeadline, SystemClock.elapsedRealtime() + REQUEST_MS);
         boolean acquired = false;
@@ -56,7 +67,9 @@ public final class AddonClient implements AutoCloseable {
                 connection.setInstanceFollowRedirects(false);
                 connection.setConnectTimeout((int) left);
                 connection.setReadTimeout((int) left);
-                connection.setRequestProperty("Accept", "application/json, application/x-bittorrent");
+                // Caller headers first: Wikimedia's edge refuses a User-Agent sent after Accept and Accept-Encoding.
+                for (java.util.Map.Entry<String, String> header : headers.entrySet()) connection.setRequestProperty(header.getKey(), header.getValue());
+                if (!headers.containsKey("Accept")) connection.setRequestProperty("Accept", "application/json, application/x-bittorrent");
                 connection.setRequestProperty("Accept-Encoding", "gzip");
                 Runnable abort = connection::disconnect;
                 cancellation.add(abort);

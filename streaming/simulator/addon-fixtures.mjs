@@ -20,6 +20,24 @@ export function addonFixtures(index, origin) {
       { name: 'search' }, { name: 'skip' }, { name: 'genre', options: ['Generated'] },
     ] }, { type: 'series', id: 'shows', name: 'Generated series' } ],
   };
+  // A store directory, as Cinemeta publishes Stremio's lists through addon_catalog.
+  const directory = {
+    id: 'tv.daniil.fixtures.directory', version: '1.0.0', name: 'Fixture directory', types: ['movie', 'series'], resources: ['addon_catalog'],
+    catalogs: [], addonCatalogs: [{ type: 'all', id: 'official', name: 'Fixture list' }, { type: 'movie', id: 'official', name: 'Fixture films' }],
+  };
+  const listing = (path, extra = {}) => ({ transportUrl: origin + path, transportName: 'http', manifest: { ...manifest, ...extra } });
+  const lists = {
+    official: [
+      listing('/addon/good/store-with-a-longer-configuration/manifest.json'),
+      listing('/addon/good/store/manifest.json'),
+      listing('/addon/good/needs-setup/manifest.json', { id: 'tv.daniil.fixtures.setup', name: 'Setup fixture', behaviorHints: { configurable: true, configurationRequired: true } }),
+      listing('/addon/good/adult/manifest.json', { id: 'tv.daniil.fixtures.adult', name: 'Adult fixture', behaviorHints: { adult: true } }),
+      { transportUrl: 'http://127.0.0.2:11470/local-addon/manifest.json', transportName: 'http', manifest: { ...manifest, id: 'other-host', name: 'Other host' } },
+      { transportUrl: origin + '/legacy/stremio/v1', transportName: 'http', manifest: { ...manifest, id: 'legacy', name: 'Legacy' } },
+      null, 5,
+    ],
+    community: [listing('/addon/good/store/manifest.json'), listing('/addon/good/community/manifest.json', { id: 'tv.daniil.fixtures.community', name: 'Community fixture' })],
+  };
   const json = (res, object, status = 200) => res.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(object));
   return async function handle(req, res) {
     const url = new URL(req.url, origin);
@@ -27,7 +45,7 @@ export function addonFixtures(index, origin) {
     const match = /^\/addon\/([^/]+)\/([^/]+)\/(.*)$/.exec(url.pathname);
     if (!match) return false;
     const [, variant, configuration, route] = match;
-    if (route === 'manifest.json') { json(res, manifest); return true; }
+    if (route === 'manifest.json') { json(res, configuration === 'directory' ? directory : manifest); return true; }
     if (variant === 'broken') { json(res, { error: 'Deliberate fixture failure' }, 503); return true; }
     if (variant === 'malformed') { res.writeHead(200).end('{bad'); return true; }
     if (variant === 'oversized') {
@@ -80,6 +98,9 @@ export function addonFixtures(index, origin) {
       { name: 'Browser', externalUrl: 'https://example.com' },
       { name: 'Invalid index', infoHash: film.v1, fileIdx: -1 },
     ], request: { id, type, extras: Object.fromEntries(extras), headers: req.headers } });
+    }
+    else if (resource === 'addon_catalog') {
+      if (lists[id]) json(res, { addons: lists[id], request: { type, id } }); else json(res, {}, 404);
     }
     else if (resource === 'subtitles') json(res, { subtitles: [
       { id: 'en', lang: 'eng', url: origin + '/addon/subtitle.vtt' }, { bad: true },

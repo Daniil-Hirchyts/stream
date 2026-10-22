@@ -34,8 +34,8 @@ final class SetupScreens {
         page.add(Item.actions("welcome-options",
                 new Action("cinemeta", Action.Style.TILE, "Add Cinemeta", () -> nav.previewAddon(AddonUrl.CINEMETA)).icon(R.drawable.ic_tv_movie)
                         .detail("Free film and series catalogues. You review it before it installs."),
-                new Action("source-addon", Action.Style.TILE, "Add a source add-on", nav::addAddon).icon(R.drawable.ic_tv_extension)
-                        .detail("Enter the manifest address of a stream provider you use."),
+                new Action("store", Action.Style.TILE, "Browse add-ons", () -> nav.push(StoreScreens.route("All"))).icon(R.drawable.ic_tv_extension)
+                        .detail("Video sources, subtitles and more catalogues. You review each one first."),
                 new Action("import", Action.Style.TILE, "Import a torrent", () -> nav.push(new Route("Imports"))).icon(R.drawable.ic_tv_download)
                         .detail("A magnet link, torrent URL or .torrent file.")).centered());
         page.add(Item.actions("welcome-finish",
@@ -69,6 +69,7 @@ final class SetupScreens {
     Page settings() {
         Page page = new Page().panel(R.drawable.ic_tv_settings, "Settings", "Add-ons, languages, subtitles, playback and storage.");
         page.add(Item.header("Add-ons"));
+        page.add(Item.row("addon-store", R.drawable.ic_tv_extension, "Add-on store", "", () -> nav.root("Add-ons")));
         page.add(Item.row("add-addon", R.drawable.ic_tv_add, "Add add-on", "", nav::addAddon));
         for (InstalledAddon a : services.store.addons()) {
             page.add(Item.row("addon:" + a.id, R.drawable.ic_tv_extension, a.manifest.name, a.enabled ? "On" : "Off", () -> {

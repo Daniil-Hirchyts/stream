@@ -16,11 +16,11 @@ installs/opens it. No helper, extension, pairing, debrid account or home server
 is needed. Development requires Java 21/17, Node, FFmpeg, a C++ toolchain and
 Android SDK/NDK/CMake versions pinned in `streaming/native/deps.lock`.
 
-Welcome offers Cinemeta for explicit review/acceptance, a configured source
-add-on, manual imports and language preferences. Skipping providers leaves
+Welcome offers Cinemeta for explicit review/acceptance, the add-on store,
+manual imports and language preferences. Skipping providers leaves
 imports available, and a profile that already has an add-on or import goes
-straight to Home. Home, Search, Library, History, Imports and Settings are tabs
-in a floating bar at the top. Details provide Play/Resume, Sources,
+straight to Home. Home, Search, Library, History, Imports, Add-ons and Settings
+are tabs in a floating bar at the top. Details provide Play/Resume, Sources,
 watched/favourite controls and seasons/episodes. Settings manage add-ons,
 catalogue visibility, languages, subtitle style, cache size (128/256/512 MiB),
 autoplay and app-cache cleanup. Versions, statistics and license texts live in
@@ -46,11 +46,10 @@ Back restore focus and lets the instrumentation find controls by label.
 generations.
 
 Catalogue add-ons such as Cinemeta describe titles but supply no video.
-Details and Sources say so ("No source add-on installed") and offer to add a
-source add-on. The player names the actual cause when nothing can play: no
+Details and Sources say so ("No source add-on installed") and open the store on
+its Sources filter. The player names the actual cause when nothing can play: no
 source add-on, failing providers (by name and reason), only unsupported
-results, or no results. The app never installs or suggests a specific source
-provider.
+results, or no results. Nothing is installed without the user's review.
 
 `WatchActivity` re-resolves sources and uses the shared player. `SourcePolicy`
 checks advertised hints and actual Media3 formats against the 1080p profile.
@@ -78,6 +77,54 @@ and subtitles. It implements the supported HTTP resources in the
 [Stremio protocol](https://github.com/Stremio/stremio-addon-sdk/blob/master/docs/protocol.md).
 No add-on JavaScript runs in the application. Cinemeta's address is an onboarding
 offer constant; constructing the store/repository installs nothing.
+
+### Store
+
+The Add-ons tab (`StoreScreens`) lists, by section: built-in add-ons, the lists
+installed add-ons publish through the protocol's `addon_catalog` resource, and
+the default directory's Official and Community lists. The default directory is
+Cinemeta's `addon_catalog` (Stremio's public lists); `AddonRepository.store()`
+fetches it even when Cinemeta isn't installed, caches it like catalogues and
+falls back to the saved lists, marked stale. Debug builds under local-only
+instrumentation use only the fixture directory named in the instrumentation
+preferences, never Stremio's. Listings skip other transports, legacy
+non-manifest addresses, add-ons on loopback/private hosts (unless the list comes
+from that host), adult add-ons and unreadable manifests; an add-on appears once,
+at its shortest address, so a configured copy embedding someone's settings is
+never offered in place of the plain add-on. Filters: All, Sources, Catalogues,
+Subtitles.
+
+Choosing a listing opens a review built from the add-on's own current manifest:
+what it supplies, its catalogues, its host, what it receives and whether its
+sources are peer-to-peer. Install happens only from that review (or the
+existing address dialog). Add-ons that need configuration show their
+`/configure` address and accept the configured manifest address; `stremio://`
+install links are accepted and fetched as `https://`. Anything else
+Stremio-compatible installs from its address.
+
+### Built-in add-ons
+
+`BuiltinAddons` answers `daniiltv://name/manifest.json` addresses inside the app,
+using the same protocol, review, installation, ordering and removal as remote
+add-ons; `AddonClient` routes them before taking a request permit, so their own
+HTTPS requests can't deadlock the pool. Internet Archive (opt-in like any other)
+offers a "Public Domain Films" catalogue from the Archive's Feature Films
+collection and streams for `tt` IDs. Items come from the collection's own IMDb
+links and from Wikidata (IMDb ID P345 → Internet Archive ID P724). Withdrawn
+items are skipped; items are ranked by running time, so a film split into
+parts, or trailers and extras, rank below a complete copy; masters above
+8 Mbit/s are dropped when a lighter copy exists. Files play directly over HTTPS
+from archive.org. Wikidata needs an identifying User-Agent sent before
+`Accept`/`Accept-Encoding` and briefly refuses bursts; the lookup retries once.
+
+### Torrent sources from public add-ons
+
+Many add-ons send only an info hash, with no `sources`. Outside local-only
+tests, playback then announces to `MediaSource.PUBLIC_TRACKERS` as well as DHT
+(`TorrentEngine.Source.withFallbackTrackers`); hinted trackers are used alone.
+Metadata from a public swarm may take up to 60 seconds ("Finding peers");
+after loading, a torrent has a minute to show its first frame before the
+player offers Retry or another source.
 
 Call blocking APIs from an application worker, never the UI or the repository's
 internal request pool. Create a `Cancellation` with `newRequest()` for each
@@ -147,9 +194,20 @@ separate and is never an import descriptor or library asset.
 ./streaming/simulator.sh acceptance    # extended UI, HTTP formats, tracks, failover and measurements
 ./streaming/simulator.sh process-death # real process termination and resumed playback
 ./streaming/simulator.sh release-test  # shrunk release JNI probe; restores debug app/test APKs
+./streaming/simulator.sh live-film     # optional: real public-domain films through the store (internet)
 cd streaming/android
-./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:lintDebug :app:lintRelease
+./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:testDebugUnitTest :app:lintDebug :app:lintRelease
+./gradlew :app:testDebugUnitTest -PliveAddons=true  # optional: real films via live add-ons, archive.org and FFmpeg
 ```
+
+`:app:testDebugUnitTest` runs JVM tests of the store protocol, listing rules,
+built-in add-on and torrent discovery without a device or network. With
+`-PliveAddons=true` it also runs `RealFilmsLiveTest` against Stremio's
+directory, Cinemeta, Public Domain Movies, OpenSubtitles v3, archive.org and
+Wikidata with eight public-domain films; FFmpeg (when installed) checks codec,
+resolution and running time and decodes a frame 30 minutes into each film.
+Frames and a results table go to `app/build/live-evidence/`. Neither live suite
+is required: public services and swarms change.
 
 Tests use generated loopback fixtures on 58133, the real seeder on 58134, and a
 deliberately untrusted TLS fixture on 58135. The TLS test must fail certificate

@@ -60,6 +60,8 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private String audioChoice = "", subtitleChoice = "";
     private AlertDialog choiceDialog;
     private boolean autoplay = true;
+    /** Public torrents: trackers answer within seconds, a cold DHT lookup can take most of a minute. */
+    private static final long METADATA_MS = 60_000;
     private static final java.util.Set<String> HOST_ERRORS = new java.util.HashSet<>(java.util.Arrays.asList(
             "unsupported", "opening", "buffering", "provider", "no-sources", "storage"));
 
@@ -185,8 +187,8 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 Uri uri; androidx.media3.datasource.DataSource.Factory dataSource = null;
                 if (source != null && source.kind == MediaSource.Kind.HTTP) uri = Uri.parse(source.url);
                 else {
+                    RuntimeOptions options = new RuntimeOptions(this, services.cacheBytes());
                     if (engine == null) {
-                        RuntimeOptions options = new RuntimeOptions(this, services.cacheBytes());
                         File payload = new File(getCacheDir(), "payload");
                         TorrentEngine.Config config = options.localOnly ? TorrentEngine.Config.localOnly(payload.getPath()) : new TorrentEngine.Config(payload.getPath());
                         config.cacheBytes = options.cacheBytes; config.reserveBytes = options.localOnly ? 0 : 512L << 20;
@@ -196,9 +198,13 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                         if (source == null) { try (AddonClient client = new AddonClient()) { torrentSource = services.imports.open(title.id, client, request); } }
                         else torrentSource = source.torrentSource();
                         if (options.localOnly) torrentSource = torrentSource.withTrackers().withPeers(options.peer);
+                        else torrentSource = torrentSource.withFallbackTrackers(MediaSource.PUBLIC_TRACKERS);
                         torrent = engine.add(torrentSource);
+                        // Real swarms need time to answer through trackers and DHT; loopback fixtures answer at once.
+                        main.post(() -> { if (current(mine) && switching) { screen.setLoading(new PlayerScreen.Loading("peers", "Finding peers",
+                                "Getting the file list from the torrent's peers. Press Back to cancel.", false)); screen.render(); } });
                     }
-                    List<TorrentFile> files = engine.awaitMetadata(torrent, 20_000);
+                    List<TorrentFile> files = engine.awaitMetadata(torrent, options.localOnly ? 20_000 : METADATA_MS);
                     int explicit = chosenIndex >= 0 ? chosenIndex : source == null ? services.store.importDescriptor(title.id).optInt("fileIdx", -1) : source.fileIndex;
                     int season = -1, episode = -1; for (Title.Episode e : title.episodes) if (e.id.equals(video)) { season = e.season; episode = e.number; }
                     TorrentFile file = SourcePolicy.select(files, explicit, season, episode);
@@ -219,7 +225,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 request.check();
                 main.post(() -> {
                     if (!current(mine)) return;
-                    switching = false; session.load(playback);
+                    switching = false; lastAdvanceMs = SystemClock.elapsedRealtime(); session.load(playback);
                     screen.setLoading(new PlayerScreen.Loading("video", "Preparing video", null, true)); screen.render();
                 });
             } catch (Exception e) {
@@ -365,7 +371,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             PlaybackSnapshot state = session.snapshot(); long now = SystemClock.elapsedRealtime();
             if (state.positionMs > previousPosition + 50 && state.playing) { lastAdvanceMs = now; previousPosition = state.positionMs; if (seekStarted > 0) { seekRecoveryMs = now - seekStarted; seekStarted = 0; } }
             if (!state.buffering && !switching && !state.playWhenReady) lastAdvanceMs = now;
-            if ((choiceDialog == null || !choiceDialog.isShowing()) && now - lastAdvanceMs > (switching ? 60_000 : 30_000)
+            if ((choiceDialog == null || !choiceDialog.isShowing()) && now - lastAdvanceMs > (switching ? METADATA_MS + 30_000 : engine != null && !state.renderedFirstFrame ? 60_000 : 30_000)
                     && (state.buffering || switching || !state.started) && state.error == null) {
                 String message = engine == null ? "The source stopped responding. Retry or choose another source."
                         : nativeStats.optLong("hashFailures") > 0 ? "Downloaded pieces failed integrity checks. Retry with a different peer or choose another source."

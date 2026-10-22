@@ -45,6 +45,40 @@ public final class AddonTest {
         try (Cancellation scope = repository.newRequest()) { return repository.install(url, repository.preview(url, scope)); }
     }
 
+    @Test public void storeListsBuiltInsAndDirectoryAddonsOnceThenFallsBackToSavedLists() throws Exception {
+        String flaky = origin + "/addon/flaky/" + UUID.randomUUID() + "/manifest.json";
+        try (AddonRepository directory = new AddonRepository(store, Collections.singletonList(flaky)); Cancellation scope = directory.newRequest()) {
+            AddonRepository.Result<AddonListing> found = directory.store(scope);
+            assertTrue(found.failures.toString(), found.failures.isEmpty());
+            assertEquals(java.util.Arrays.asList("Built in", "Official", "Community"), new ArrayList<>(found.byResource.keySet()));
+            assertEquals(BuiltinAddons.INTERNET_ARCHIVE, found.byResource.get("Built in").get(0).url);
+            List<AddonListing> official = found.byResource.get("Official");
+            assertEquals(2, official.size());
+            assertEquals(origin + "/addon/good/store/manifest.json", official.get(0).url);
+            assertTrue(official.get(1).manifest.configurationRequired);
+            // Listed once, in the first list naming it.
+            assertEquals(1, found.byResource.get("Community").size());
+            assertEquals("Community fixture", found.byResource.get("Community").get(0).manifest.name);
+            AddonRepository.Result<AddonListing> saved = directory.store(scope);
+            assertTrue(saved.stale); assertFalse(saved.failures.isEmpty());
+            assertEquals(2, saved.byResource.get("Official").size());
+            // Built-in add-ons review and install without reaching their service.
+            AddonManifest archive = directory.preview(BuiltinAddons.INTERNET_ARCHIVE, scope);
+            assertEquals("Internet Archive", archive.name);
+            directory.install(BuiltinAddons.INTERNET_ARCHIVE, archive);
+        }
+        assertEquals(BuiltinAddons.INTERNET_ARCHIVE, store.addons().get(0).address.manifest);
+        assertNotNull(StoreScreens.installed(BuiltinAddons.INTERNET_ARCHIVE, "tv.daniil.internet-archive", store.addons()));
+        // An installed add-on's own lists name the store's sections; the same address is fetched once.
+        InstalledAddon lists;
+        String address = origin + "/addon/good/directory/manifest.json";
+        try (Cancellation scope = repository.newRequest()) { lists = repository.install(address, repository.preview(address, scope)); }
+        try (AddonRepository directory = new AddonRepository(store, Collections.singletonList(address)); Cancellation scope = directory.newRequest()) {
+            assertEquals(java.util.Arrays.asList("Built in", "Fixture list", "Community"), new ArrayList<>(directory.store(scope).byResource.keySet()));
+        }
+        assertTrue(lists.manifest.declares(AddonManifest.ADDON_CATALOG));
+    }
+
     @Test public void configuredPathsAndProviderEpisodeIdsSurviveEncoding() throws Exception {
         AddonUrl address = new AddonUrl(origin + "/addon/good/config%2Fsecret/manifest.json?credential=keep%2Fvalue");
         Map<String, String> extras = new LinkedHashMap<>(); extras.put("search", "a/b & café"); extras.put("skip", "0");

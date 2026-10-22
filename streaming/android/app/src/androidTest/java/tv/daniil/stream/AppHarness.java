@@ -44,10 +44,12 @@ public abstract class AppHarness {
         SharedPreferences options = context.getSharedPreferences("instrumentation", Context.MODE_PRIVATE);
         oldConfiguration = options.getAll(); database = InstrumentationRegistry.getArguments().getString("database", "test-" + UUID.randomUUID() + ".db");
         assertTrue("Isolated test database", database.matches("test-[a-z0-9-]+\\.db"));
-        options.edit().putString("database", database).putBoolean("localOnly", true).putLong("cacheBytes", 16L << 20)
-                .putString("peer", InstrumentationRegistry.getArguments().getString("seeder", "127.0.0.1:58134")).commit();
-        app.resetServices(); services = app.services();
         origin = InstrumentationRegistry.getArguments().getString("fixtures", "http://127.0.0.1:58133");
+        // The store's directory is the fixture service's, never Stremio's public one.
+        options.edit().putString("database", database).putBoolean("localOnly", true).putLong("cacheBytes", 16L << 20)
+                .putString("peer", InstrumentationRegistry.getArguments().getString("seeder", "127.0.0.1:58134"))
+                .putString("addonDirectory", origin + "/addon/good/directory/manifest.json").commit();
+        app.resetServices(); services = app.services();
     }
     @After public void cleanup() throws Exception {
         if (browse != null) browse.close();

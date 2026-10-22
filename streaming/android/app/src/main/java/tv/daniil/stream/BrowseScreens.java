@@ -57,9 +57,9 @@ final class BrowseScreens {
         }
         if (shelves.isEmpty()) {
             page.add(Item.message(R.drawable.ic_tv_tv, "Make yourself at home",
-                    catalogues.isEmpty() ? "Add a catalogue add-on such as Cinemeta, or import a torrent to start your library."
+                    catalogues.isEmpty() ? "Add a catalogue add-on such as Cinemeta from Add-ons, or import a torrent to start your library."
                             : "Your catalogue add-ons returned nothing right now. Refresh, or import a torrent.",
-                    new Item.Action("home-add-addon", Item.Action.Style.PRIMARY, "Add an add-on", nav::addAddon).icon(R.drawable.ic_tv_add),
+                    new Item.Action("home-add-addon", Item.Action.Style.PRIMARY, "Browse add-ons", () -> nav.root("Add-ons")).icon(R.drawable.ic_tv_extension),
                     new Item.Action("home-import", Item.Action.Style.SECONDARY, "Import a torrent", () -> nav.root("Imports")).icon(R.drawable.ic_tv_download)));
         } else {
             page.add(Item.spotlight(null));
@@ -132,8 +132,8 @@ final class BrowseScreens {
                 Route next = new Route("Catalogue"); next.value = new JSONArray().put(a.id).put(c.type).put(c.id).toString(); nav.push(next);
             }));
         }
-        if (page.items.isEmpty()) page.add(Item.message(R.drawable.ic_tv_extension, "No catalogues", "Install a catalogue add-on in Settings.",
-                new Item.Action("catalogues-add", Item.Action.Style.PRIMARY, "Add an add-on", nav::addAddon).icon(R.drawable.ic_tv_add)));
+        if (page.items.isEmpty()) page.add(Item.message(R.drawable.ic_tv_extension, "No catalogues", "Install a catalogue add-on from Add-ons.",
+                new Item.Action("catalogues-add", Item.Action.Style.PRIMARY, "Browse add-ons", () -> nav.push(StoreScreens.route("Catalogues"))).icon(R.drawable.ic_tv_extension)));
         return page;
     }
 

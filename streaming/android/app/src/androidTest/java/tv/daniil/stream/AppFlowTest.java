@@ -54,6 +54,19 @@ public final class AppFlowTest extends AppHarness {
         waitUntil("episode history", 10_000, () -> services.store.history(false).size() >= 2);
         assertTrue(services.store.history(false).stream().anyMatch(p -> p.video.equals("fixture:episode/custom?part=2")));
     }
+    @Test public void addonStoreReviewsInstallsAndFiltersListedAddons() throws Exception {
+        services.store.setPreference("onboardingDone", "true"); launch();
+        tap("Add-ons", true); waitUntil("store lists", 15_000, () -> visible("Setup fixture") || visible("Local fixtures"));
+        assertTrue(visible("Internet Archive"));
+        tap("Local fixtures", false); waitUntil("review", 10_000, () -> visible("Install"));
+        assertTrue(services.store.addons().isEmpty());
+        tap("Install", true); waitUntil("installed from the store", 10_000, () -> services.store.addons().size() == 1);
+        waitUntil("installed state", 10_000, () -> visible("Manage add-on"));
+        assertEquals(origin + "/addon/good/store/manifest.json", services.store.addons().get(0).address.manifest);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+        tap("Subtitles", false); waitUntil("subtitle filter", 10_000, () -> visible("Community fixture") && !visible("Internet Archive"));
+        tap("Setup fixture", true); waitUntil("needs setup", 10_000, () -> visible("Enter configured address"));
+    }
     static tv.daniil.playback.PlaybackSession session(WatchActivity activity) {
         try { java.lang.reflect.Field f = WatchActivity.class.getDeclaredField("session"); f.setAccessible(true); return (tv.daniil.playback.PlaybackSession) f.get(activity); }
         catch (Exception e) { throw new AssertionError(e); }

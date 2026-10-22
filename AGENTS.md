@@ -111,7 +111,14 @@ sh streaming/simulator/tests/identity.sh  # mocked wrong-device refusals
 ./streaming/simulator.sh smoke           # real catalogue → torrent → visible player, controls and lifecycle
 ./streaming/simulator.sh soak            # thirty real minutes; no concurrent device tests
 ./streaming/simulator.sh profile         # actual PSS/RSS, graphics and screenshot evidence
+(cd streaming/android && ./gradlew :app:testDebugUnitTest)  # JVM store/protocol tests; no device or network
 ```
+
+Optional, never required (internet, public-domain films only, never the LAN or a
+physical TV): `./streaming/simulator.sh live-film` plays films installed through
+the store on the verified emulator, and `./gradlew :app:testDebugUnitTest
+-PliveAddons=true` resolves eight films through live add-ons, archive.org and
+Wikidata, then decodes them with FFmpeg into `app/build/live-evidence/`.
 
 Standalone app tests use isolated `test-*.db` stores and player preferences;
 release builds ignore those instrumentation overrides. Native create/select/
@@ -131,7 +138,10 @@ patch or moving libtorrent.
 The new app's data APIs block and belong on application workers. Each navigation
 or search owns a cancellable provider scope; configuration changes cancel older
 work. Never install Cinemeta or a source provider without an explicit acceptance
-in onboarding/settings. Never cache playable stream addresses for resume or log
+in onboarding/settings or the store's review page. The Add-ons store lists
+built-in add-ons (`daniiltv://`), lists published through `addon_catalog` and
+Stremio's directory; under local-only instrumentation it uses only the fixture
+directory, never Stremio's. Never cache playable stream addresses for resume or log
 configured add-on URL paths/queries. Metadata/import/preference values use the
 app's Keystore-backed encryption; backup and device transfer are disabled. Tests
 use database-specific import directories and an untrusted loopback TLS fixture

@@ -9,10 +9,19 @@ import java.util.TreeMap;
 /** Builds resource paths without decoding or rebuilding an add-on's configured path. */
 public final class AddonUrl {
     public static final String CINEMETA = "https://v3-cinemeta.strem.io/manifest.json";
+    /** Add-ons answered inside the app ({@link BuiltinAddons}), addressed as {@code daniiltv://name/manifest.json}. */
+    public static final String BUILTIN = "daniiltv://";
     public final String manifest;
     private final String base, query;
 
     public AddonUrl(String value) throws AddonException {
+        if (value.startsWith(BUILTIN)) {
+            if (!value.matches("daniiltv://[a-z0-9-]+/manifest\\.json")) throw new AddonException(AddonException.Kind.INVALID_URL, "Unknown built-in add-on");
+            manifest = value;
+            base = value.substring(0, value.length() - 14);
+            query = "";
+            return;
+        }
         URI uri = web(value);
         String path = uri.getRawPath();
         if (path == null || !path.endsWith("/manifest.json") || uri.getRawFragment() != null) {
@@ -25,7 +34,7 @@ public final class AddonUrl {
     }
 
     public String resource(String resource, String type, String id, Map<String, String> extras) {
-        if (!resource.matches("catalog|meta|stream|subtitles")) throw new IllegalArgumentException("Unknown resource");
+        if (!resource.matches("catalog|meta|stream|subtitles|addon_catalog")) throw new IllegalArgumentException("Unknown resource");
         StringBuilder out = new StringBuilder(base).append('/').append(resource).append('/')
                 .append(encode(type)).append('/').append(encode(id));
         if (!extras.isEmpty()) {
@@ -52,8 +61,17 @@ public final class AddonUrl {
         }
     }
 
+    public boolean builtin() { return manifest.startsWith(BUILTIN); }
+
+    /** What people paste: add-on configure pages hand out {@code stremio://host/…/manifest.json} install links. */
+    public static String normalize(String input) {
+        String value = input.trim();
+        return value.regionMatches(true, 0, "stremio://", 0, 10) ? "https://" + value.substring(10) : value;
+    }
+
     /** Never display configured paths, userinfo, queries, or fragments in diagnostic output. */
     public static String redacted(String value) {
+        if (value.matches("daniiltv://[a-z0-9-]+/manifest\\.json")) return value;
         try {
             URI uri = web(value);
             return uri.getScheme() + "://" + uri.getHost() + (uri.getPort() < 0 ? "" : ":" + uri.getPort()) + "/…";

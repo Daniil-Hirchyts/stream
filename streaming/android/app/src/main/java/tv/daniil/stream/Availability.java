@@ -12,7 +12,7 @@ import tv.daniil.stream.data.InstalledAddon;
 final class Availability {
     static final String NO_PROVIDER = "No source add-on installed";
     static final String NO_PROVIDER_DETAIL = "Cinemeta and other catalogue add-ons describe titles but don't supply video. "
-            + "Add a source add-on in Settings to find streams for this title, or import a torrent yourself.";
+            + "Install a source add-on from Add-ons to find video for this title, or import a torrent yourself.";
 
     final String heading, detail;
     private Availability(String heading, String detail) { this.heading = heading; this.detail = detail; }

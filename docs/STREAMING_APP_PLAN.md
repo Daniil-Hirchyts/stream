@@ -157,6 +157,8 @@ Store credential-bearing add-on URLs encrypted using Android Keystore-backed enc
 
 Offer `https://v3-cinemeta.strem.io/manifest.json` during onboarding. Do not install playback-source add-ons automatically or require a debrid account.
 
+Follow-up (2026-10-22): an Add-ons tab lists built-in add-ons, `addon_catalog` lists from installed add-ons and Stremio's Official/Community directory, with a review before every install. A built-in, opt-in Internet Archive add-on supplies public-domain films over HTTPS. See [streaming-validation.md](streaming-validation.md).
+
 ### Source selection and device compatibility
 
 The default Play/Resume action resolves sources and selects the highest-ranked compatible candidate. A separate Sources action allows explicit selection.

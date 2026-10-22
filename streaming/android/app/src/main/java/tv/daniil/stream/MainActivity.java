@@ -46,7 +46,7 @@ import tv.daniil.stream.ui.Tv;
  * route render owns a cancellable provider scope and a generation, so late results never reach a newer screen.
  */
 public final class MainActivity extends Activity implements Navigator, PageAdapter.Listener {
-    private static final String[] TABS = {"Home", "Search", "Library", "History", "Imports", "Settings"};
+    private static final String[] TABS = {"Home", "Search", "Library", "History", "Imports", "Add-ons", "Settings"};
     private static final int PICK_TORRENT = 21;
     private TvApplication app;
     private TvApplication.Services services;
@@ -61,6 +61,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private BrowseScreens browse;
     private TitleScreens titles;
     private SetupScreens setup;
+    private StoreScreens store;
     private Cancellation scope;
     private Future<?> pending;
     private int generation;
@@ -102,7 +103,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private void initialize() {
         work(() -> app.services(), value -> {
             services = value;
-            browse = new BrowseScreens(this, services); titles = new TitleScreens(this, services); setup = new SetupScreens(this, this, services);
+            browse = new BrowseScreens(this, services); titles = new TitleScreens(this, services); setup = new SetupScreens(this, this, services); store = new StoreScreens(this, services);
             if (route().screen.equals("Starting")) {
                 // Someone who already added a provider or an import has finished onboarding in practice.
                 work(() -> services.store.preference("onboardingDone", "false").equals("true") || !services.store.addons().isEmpty() || !services.store.importIds().isEmpty(),
@@ -141,6 +142,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             case "Imports": return setup.imports();
             case "Settings": return setup.settings();
             case "Add-on": return setup.addon(route);
+            case "Add-ons": return store.store(route, request);
+            case "Add-on review": return store.review(route, request);
             case "Catalogues": return browse.catalogues();
             case "Catalogue": return browse.catalogue(route, request);
             case "Details": return titles.details(route, request);
@@ -291,8 +294,9 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     @Override public void alert(String title, String message) {
         showDialog(new AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("OK", null).create());
     }
-    @Override public void addAddon() { edit("Add add-on", "https://provider/manifest.json", "", this::previewAddon); }
-    @Override public void previewAddon(String address) {
+    @Override public void addAddon() { edit("Add add-on", "https://… or stremio://…/manifest.json", "", this::previewAddon); }
+    @Override public void previewAddon(String input) {
+        String address = AddonUrl.normalize(input);
         loading();
         int mine = generation;
         Cancellation request = scope;

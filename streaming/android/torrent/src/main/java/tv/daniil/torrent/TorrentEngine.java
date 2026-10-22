@@ -91,6 +91,11 @@ public final class TorrentEngine implements AutoCloseable {
             return new Source(metainfo, magnet, infoHash, urls.clone(), peers);
         }
 
+        /** These trackers, only if no others were given: for providers that name a torrent but no way to find its peers. */
+        public Source withFallbackTrackers(String... urls) {
+            return trackers.length > 0 ? this : withTrackers(urls);
+        }
+
         /** "address:port" of peers to contact directly. */
         public Source withPeers(String... addresses) {
             return new Source(metainfo, magnet, infoHash, trackers, addresses.clone());

@@ -75,7 +75,7 @@ final class TitleScreens {
         }
         if (!local && noSources(title, video)) {
             page.add(Item.notice(R.drawable.ic_tv_info, Availability.NO_PROVIDER, Availability.NO_PROVIDER_DETAIL,
-                    new Action("add-source", Action.Style.SECONDARY, "Add source add-on", nav::addAddon).icon(R.drawable.ic_tv_add)));
+                    new Action("add-source", Action.Style.SECONDARY, "Find a source add-on", () -> nav.push(StoreScreens.route("Sources"))).icon(R.drawable.ic_tv_extension)));
         }
         if (title.type.equals("series")) episodes(page, route, title);
         if (!title.cast.isEmpty()) page.add(Item.text("Starring", String.join(", ", title.cast.subList(0, Math.min(8, title.cast.size())))));
@@ -154,7 +154,7 @@ final class TitleScreens {
             Availability why = Availability.of(providers, sources, found == null ? new java.util.HashMap<>() : found.failures, installed);
             page.add(providers.isEmpty()
                     ? Item.message(R.drawable.ic_tv_extension, why.heading, why.detail,
-                        new Action("add-source", Action.Style.PRIMARY, "Add source add-on", nav::addAddon).icon(R.drawable.ic_tv_add))
+                        new Action("add-source", Action.Style.PRIMARY, "Find a source add-on", () -> nav.push(StoreScreens.route("Sources"))).icon(R.drawable.ic_tv_extension))
                     : Item.message(found.failures.isEmpty() ? R.drawable.ic_tv_search : R.drawable.ic_tv_offline, why.heading, why.detail));
         } else if (found != null && !found.failures.isEmpty()) {
             page.add(Item.notice(R.drawable.ic_tv_offline, "Some providers are unavailable", Availability.failures(found.failures, installed)));

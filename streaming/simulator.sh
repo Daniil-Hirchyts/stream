@@ -6,6 +6,7 @@
 #   ./streaming/simulator.sh services        Start the fixture service (58133) and seeder (58134) for the emulator
 #   ./streaming/simulator.sh test            Engine/playback and add-on/persistence tests (verified emulator only)
 #   ./streaming/simulator.sh engine-test | data-test
+#   ./streaming/simulator.sh live-film       Optional: real public-domain films from the internet through the store
 #   ./streaming/simulator.sh status | logs | stop-services
 set -u
 
@@ -211,6 +212,8 @@ case "${1:-up}" in
   engine-test) run_tests ;;
   data-test) run_data_tests ;;
   smoke) run_data_tests tv.daniil.stream.AppFlowTest ;;
+  # Not a required suite: public services and swarms change. Uses the internet, never the LAN or a physical TV.
+  live-film) run_data_tests tv.daniil.stream.LiveFilmTest ;;
   acceptance) run_data_tests "${2:-tv.daniil.stream.AppFlowTest,tv.daniil.stream.AcceptanceTest,tv.daniil.stream.ProfileTest}" ;;
   process-death)
     start_services && install_app && (prepare_java; cd "$ANDROID_DIR"; ./gradlew -q :app:assembleDebugAndroidTest) && \
@@ -227,5 +230,5 @@ case "${1:-up}" in
     device logcat -d -t 400 -v time || exit $?
     for log in "$STATE_DIR/fixtures.log" "$STATE_DIR/seeder.log"; do [ -f "$log" ] && { printf '\n== %s\n' "$log"; tail -n 40 "$log"; }; done ;;
   stop-services) stop_services ;;
-  *) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

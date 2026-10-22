@@ -15,6 +15,14 @@ import tv.daniil.torrent.TorrentEngine;
 /** An advertised candidate, including unsupported candidates so Sources can explain them. */
 public final class MediaSource {
     public enum Kind { HTTP, TORRENT, MAGNET, UNSUPPORTED }
+    /**
+     * Long-running open trackers, announced to when a source names no trackers of its own (many add-ons send only an
+     * info hash). DHT alone finds peers too, but a cold DHT often needs longer than a viewer waits.
+     */
+    public static final String[] PUBLIC_TRACKERS = {
+            "udp://tracker.opentrackr.org:1337/announce", "udp://open.demonii.com:1337/announce", "udp://open.stealth.si:80/announce",
+            "udp://tracker.torrent.eu.org:451/announce", "udp://exodus.desync.com:6969/announce", "udp://explodie.org:6969/announce",
+            "http://tracker.opentrackr.org:1337/announce"};
     public final String provider, name, description, reason;
     public final Kind kind;
     @Nullable public final String url, infoHash, filename, videoHash, bingeGroup;
