@@ -199,10 +199,13 @@ final class BrowseScreens {
         // Filters with listed values are rows of chips on the page (no long list in a dialog); free text asks in a dialog.
         boolean complete = true;
         List<Item.Action> typed = new ArrayList<>();
+        // A required filter with listed values starts on its first value, so the catalogue loads at once.
+        Map<String, String> applied = new LinkedHashMap<>(route.extras);
         for (AddonManifest.Extra e : catalog.extras) if (!e.name.equals("skip")) {
-            if (e.required && !route.extras.containsKey(e.name)) complete = false;
+            if (e.required && !applied.containsKey(e.name) && !e.options.isEmpty()) applied.put(e.name, e.options.get(0));
+            if (e.required && !applied.containsKey(e.name)) complete = false;
             if (e.name.equals("search") && !e.required) continue;
-            String chosen = route.extras.get(e.name);
+            String chosen = applied.get(e.name);
             if (e.options.isEmpty()) {
                 typed.add(new Item.Action("filter:" + e.name, Item.Action.Style.CHIP, capitalise(e.name), () -> filter(route, e))
                         .detail(chosen != null ? chosen : e.required ? "Choose" : "Any").selected(chosen != null));
@@ -213,11 +216,12 @@ final class BrowseScreens {
                     .selected(chosen == null));
             for (String option : e.options) values.add(new Item.Action("filter:" + e.name + ":" + option, Item.Action.Style.CHIP, option,
                     () -> choose(route, e.name, option)).selected(option.equals(chosen)));
-            page.add(Item.chips("filters:" + e.name, capitalise(e.name), values));
+            // The chips speak for themselves; no "Genre" heading above them.
+            page.add(Item.chips("filters:" + e.name, "", values));
         }
         if (!typed.isEmpty()) page.add(Item.chips("filters", "", typed));
         if (!complete) return page.add(Item.message(R.drawable.ic_tv_list, "Choose the required filters", "Then this catalogue will load."));
-        Map<String, String> extras = new LinkedHashMap<>(route.extras);
+        Map<String, String> extras = applied;
         if (catalog.supports("skip")) extras.put("skip", Integer.toString(route.page * CATALOGUE_PAGE_SIZE));
         progress.accept(page.copy().add(Item.skeleton("Catalogue results")));
         AddonRepository.Result<Title> found = services.addons.catalogs(Collections.singletonList(new AddonRepository.CatalogQuery(addon, catalog, extras)), scope);

@@ -858,38 +858,27 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                 status.setGravity(Gravity.CENTER);
                 capsule.addView(status, new LinearLayout.LayoutParams(dp(92), dp(40)));
             } else {
-                Item.Action action = position == 0 ? previous : next;
-                View button;
-                if (action != null) button = quietControl(action, position == 0 ? "‹" : "›", false);
-                else {
-                    TextView unavailable = Tv.heading(context, position == 0 ? "‹" : "›", 23, R.color.tv_text_tertiary);
-                    unavailable.setGravity(Gravity.CENTER); button = unavailable;
-                }
-                capsule.addView(button, new LinearLayout.LayoutParams(dp(44), dp(40)));
+                capsule.addView(pageButton(position == 0 ? previous : next, position == 0), new LinearLayout.LayoutParams(dp(40), dp(40)));
             }
         }
         root.addView(capsule); restoreControls(root, item);
         root.setLayoutParams(fill()); return root;
     }
 
-    /** Quiet until focused: small, transparent utility actions with a clear remote focus state. */
-    private View quietControl(Item.Action action, String label, boolean iconOnly) {
+    /** A round page arrow: a chevron in a circle, dimmed and inert where there is no page to go to. */
+    private View pageButton(@androidx.annotation.Nullable Item.Action action, boolean previous) {
         FrameLayout button = new FrameLayout(context);
+        button.setBackgroundResource(R.drawable.tv_button_round);
+        ImageView chevron = Tv.icon(context, R.drawable.ic_tv_chevron, 18, action == null ? R.color.tv_text_tertiary : R.color.tv_on_glass);
+        chevron.setDuplicateParentStateEnabled(true);
+        if (previous) chevron.setRotation(180);
+        button.addView(chevron, new FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER));
+        if (action == null) { button.setAlpha(0.5f); button.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO); return button; }
         button.setContentDescription(action.label); button.setTooltipText(action.label);
-        button.setBackgroundResource(R.drawable.tv_utility_button);
-        if (iconOnly) {
-            ImageView icon = Tv.icon(context, action.icon, 17, R.color.tv_on_glass_secondary);
-            button.addView(icon, new FrameLayout.LayoutParams(dp(17), dp(17), Gravity.CENTER));
-        } else {
-            TextView text = Tv.heading(context, label, label.length() == 1 ? 23 : 13, R.color.tv_on_glass_secondary);
-            text.setDuplicateParentStateEnabled(true); text.setGravity(Gravity.CENTER);
-            text.setPadding(dp(12), 0, dp(12), 0);
-            button.addView(text, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        }
-        button.setLayoutParams(new LinearLayout.LayoutParams(iconOnly ? dp(40) : dp(100), dp(40)));
         Tv.control(button, action.key, action.action, this::focused, 1f, false);
         return button;
     }
+
     private void restoreControls(ViewGroup root, Item item) {
         for (Item.Action action : item.actions) if (action.key.equals(restore)) {
             View control = root.findViewWithTag(action.key);

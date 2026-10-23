@@ -162,12 +162,12 @@ public final class Tv {
                     ((LinearLayout.LayoutParams) icon.getLayoutParams()).rightMargin = dp(context, 8);
                     content.addView(icon);
                 }
-                TextView label = oneLine(heading(context, action.shown(), chip ? 14.5f : 16, R.color.tv_on_glass));
+                TextView label = oneLine(heading(context, action.shown(), chip ? 14.5f : 16, chip ? R.color.tv_chip_text : R.color.tv_on_glass));
                 label.setDuplicateParentStateEnabled(true);
                 content.addView(label);
                 // A short value after the label: a chip's current filter, or the episode a Play button starts.
                 if (!action.detail.isEmpty()) {
-                    TextView value = oneLine(text(context, action.detail, chip ? 14.5f : 16, R.color.tv_on_glass_secondary));
+                    TextView value = oneLine(text(context, action.detail, chip ? 14.5f : 16, chip ? R.color.tv_chip_text_secondary : R.color.tv_on_glass_secondary));
                     value.setDuplicateParentStateEnabled(true);
                     value.setPadding(dp(context, 6), 0, 0, 0);
                     content.addView(value);
