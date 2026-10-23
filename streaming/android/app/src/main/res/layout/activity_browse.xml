@@ -182,15 +182,33 @@
                 android:src="@drawable/ic_tv_chevron" android:tint="@color/tv_on_glass_secondary"
                 android:duplicateParentState="true" android:importantForAccessibility="no" />
         </FrameLayout>
+        <!-- The clock sits beside the page tools, at the screen's top right corner. -->
         <LinearLayout
-            android:id="@+id/home_tools"
             android:layout_width="wrap_content"
             android:layout_height="40dp"
             android:layout_gravity="top|end"
             android:layout_marginTop="22dp"
             android:layout_marginEnd="48dp"
-            android:orientation="horizontal"
             android:elevation="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+        <TextClock
+            android:id="@+id/clock"
+            style="@style/Text.Time"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="16dp"
+            android:importantForAccessibility="no"
+            android:shadowColor="#B3000000"
+            android:shadowDy="1"
+            android:shadowRadius="6"
+            android:textColor="@color/tv_text_secondary"
+            android:visibility="gone" />
+        <LinearLayout
+            android:id="@+id/home_tools"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:orientation="horizontal"
             android:visibility="gone">
             <FrameLayout android:id="@+id/home_browse" android:layout_width="40dp" android:layout_height="40dp"
                 android:background="@drawable/tv_utility_button" android:contentDescription="Browse catalogues">
@@ -204,6 +222,7 @@
                     android:src="@drawable/ic_tv_refresh" android:tint="@color/tv_on_glass_secondary"
                     android:duplicateParentState="true" android:importantForAccessibility="no" />
             </FrameLayout>
+        </LinearLayout>
         </LinearLayout>
     </FrameLayout>
 </FrameLayout>

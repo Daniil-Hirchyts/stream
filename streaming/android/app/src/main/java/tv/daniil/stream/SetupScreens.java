@@ -43,7 +43,7 @@ final class SetupScreens {
     }
 
     /**
-     * Settings as a split view: six categories on the left, the focused one's rows on the right. Each row keeps its
+     * Settings as a split view: seven categories on the left, the focused one's rows on the right. Each row keeps its
      * label; the categories only group them. The category shown is remembered on the route.
      */
     Page settings(Route route) {
@@ -119,6 +119,15 @@ final class SetupScreens {
                 Item.row("clear-cache", 0, "Clear app playback and metadata cache", "",
                         () -> nav.mutate(() -> { clearCaches(context, services); return null; }))));
 
+        String clock = clockFormat(services);
+        boolean playerClock = playerClock(services);
+        category(categories, panes, "settings:clock", R.drawable.ic_tv_settings, "Clock", Arrays.asList(
+                Item.row("clock", 0, "Clock", tv.daniil.stream.ui.Clock.name(clock),
+                        () -> nav.choose("Clock", tv.daniil.stream.ui.Clock.NAMES,
+                                i -> nav.mutate(() -> { services.store.setPreference("clock", tv.daniil.stream.ui.Clock.VALUES[i]); return null; }))),
+                Item.row("player-clock", 0, "Clock in player", playerClock ? "On" : "Off",
+                        () -> nav.mutate(() -> { services.store.setPreference("playerClock", playerClock ? "false" : "true"); return null; }))));
+
         boolean developerMode = developerMode(services);
         List<Item> about = new ArrayList<>();
         about.add(Item.row("developer-mode", 0, "Developer mode", developerMode ? "On" : "Off", () -> nav.mutate(() -> {
@@ -137,6 +146,10 @@ final class SetupScreens {
     /** Removes only this app's disposable payload/subtitle files and cached metadata. */
     /** The viewer's interface sounds switch (on unless turned off). Reads the store: call on a worker. */
     static boolean soundsOn(TvApplication.Services services) { return !services.store.preference("interfaceSounds", "true").equals("false"); }
+    /** The clock's format ("", "24", "12" or "off"); reads the store, so call on a worker. */
+    static String clockFormat(TvApplication.Services services) { return services.store.preference("clock", ""); }
+    /** Whether the player overlay shows the clock too (on unless turned off). Reads the store: call on a worker. */
+    static boolean playerClock(TvApplication.Services services) { return !services.store.preference("playerClock", "true").equals("false"); }
     /** Diagnostics are opt-in. Read the encrypted store on an application worker. */
     static boolean developerMode(TvApplication.Services services) { return services.store.preference("developerMode", "false").equals("true"); }
     static void clearCaches(Context context, TvApplication.Services services) {

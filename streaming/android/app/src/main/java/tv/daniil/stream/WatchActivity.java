@@ -67,6 +67,11 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private final StartupWatchdog startupWatchdog = new StartupWatchdog();
     private String audioChoice = "", subtitleChoice = "";
     private Dialog choiceDialog;
+    /** The media now loaded, kept so a subtitle chosen in the player can reload it in place. */
+    private PlaybackRequest playing;
+    /** Every subtitle the add-ons offer for this source, the preferred language first; the player lists them. */
+    private List<SubtitleSource> subtitleOffers = Collections.emptyList();
+    private static final int MAX_OFFERS = 40;
     private boolean autoplay = true;
     private boolean developerMode;
     /** Public torrents: trackers answer within seconds, a cold DHT lookup can take most of a minute. */
@@ -101,6 +106,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             try {
                 TvApplication.Services data = app.services();
                 boolean diagnosticsEnabled = SetupScreens.developerMode(data);
+                String clockFormat = SetupScreens.clockFormat(data); boolean clockShown = SetupScreens.playerClock(data);
                 Title saved = null;
                 String id = getIntent().getStringExtra("titleId"), provider = getIntent().getStringExtra("provider");
                 for (TvStore.LibraryEntry e : data.store.library(false)) if (e.title.id.equals(id) && e.title.provider.equals(provider)) saved = e.title;
@@ -109,6 +115,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 main.post(() -> {
                     if (!current(mine)) return;
                     services = data; title = chosen; developerMode = diagnosticsEnabled;
+                    tv.daniil.stream.ui.Clock.apply(findViewById(R.id.player_clock), clockFormat, clockShown);
                     session = new PlaybackSession(this, data.playerPreferences, getString(R.string.app_name), "DaniilTV/0.1", this, 24 << 20);
                     session.player().setTrackSelectionParameters(session.player().getTrackSelectionParameters().buildUpon().setMaxVideoSize(1920, 1080).build());
                     session.player().addAnalyticsListener(new AnalyticsListener() {
@@ -217,7 +224,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         save(session.snapshot()); session.stop(); cancelPreparation();
         findViewById(R.id.player_root).requestFocus();
         int mine = generation; scope = services.addons.newRequest(); Cancellation request = scope;
-        selected = source;
+        selected = source; playing = null; subtitleOffers = Collections.emptyList();
         if (chosenIndex < 0) { attempts++; if (source != null) { attemptedSources.add(SourcePolicy.retryKey(source)); attemptedProviders.add(source.provider); } }
         handledError = null; observedVideo = observedAudio = null; heardPlay = null; heardAt = 0;
         switching = true; failureQueued = false; preferencesInitialized = false; firstFrameMs = 0; droppedFrames = 0;
@@ -231,17 +238,11 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 String subtitles = services.store.preference("subtitleLanguage", "");
                 if (subtitles.isEmpty()) subtitles = services.playerPreferences.getBoolean("subtitles_on", false) ? services.playerPreferences.getString("subtitle_language", "") : "off";
                 List<SubtitleDownloader.Source> captions = new ArrayList<>();
-                if (source != null && !subtitles.equals("off")) {
-                    List<SubtitleSource> advertised = new ArrayList<>(source.subtitles);
-                    Map<String, String> hints = new LinkedHashMap<>();
-                    if (source.filename != null) hints.put("filename", source.filename);
-                    if (source.videoHash != null) hints.put("videoHash", source.videoHash);
-                    if (source.videoSize > 0) hints.put("videoSize", Long.toString(source.videoSize));
-                    try { advertised.addAll(services.addons.subtitles(title.type, video, hints, request).items); } catch (AddonException ignored) { /* optional subtitles never stop video */ }
-                    String wanted = subtitles;
-                    advertised.sort(java.util.Comparator.comparingInt(s -> sameLanguage(s.language, wanted) ? 0 : 1));
-                    for (SubtitleSource s : advertised) if (captions.size() < 8) captions.add(new SubtitleDownloader.Source(s.url, mime(s.url), s.language, s.language));
-                }
+                boolean subtitlesOff = subtitles.equals("off");
+                // With subtitles off the video starts at once; the offers arrive afterwards for the player's menu.
+                List<SubtitleSource> offers = source == null || subtitlesOff ? Collections.emptyList() : subtitleOffers(source, subtitles, request);
+                for (SubtitleSource s : offers) if (captions.size() < 8) captions.add(caption(s));
+                captions = labelled(captions);
                 Uri uri; androidx.media3.datasource.DataSource.Factory dataSource = null;
                 if (source != null && source.kind == MediaSource.Kind.HTTP) uri = Uri.parse(source.url);
                 else {
@@ -283,9 +284,17 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 request.check();
                 main.post(() -> {
                     if (!current(mine)) return;
+                    playing = playback; subtitleOffers = offers;
                     switching = false; lastAdvanceMs = SystemClock.elapsedRealtime(); startupWatchdog.start(lastAdvanceMs); session.load(playback);
                     showLoading("video", "Preparing video", null, true);
                 });
+                if (source != null && subtitlesOff) {
+                    String wanted = services.playerPreferences.getString("subtitle_language", "");
+                    app.workers.execute(() -> {
+                        List<SubtitleSource> later = subtitleOffers(source, wanted, request);
+                        main.post(() -> { if (current(mine) && !later.isEmpty()) { subtitleOffers = later; screen.refreshMenu(); } });
+                    });
+                }
             } catch (Exception e) {
                 if (!current(mine)) return;
                 if (e instanceof TorrentException && ((TorrentException) e).kind == TorrentException.LOW_STORAGE) {
@@ -315,6 +324,83 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private static boolean sameLanguage(String one, String two) {
         if (one == null || two == null || two.isEmpty()) return false;
         try { return new java.util.Locale(one).getISO3Language().equals(new java.util.Locale(two).getISO3Language()); } catch (Exception e) { return one.equalsIgnoreCase(two); }
+    }
+    /** The source's own subtitles and the subtitle add-ons' for this video, without repeats, in {@code wanted} first. */
+    private List<SubtitleSource> subtitleOffers(MediaSource source, String wanted, Cancellation request) {
+        List<SubtitleSource> advertised = new ArrayList<>(source.subtitles);
+        Map<String, String> hints = new LinkedHashMap<>();
+        if (source.filename != null) hints.put("filename", source.filename);
+        if (source.videoHash != null) hints.put("videoHash", source.videoHash);
+        if (source.videoSize > 0) hints.put("videoSize", Long.toString(source.videoSize));
+        try { advertised.addAll(services.addons.subtitles(title.type, video, hints, request).items); } catch (Exception ignored) { /* optional subtitles never stop video */ }
+        advertised.sort(java.util.Comparator.comparingInt(s -> sameLanguage(s.language, wanted) ? 0 : 1));
+        List<SubtitleSource> unique = new ArrayList<>(); java.util.Set<String> urls = new java.util.HashSet<>();
+        for (SubtitleSource s : advertised) if (unique.size() < MAX_OFFERS && urls.add(s.url)) unique.add(s);
+        return Collections.unmodifiableList(unique);
+    }
+    private static SubtitleDownloader.Source caption(SubtitleSource s) { return new SubtitleDownloader.Source(s.url, mime(s.url), s.language, ""); }
+    /** Names each file by its language, numbering repeats: "English", "English 2". */
+    private static List<SubtitleDownloader.Source> labelled(List<SubtitleDownloader.Source> sources) {
+        List<SubtitleDownloader.Source> result = new ArrayList<>(); Map<String, Integer> seen = new java.util.HashMap<>();
+        for (SubtitleDownloader.Source s : sources) result.add(new SubtitleDownloader.Source(s.url, s.mime, s.language, numbered(languageName(s.language), seen)));
+        return result;
+    }
+    private static String numbered(String name, Map<String, Integer> seen) {
+        int count = seen.containsKey(name) ? seen.get(name) + 1 : 1; seen.put(name, count);
+        return count > 1 ? name + " " + count : name;
+    }
+    private static String languageName(String code) {
+        String name = SetupScreens.languageName(code);
+        if (!name.equals(code)) return name;
+        try { String display = java.util.Locale.forLanguageTag(code).getDisplayLanguage(java.util.Locale.ENGLISH); if (!display.isEmpty()) return display; } catch (Exception ignored) { /* provider's own code */ }
+        return code;
+    }
+    /** Offers not already loaded as tracks of the current media. */
+    private List<SubtitleSource> unloadedOffers() {
+        if (playing == null) return Collections.emptyList();
+        java.util.Set<String> loaded = new java.util.HashSet<>();
+        for (SubtitleDownloader.Source s : playing.subtitles) loaded.add(s.url);
+        List<SubtitleSource> result = new ArrayList<>();
+        for (SubtitleSource s : subtitleOffers) if (!loaded.contains(s.url)) result.add(s);
+        return result;
+    }
+    /** The add-ons' subtitles, chosen inside the player: the first pick turns subtitles on, later ones add a track. */
+    private MenuPanel.Page subtitleOffersPage(String heading) {
+        return MenuPanel.Page.of(heading, false, () -> {
+            List<MenuPanel.Item> items = new ArrayList<>();
+            if (session.textTracks().isEmpty()) items.add(MenuPanel.Item.choice("Off", null, true, () -> screen.menu().pop()));
+            // Numbered after the tracks already loaded, as they will be named once added.
+            Map<String, Integer> seen = new java.util.HashMap<>();
+            if (playing != null) for (SubtitleDownloader.Source s : playing.subtitles) numbered(languageName(s.language), seen);
+            for (SubtitleSource offer : unloadedOffers()) {
+                String name = languageName(offer.language);
+                items.add(MenuPanel.Item.choice(numbered(name, seen), null, false, () -> addSubtitles(offer, name)));
+            }
+            return items;
+        });
+    }
+    /** Reloads the current media where it is, adding the chosen file and showing it, keeping the tracks it had. */
+    private void addSubtitles(SubtitleSource chosen, String name) {
+        if (playing == null || session == null || switching || !visible || releasing) return;
+        PlaybackSnapshot state = session.snapshot();
+        // The chosen file goes after the loaded ones, so every track keeps the name the menu showed.
+        List<SubtitleDownloader.Source> captions = new ArrayList<>();
+        for (SubtitleDownloader.Source s : playing.subtitles) if (captions.size() < 7 && !s.url.equals(chosen.url)) captions.add(s);
+        captions.add(caption(chosen));
+        captions = labelled(captions);
+        String index = Integer.toString(captions.size() - 1);
+        PlaybackRequest next = new PlaybackRequest.Builder(playing.uri, playing.title).id(playing.id).detail(playing.detail)
+                .mimeType(playing.mimeType).position(state.positionMs).continuing(true)
+                .audioLanguage(state.audio != null && state.audio.language != null ? state.audio.language : playing.audioLanguage)
+                .headers(playing.headers).subtitleHeaders(playing.subtitleHeaders).subtitles(captions)
+                .subtitleRequest(new SubtitleTracks.Request(index, chosen.language, null)).dataSource(playing.dataSource).build();
+        keepPausedOnRecovery = state.started && !state.playWhenReady;
+        screen.menu().close();
+        save(state);
+        playing = next; resumePosition = state.positionMs;
+        lastAdvanceMs = SystemClock.elapsedRealtime(); startupWatchdog.start(lastAdvanceMs);
+        session.load(next);
+        showLoading("subtitles", "Loading " + name + " subtitles", null, true);
     }
     private static String mime(String url) { String lower = Uri.parse(url).getPath(); lower = lower == null ? "" : lower.toLowerCase(java.util.Locale.ROOT); return lower.endsWith(".srt") ? "application/x-subrip" : lower.endsWith(".ass") || lower.endsWith(".ssa") ? "text/x-ssa" : "text/vtt"; }
     private String episodeLabel() { for (Title.Episode e : title.episodes) if (e.id.equals(video)) return "S" + e.season + " E" + e.number + " · " + e.name; return ""; }
@@ -540,7 +626,15 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             if (canChooseSource()) result.add(MenuPanel.Item.action("Choose source", null, this::chooseSources));
             if (neighbour(-1) != null) result.add(MenuPanel.Item.action("Previous episode", null, () -> onPreviousEpisode()));
             if (neighbour(1) != null) result.add(MenuPanel.Item.action("Next episode", null, () -> onNextEpisode()));
-        } else if (developerMode) result.add(MenuPanel.Item.action("Developer", "Playback diagnostics", this::diagnostics));
+            // Before any track is loaded, the add-ons' subtitles stand in for the player's own Subtitles row.
+            if (session != null && session.isLoaded() && session.textTracks().isEmpty() && !unloadedOffers().isEmpty())
+                result.add(MenuPanel.Item.page("Subtitles", "Off", false, () -> screen.menu().push(subtitleOffersPage("Subtitles"))));
+        } else {
+            int more = session == null || session.textTracks().isEmpty() ? 0 : unloadedOffers().size();
+            if (more > 0) result.add(MenuPanel.Item.page("More subtitles", Integer.toString(more), false,
+                    () -> screen.menu().push(subtitleOffersPage("More subtitles"))));
+            if (developerMode) result.add(MenuPanel.Item.action("Developer", "Playback diagnostics", this::diagnostics));
+        }
         return result;
     }
     private final Runnable tick = new Runnable() {

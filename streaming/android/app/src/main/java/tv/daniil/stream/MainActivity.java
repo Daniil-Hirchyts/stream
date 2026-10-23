@@ -67,6 +67,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     @Nullable private Page shownPage;
     private final java.util.Map<Route, Page> retainedPages = new java.util.IdentityHashMap<>();
     private TextView searchQuery;
+    private android.widget.TextClock clock;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Route> stack = new ArrayList<>();
     private final Set<Dialog> dialogs = new HashSet<>();
@@ -128,6 +129,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         searchClose = findViewById(R.id.search_close);
         pageBack = findViewById(R.id.page_back);
         pageTools = findViewById(R.id.home_tools);
+        clock = findViewById(R.id.clock);
         pageBack.setTooltipText("Back");
         Tv.control(pageBack, "nav:back", this::back, key -> {}, 1f, false);
         pageBack.setNextFocusLeftId(R.id.page_back); pageBack.setNextFocusUpId(R.id.page_back);
@@ -320,6 +322,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         cancelWork();
         if (stopped || services == null) return;
         scope = services.addons.newRequest();
+        refreshClock();
         Route route = route(); Cancellation request = scope;
         if (shownRoute != route && !stayOnTabs) {
             // Hold focus before removing the clicked card. Skeletons have no controls; letting the framework
@@ -341,6 +344,14 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             if (mine == generation && !stopped && !isFinishing()) showPartial(partial);
         });
         work(() -> build(route, request, progress), this::show);
+    }
+    /** Reads the clock setting off the main thread; a page rebuilt after Settings changes picks up the new one. */
+    private void refreshClock() {
+        TvApplication.Services data = services;
+        app.workers.execute(() -> {
+            String format = SetupScreens.clockFormat(data);
+            main.post(() -> { if (!isFinishing()) tv.daniil.stream.ui.Clock.apply(clock, format, true); });
+        });
     }
     /** A new page slides a little way in from the direction of travel and fades up, rather than simply replacing the last. */
     private void enter() {

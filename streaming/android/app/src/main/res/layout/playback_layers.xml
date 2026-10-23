@@ -136,6 +136,20 @@
                     android:visibility="gone" />
             </LinearLayout>
 
+            <!-- The time of day, shown with the overlay; Settings → Clock picks its format or turns it off. -->
+            <TextClock
+                android:id="@+id/player_clock"
+                style="@style/Text.Time"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="24dp"
+                android:importantForAccessibility="no"
+                android:shadowColor="#B3000000"
+                android:shadowDy="1"
+                android:shadowRadius="6"
+                android:textColor="@color/tv_text_on_artwork"
+                android:visibility="gone" />
+
             <ImageView
                 android:id="@+id/control_options"
                 android:layout_width="48dp"

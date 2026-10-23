@@ -50,8 +50,11 @@ Shelves scroll horizontally. Page titles scroll with their page.
 - **Tab bar:** Search, Home, Library and Settings sit in one floating pill. It
   slides away once content scrolls under it and returns when focus reaches it
   or the page is back at its top. Content scrolling up fades into the top edge.
-- **Settings:** a split view. Six categories sit on the left: Add-ons,
-  Torrents, Languages, Subtitles, Playback and About.
+- **Clock:** a small clock sits at the top right of the browse screens and,
+  with the overlay, beside the player's title. Settings → Clock sets its
+  format (Automatic, 24-hour, 12-hour or Off) and whether the player shows it.
+- **Settings:** a split view. Seven categories sit on the left: Add-ons,
+  Torrents, Languages, Subtitles, Playback, Clock and About.
   - The focused category's rows show on the right and change as focus moves.
   - Right enters the pane at its first row, and Left returns to the lit
     category. The route remembers which category was open.
@@ -168,8 +171,14 @@ Cast keeps its own look:
 - **Palette:** `res/values/colors.xml`, `bg_panel`, `pill` and `bg_card_soft`.
 - **Overlay:** `layout/playback_layers.xml`, with the same IDs and the view
   types the library reads:
-  - The title and track details sit at the top, with round Audio & subtitles
-    and Close buttons beside them; there is no "Now playing" label.
+  - The title and track details sit at the top, with the clock and round
+    Audio & subtitles and Close buttons beside them; there is no "Now
+    playing" label.
+  - Subtitles are chosen in the player. With subtitles off, nothing downloads
+    before the video starts; the add-ons' subtitles are then fetched and the
+    options menu lists them under Subtitles. Once tracks are loaded, More
+    subtitles lists the rest. A choice reloads the video where it was, keeps
+    the loaded tracks, shows the new one and remembers its language.
   - The timeline sits low, with the elapsed and remaining times under its
     ends. There are no transport buttons: OK plays and pauses, left and right
     skip, Menu opens the options; a pointer clicks the centre glyph or drags
