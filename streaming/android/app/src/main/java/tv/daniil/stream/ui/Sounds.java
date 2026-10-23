@@ -14,7 +14,8 @@ import tv.daniil.stream.R;
  * whatever else sounds, never taking audio focus from a film or the viewer's music.
  *
  * <p>Three sizes: quiet touches as the viewer navigates (focus, a row's end, typing), controls (OK, Back, tabs,
- * pages, dialogs, the player's own) and moments (favourite, watched, installed, a failure, a title's end).
+ * pages, dialogs, the player's own) and moments (favourite, watched, installed, a failure, a title's end, and the
+ * start screen's short piece of music).
  *
  * <p>Never two at once, decided before anything plays:
  * <ul>
@@ -43,10 +44,17 @@ public final class Sounds {
         FAVOURITE_ON(R.raw.sfx_favourite_on, Size.MOMENT, 0.25), FAVOURITE_OFF(R.raw.sfx_favourite_off, Size.MOMENT, 0.2),
         WATCHED_ON(R.raw.sfx_watched_on, Size.MOMENT, 0.35), WATCHED_OFF(R.raw.sfx_watched_off, Size.MOMENT, 0.2),
         INSTALLED(R.raw.sfx_installed, Size.MOMENT, 0.5), WARNING(R.raw.sfx_warning, Size.MOMENT, 0.35),
-        UP_NEXT(R.raw.sfx_up_next, Size.MOMENT, 0.5), FINISHED(R.raw.sfx_finished, Size.MOMENT, 0.8);
+        UP_NEXT(R.raw.sfx_up_next, Size.MOMENT, 0.5), FINISHED(R.raw.sfx_finished, Size.MOMENT, 0.8),
+        // The start screen's music, and the swoosh it leaves with, laid over the opening's fading tail.
+        INTRO(R.raw.sfx_intro, Size.MOMENT, 2.6), INTRO_EXIT(R.raw.sfx_intro_exit, Size.MOMENT, 0.6, true);
 
         final int resource; final Size size; final long ms;
-        Sound(int resource, Size size, double seconds) { this.resource = resource; this.size = size; this.ms = Math.round(seconds * 1000); }
+        /** Plays over whatever is sounding rather than cutting it. */
+        final boolean layers;
+        Sound(int resource, Size size, double seconds) { this(resource, size, seconds, false); }
+        Sound(int resource, Size size, double seconds, boolean layers) {
+            this.resource = resource; this.size = size; this.ms = Math.round(seconds * 1000); this.layers = layers;
+        }
     }
     enum Size { TOUCH, CONTROL, MOMENT }
 
@@ -65,13 +73,26 @@ public final class Sounds {
     private Size sounding = Size.TOUCH;
     private Sound lastControl;
     private int stream;
+    private final boolean[] loaded = new boolean[Sound.values().length];
+    /** A sound asked for before its file had loaded (the start screen opens with the app), and when. */
+    private Sound pending;
+    private long pendingAt;
+    private final android.content.SharedPreferences remembered;
     /** Counts every sound played or declined, so a deferred select can tell whether its press already spoke. */
     private int spoken;
 
     private Sounds(Context context) {
-        pool = new SoundPool.Builder().setMaxStreams(2).setAudioAttributes(new AudioAttributes.Builder()
+        pool = new SoundPool.Builder().setMaxStreams(3).setAudioAttributes(new AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()).build();
+        pool.setOnLoadCompleteListener((p, id, status) -> {
+            for (Sound s : Sound.values()) if (ids[s.ordinal()] == id) loaded[s.ordinal()] = status == 0;
+            // Late by more than a moment, it would no longer match what it belongs to.
+            if (pending != null && loaded[pending.ordinal()] && SystemClock.uptimeMillis() - pendingAt < 1500) { Sound s = pending; pending = null; sound(s, 0); }
+        });
         for (Sound s : Sound.values()) ids[s.ordinal()] = pool.load(context, s.resource, 1);
+        // The Settings switch, mirrored outside the encrypted store so the first sound of a launch already knows it.
+        remembered = context.getSharedPreferences("sounds", Context.MODE_PRIVATE);
+        enabled = remembered.getBoolean("on", true);
         screenWidth = context.getResources().getDisplayMetrics().widthPixels;
     }
     /** Loads the sounds once per process; call from each activity's onCreate. */
@@ -81,7 +102,7 @@ public final class Sounds {
     }
 
     /** The viewer's choice in Settings. */
-    public void setEnabled(boolean value) { enabled = value; }
+    public void setEnabled(boolean value) { enabled = value; remembered.edit().putBoolean("on", value).apply(); }
     /** The TV's own "System sounds" switch, read again whenever an activity resumes. */
     public void refresh(Context context) {
         systemEnabled = android.provider.Settings.System.getInt(context.getContentResolver(), android.provider.Settings.System.SOUND_EFFECTS_ENABLED, 1) != 0;
@@ -129,10 +150,12 @@ public final class Sounds {
             if (now - controlAt < (sound == lastControl ? REPEAT_MS : GAP_MS)) return;
             controlAt = now; lastControl = sound;
         }
-        // One voice: whatever is still sounding gives way.
-        if (busy && stream != 0) pool.stop(stream);
+        if (!loaded[sound.ordinal()]) { pending = sound; pendingAt = now; return; }
+        // One voice: whatever is still sounding gives way, unless this one is laid over it.
+        if (busy && stream != 0 && !sound.layers) pool.stop(stream);
         sounding = sound.size; soundingUntil = now + sound.ms;
         float rate = (float) Math.pow(2, semitones / 12.0);
-        stream = pool.play(ids[sound.ordinal()], LEVEL, LEVEL, sound.size.ordinal(), 0, rate);
+        int played = pool.play(ids[sound.ordinal()], LEVEL, LEVEL, sound.size.ordinal(), 0, rate);
+        if (!sound.layers) stream = played;
     }
 }

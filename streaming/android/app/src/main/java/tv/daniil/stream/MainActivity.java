@@ -105,6 +105,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             intro = new IntroView(this);
             ((FrameLayout) findViewById(R.id.browse_root)).addView(intro, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             introStarted = android.os.SystemClock.uptimeMillis();
+            Sounds.play(Sounds.Sound.INTRO);
             // However slow the providers are, the start screen never holds the app for long.
             main.postDelayed(this::finishIntro, 12_000);
         }
@@ -242,6 +243,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         wait = Math.max(wait, intro.postersMs());
         if (wait > 0) { main.postDelayed(this::finishIntro, wait); return; }
         IntroView leaving = intro;
+        Sounds.play(Sounds.Sound.INTRO_EXIT);
         leaving.finish(() -> {
             ((ViewGroup) leaving.getParent()).removeView(leaving);
             if (intro == leaving) intro = null;

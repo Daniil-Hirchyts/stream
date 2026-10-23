@@ -43,6 +43,8 @@ BUILD = os.path.join(HERE, "build")
 
 # id, name, when it is heard, group, level against the loudest moments (dB)
 EVENTS = [
+    ("intro", "Start", "The start screen: mark traces, glass fills, the name rises", "Start", -7),
+    ("intro-exit", "Start leaves", "The start screen zooms away into Home", "Start", -15),
     ("focus", "Focus", "Focus moves to another control", "Navigation", -22),
     ("edge", "Edge", "Focus can't go further (a row's end)", "Navigation", -18),
     ("select", "Select", "OK on a button, card or row", "Navigation", -12),
@@ -231,7 +233,61 @@ INSTRUMENTS = {
 CHOSEN = "glass"
 
 
+# ------------------------------------------------------------------ the start screen
+# The one place with a little music: timed to IntroView. The mark traces for 0.9 s, its glass fills from 0.55 s and
+# the name's six letters rise from 0.63 s to about 1.3 s; the screen may then stay while Home loads, and zooms away.
+
+def pad(f, attack, hold, release, seed):
+    """A dark, slow chord voice: three slightly detuned sines swelling in and fading, low-passed."""
+    n = int(SR * (attack + hold + 6 * release))
+    t = np.arange(n) / SR
+    rng = np.random.default_rng(seed)
+    x = sum(np.sin(TAU * f * 2 ** (c / 1200) * t + rng.uniform(0, TAU)) for c in (-5.0, 0.0, 5.0)) / 3
+    x = x + 0.12 * np.sin(TAU * 2 * f * t + rng.uniform(0, TAU))
+    rise = 0.5 * (1 - np.cos(np.pi * np.clip(t / attack, 0, 1)))
+    fall = np.exp(-np.clip(t - attack - hold, 0, None) / release)
+    return lp(x * rise * fall, 1400)
+
+
+def layer(parts):
+    out = np.zeros(max(int(round(at * SR)) + len(x) for at, x, _ in parts))
+    for at, x, gain in parts:
+        i = int(round(at * SR))
+        out[i:i + len(x)] += gain * x
+    return out
+
+
+def intro():
+    """A low fifth swells as the mark traces, a glass tap as it fills, and a warm chord settles as the name lands."""
+    seed = zlib.crc32(b"intro")
+    return layer([
+        (0.0, pad(hz("D3"), 0.75, 0.45, 0.9, seed), 0.55),
+        (0.05, pad(hz("A3"), 0.8, 0.4, 0.9, seed + 1), 0.35),
+        (0.55, glass(hz("A4"), 0.13, 0.92, seed), 0.55),
+        (1.22, pad(hz("D4"), 0.25, 0.5, 0.9, seed + 2), 0.28),
+        (1.28, glass(hz("D4"), 0.4, 1.0, seed), 0.42),
+        (1.29, glass(hz("F#4"), 0.38, 1.0, seed), 0.3),
+        (1.30, glass(hz("A4"), 0.42, 1.0, seed), 0.36),
+        (1.33, glass(hz("E5"), 0.3, 1.0, seed), 0.18),
+    ])
+
+
+def intro_exit():
+    """Air rushing past as the mark zooms away, over the low D settling."""
+    seed = zlib.crc32(b"intro-exit")
+    n = int(SR * 0.7)
+    t = np.arange(n) / SR
+    air = hp(lp(np.random.default_rng(seed).standard_normal(n), 1300), 220)
+    shape = np.sin(np.pi * np.clip(t / 0.62, 0, 1)) ** 2
+    return layer([(0.0, air * shape / (np.max(np.abs(air)) + 1e-12), 0.5), (0.04, glass(hz("D3"), 0.16, 0.9, seed), 0.6)])
+
+
+PIECES = {"intro": intro, "intro-exit": intro_exit}
+
+
 def render(instrument, name):
+    if name in PIECES:
+        return PIECES[name]()
     seed = zlib.crc32(name.encode())
     layers = []
     for item in (TV_SCORES if instrument == "glass" else SCORES)[name]:

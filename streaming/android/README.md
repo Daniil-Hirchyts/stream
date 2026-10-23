@@ -117,7 +117,10 @@ Shelves scroll horizontally. Page titles scroll with their page.
   Navigation has quiet ticks: focus moving (in the player's controls and menu
   too), a row's end, typing; tabs, pages, chips, dialogs and the player's
   pause, play, skips and menu have small sounds; favourite, watched, an add-on
-  installed, a failure, up next and a title's end have fuller ones. Ticks
+  installed, a failure, up next and a title's end have fuller ones. The start
+  screen has the one piece of music, timed to its animation: a low fifth
+  swells as the mark traces, a glass tap as it fills, a warm chord as the name
+  lands, and a soft rush of air as it zooms into Home. Ticks
   follow only the viewer's arrows and touches, never focus a page restores, and
   lean up to a semitone with their place across the screen. `ui.Sounds` plays
   them as sonification (never taking audio focus) with one voice: a new sound

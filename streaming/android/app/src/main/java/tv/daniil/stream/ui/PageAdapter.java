@@ -391,17 +391,6 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     }
 
     /**
-     * The first tile of a row grows from its leading edge rather than its centre. Grown from the centre it reaches
-     * past the row's edge, and moving focus between it and its neighbour reads as the whole row shifting.
-     */
-    private static void growFromStart(View tile) {
-        View art = tile instanceof LinearLayout ? ((LinearLayout) tile).getChildAt(0) : tile;
-        art.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            view.setPivotX(0); view.setPivotY((bottom - top) / 2f);
-        });
-    }
-
-    /**
      * Equal-width tiles: weights rather than a measured width, which may still be the previous page's. Each column is
      * an equal slot that gives up the same share of the gaps, so a short last row lines up with the full rows above.
      */
@@ -416,7 +405,6 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         row.setClipChildren(false); row.setClipToPadding(false); row.setWeightSum(columns);
         row.setPadding(gutterStart, dp(12), gutterEnd, dp(6));
         int gap = dp(GAP);
-        if (!tiles.isEmpty()) growFromStart(tiles.get(0));
         for (int i = 0; i < tiles.size(); i++) {
             FrameLayout slot = new FrameLayout(context); slot.setClipChildren(false); slot.setClipToPadding(false);
             slot.setPadding(gap * i / columns, 0, gap - gap * (i + 1) / columns, 0);
@@ -448,7 +436,6 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         @Override public void onBindViewHolder(Holder holder, int position) {
             FrameLayout box = (FrameLayout) holder.itemView; box.removeAllViews();
             View tile = tile(tiles.get(position), style, dp(widthDp));
-            if (columns > 0 ? position % columns == 0 : position == 0) growFromStart(tile);
             if (columns > 0) {
                 // Each column gives up the same share of the gaps, so every tile in a grid has the same width.
                 int column = position % columns, gap = dp(gapDp);
@@ -1403,9 +1390,10 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                     return true;
                 }
             }
-            // A pointer that lands on a tile already in full view (often the first) must not slide the whole shelf.
-            if (getOrientation() == HORIZONTAL && parent.isInTouchMode() && child.getLeft() + rect.left >= getPaddingLeft()
-                    && child.getLeft() + rect.right <= getWidth() - getPaddingRight()) return false;
+            // Focus zoom is allowed into the shelf's unclipped gutters. Use the stable item bounds, not the
+            // animated artwork rectangle, and keep an already visible card still for both remote and pointer input.
+            if (getOrientation() == HORIZONTAL && getDecoratedLeft(child) >= getPaddingLeft()
+                    && getDecoratedRight(child) <= getWidth() - getPaddingRight()) return false;
             Rect grown = new Rect(rect);
             if (getOrientation() == VERTICAL) { grown.top -= margin; grown.bottom += margin; } else { grown.left -= margin; grown.right += margin; }
             return super.requestChildRectangleOnScreen(parent, child, grown, immediate, focusedChildVisible);

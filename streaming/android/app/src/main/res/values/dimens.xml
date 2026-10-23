@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Timeline touch target, time labels, bottom inset and caption gap, before the first measurement. -->
+    <dimen name="controls_height">104dp</dimen>
     <!-- Corner radii, one scale for the whole app (dp on the 960 dp canvas, half of tvOS points). Rectangular controls
          and artwork share one radius; floating and filter controls are capsules; icon buttons are circles. -->
     <dimen name="tv_radius_key">8dp</dimen>

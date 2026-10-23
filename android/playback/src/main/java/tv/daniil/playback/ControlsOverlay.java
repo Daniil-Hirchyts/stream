@@ -96,7 +96,9 @@ final class ControlsOverlay {
         View strip = (View) progress.getParent();
         int fallback = root.getResources().getDimensionPixelSize(R.dimen.controls_height);
         int gap = Math.round(16 * root.getResources().getDisplayMetrics().density);
-        return strip.getHeight() > 0 ? Math.max(fallback, root.getHeight() - strip.getTop() + gap) : fallback;
+        // Apps can supply a shorter toolbar. The shared fallback is only for the first, unmeasured frame.
+        return strip.getHeight() > 0 && root.getHeight() > 0
+                ? root.getHeight() - strip.getTop() + gap : fallback;
     }
 
     void setTitle(String text) {

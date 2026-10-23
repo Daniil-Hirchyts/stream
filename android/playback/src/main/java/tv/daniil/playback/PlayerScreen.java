@@ -364,6 +364,9 @@ public final class PlayerScreen implements PlaybackSession.Listener, MenuPanel.L
     /** Places subtitles at the chosen height, clear of the menu and the overlay's timeline and buttons. */
     private void layoutSubtitles() {
         int right = menu.isOpen() ? activity.getResources().getDimensionPixelSize(R.dimen.panel_width) : 0;
+        // Moving captions above controls changes padding, never their text size.
+        if (subtitles.getHeight() > 0) subtitles.setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
+                subtitles.getHeight() * style.sizeFraction());
         int gap = Math.round(subtitles.getHeight() * style.bottomGap());
         int overlay = controls.isShown() ? controls.bottomClearance() : 0;
         subtitles.setPadding(0, 0, right, Math.max(gap, overlay));
