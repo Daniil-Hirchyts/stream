@@ -10,7 +10,7 @@
   {"name":"TorrentClaw","manifest":"https://torrentclaw.com/api/stremio/manifest.json"},
   {"name":"Watcho","manifest":"https://watcho3.rafaelzioneverest.workers.dev/manifest.json"},
   {"name":"Jackettio","manifest":"https://jackettio.elfhosted.com/manifest.json","note":"Playback needs the provider's Jackett/debrid configuration."},
-  {"name":"Stremio-Jackett","status":"requires self-hosted server and Jackett API key","reference":"https://github.com/tsaridas/jackett-stremio"},
+  {"name":"Stremio-Jackett","status":"requires a configured deployment; self-hosting needs Jackett host/API key and indexers; project also documents a public showcase whose availability was not tested","reference":"https://github.com/tsaridas/jackett-stremio"},
   {"name":"TorBox addon","manifest":"https://stremio.torbox.app/manifest.json","note":"Official addon disabled on 2026-05-20; the historical endpoint is checked for its failure state.","reference":"https://feedback.torbox.app/en/changelog/v844"},
   {"name":"Debridio","status":"requires paid account and personal manifest","reference":"https://debridio.com/"},
   {"name":"Orion","manifest":"https://5a0d1888fa64-orion.baby-beamup.club/manifest.json","note":"Streams require an Orion API key.","reference":"https://github.com/gorlev/orion-stremio-addon"},

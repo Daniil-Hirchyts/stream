@@ -58,6 +58,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private int droppedFrames;
     private JSONObject nativeStats = new JSONObject();
     private boolean polling, preferencesInitialized;
+    private final StartupWatchdog startupWatchdog = new StartupWatchdog();
     private String audioChoice = "", subtitleChoice = "";
     private Dialog choiceDialog;
     private boolean autoplay = true;
@@ -253,7 +254,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 request.check();
                 main.post(() -> {
                     if (!current(mine)) return;
-                    switching = false; lastAdvanceMs = SystemClock.elapsedRealtime(); session.load(playback);
+                    switching = false; lastAdvanceMs = SystemClock.elapsedRealtime(); startupWatchdog.start(lastAdvanceMs); session.load(playback);
                     screen.setLoading(new PlayerScreen.Loading("video", "Preparing video", null, true)); screen.render();
                 });
             } catch (Exception e) {
@@ -413,14 +414,19 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             PlaybackSnapshot state = session.snapshot(); long now = SystemClock.elapsedRealtime();
             if (state.positionMs > previousPosition + 50 && state.playing) { lastAdvanceMs = now; previousPosition = state.positionMs; if (seekStarted > 0) { seekRecoveryMs = now - seekStarted; seekStarted = 0; } }
             if (!state.buffering && !switching && !state.playWhenReady) lastAdvanceMs = now;
-            if ((choiceDialog == null || !choiceDialog.isShowing()) && now - lastAdvanceMs > (switching ? METADATA_MS + 30_000 : engine != null && !state.renderedFirstFrame ? 60_000 : 30_000)
-                    && (state.buffering || switching || !state.started) && state.error == null) {
+            boolean torrentStartup = engine != null && !switching && !state.renderedFirstFrame;
+            if (torrentStartup) {
+                startupWatchdog.setPaused(!state.playWhenReady, now);
+                startupWatchdog.observe(nativeStats.optLong("totalDownload"), now);
+            }
+            boolean expired = torrentStartup ? startupWatchdog.expired(now) : now - lastAdvanceMs > (switching ? METADATA_MS + 30_000 : 30_000);
+            if ((choiceDialog == null || !choiceDialog.isShowing()) && expired
+                    && (torrentStartup || state.buffering || switching || !state.started) && state.error == null) {
                 String message = engine == null ? "The source stopped responding. Retry or choose another source."
                         : nativeStats.optLong("hashFailures") > 0 ? "Downloaded pieces failed integrity checks. Retry with a different peer or choose another source."
                         : nativeStats.optInt("peers") == 0 ? "No peers are supplying this video. Retry later or choose another source."
                         : "No verified video data arrived in time. Check peers, retry or choose another source.";
-                failure("Waiting for video", message, "buffering");
-                cancelPreparation(); loader.execute(WatchActivity.this::closeNative);
+                attemptFailed(message, "buffering");
             }
             if (!polling && engine != null && !switching) {
                 polling = true; int mine = generation;

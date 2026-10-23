@@ -225,7 +225,7 @@ case "${1:-up}" in
     ;;
   live-torrents)
     case "${2:-}" in *[!A-Za-z0-9,]*) fail 'Use comma-separated provider names without spaces.'; exit 2 ;; esac
-    run_data_tests tv.daniil.stream.LiveTorrentProvidersTest -e providers "${2:-}"
+    run_data_tests tv.daniil.stream.LiveTorrentProvidersTest -e providers "${2:-all}"
     result=$?
     device exec-out run-as tv.daniil.stream cat files/validation-torrents.json >"$SIM_DIR/.cache/evidence/live-torrents.json" || exit 1
     exit "$result"

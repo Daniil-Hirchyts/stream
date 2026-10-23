@@ -83,13 +83,14 @@ export function addonFixtures(index, origin) {
       json(res, { metas: [null, 5, { wrong: true }, meta], request: { id, extras: Object.fromEntries(extras), rawPath: url.pathname } });
     } else if (resource === 'meta') json(res, { meta: id === series.id ? series : title });
     else if (resource === 'stream') {
-      if (configuration.startsWith('http-') || configuration === 'failover' || configuration === 'failover-all') {
+      if (configuration.startsWith('http-') || configuration === 'failover' || configuration === 'failover-all' || configuration === 'failover-stall') {
         const format = configuration.slice(5), mkv = index.find(t => t.name === 'matroska');
         const file = format === 'mkv' ? mkv.files[0].path : film.files[0].path;
         const address = format === 'hls' || format === 'dash' ? `${format}/stream.${format === 'hls' ? 'm3u8' : 'mpd'}` : file.split('/').map(encodeURIComponent).join('/');
         const good = { name: 'Direct ' + format, url: origin + '/streaming/media/' + address };
         const bad = { name: 'Unavailable source', url: origin + '/missing.mp4' };
-        json(res, { streams: configuration === 'failover' ? [bad, good] : configuration === 'failover-all' ? [bad, bad, bad, good] : [good] }); return true;
+        const silent = { name: 'Silent torrent', infoHash: 'ffffffffffffffffffffffffffffffffffffffff' };
+        json(res, { streams: configuration === 'failover-stall' ? [silent, good] : configuration === 'failover' ? [bad, good] : configuration === 'failover-all' ? [bad, bad, bad, good] : [good] }); return true;
       }
       if (configuration === 'multiple-files') {
         json(res, { streams: [{ name: 'Choose an episode', infoHash: show.v1 }] }); return true;

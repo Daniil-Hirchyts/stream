@@ -52,7 +52,7 @@ public final class LiveTorrentProvidersTest extends AppHarness {
             }
         }
         String requested = androidx.test.platform.app.InstrumentationRegistry.getArguments().getString("providers", "");
-        if (!requested.isEmpty()) {
+        if (!requested.isEmpty() && !requested.equalsIgnoreCase("all")) {
             java.util.Set<String> selectedNames = new java.util.HashSet<>();
             for (String name : requested.split(",")) selectedNames.add(name.replace(" ", "").toLowerCase(java.util.Locale.ROOT));
             providers.keySet().removeIf(name -> !selectedNames.contains(name.replace(" ", "").toLowerCase(java.util.Locale.ROOT)));
@@ -78,7 +78,8 @@ public final class LiveTorrentProvidersTest extends AppHarness {
                 MediaSource chosen = null;
                 for (MediaSource source : SourcePolicy.ranked(sources)) {
                     String description = source.name + " " + source.description + " " + source.filename;
-                    if (source.kind == MediaSource.Kind.TORRENT && (entry.getKey().equals("Public Domain Movies") || description.contains("1968"))) {
+                    if (source.kind == MediaSource.Kind.TORRENT && (CONTROL.equalsIgnoreCase(source.infoHash)
+                            || entry.getKey().equals("Public Domain Movies") || description.contains("1968"))) {
                         if (chosen == null) chosen = source;
                         if (CONTROL.equalsIgnoreCase(source.infoHash)) { chosen = source; break; }
                     }
@@ -88,13 +89,15 @@ public final class LiveTorrentProvidersTest extends AppHarness {
                 result.put("selection", CONTROL.equalsIgnoreCase(chosen.infoHash) ? "public-domain control" : "first supported 1968 candidate");
                 Title film = Title.parse(provider, new JSONObject().put("id", FILM).put("type", "movie").put("name", "Night of the Living Dead (1968)"));
                 browse.onActivity(activity -> activity.play(film, FILM, key));
-                long started = SystemClock.elapsedRealtime(), until = started + 100_000, errorSince = 0;
+                long started = SystemClock.elapsedRealtime(), until = started + 250_000, errorSince = 0;
                 String lastError = "";
                 result.put("playback", "opening"); long lastSample = 0; boolean fileChosen = false;
                 while (SystemClock.elapsedRealtime() < until) {
                     PlaybackSnapshot snapshot = state();
                     if (SystemClock.elapsedRealtime() - lastSample >= 3000) {
-                        result.put("diagnostics", diagnostics()); save(false); lastSample = SystemClock.elapsedRealtime();
+                        JSONObject sample = diagnostics(); result.put("diagnostics", sample);
+                        if (sample.has("cache")) result.put("lastTransfer", sample);
+                        save(false); lastSample = SystemClock.elapsedRealtime();
                     }
                     if (snapshot != null && snapshot.renderedFirstFrame && snapshot.playing && snapshot.positionMs >= 3500) {
                         if (snapshot.durationMs < 60 * 60_000) {
@@ -118,7 +121,7 @@ public final class LiveTorrentProvidersTest extends AppHarness {
                         assertNotNull("The file chooser lists actual video sizes", label);
                         tap(label, true); fileChosen = true; result.put("fileChoice", true);
                         waitUntil("file accepted", 5000, () -> !visible("Choose a video file"));
-                        until = SystemClock.elapsedRealtime() + 100_000;
+                        until = SystemClock.elapsedRealtime() + 250_000;
                     }
                     SystemClock.sleep(200);
                 }

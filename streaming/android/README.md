@@ -310,6 +310,8 @@ separate and is never an import descriptor or library asset.
 ./streaming/simulator.sh release-test  # shrunk release JNI probe; restores debug app/test APKs
 ./streaming/simulator.sh live-film     # optional: real public-domain films through the store (internet)
 ./streaming/simulator.sh live-addons   # optional: current store + earlier Nuvio list, manifests/resources/reviews
+./streaming/simulator.sh live-torrents # optional: public-domain torrent playback samples
+./streaming/simulator.sh live-torrents Torrentio,TorrentClaw,Pipe # optional subset; names without spaces
 cd streaming/android
 ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:testDebugUnitTest :app:lintDebug :app:lintRelease
 ./gradlew :app:testDebugUnitTest -PliveAddons=true  # optional: real films via live add-ons, archive.org and FFmpeg
@@ -359,7 +361,20 @@ the next. The report in `streaming/simulator/.cache/evidence/live-addons.json`
 records external HTTP/certificate/network failures, setup requirements and
 source counts separately from successful review installation. Source discovery
 does not establish video playback; `live-film` supplies that separate check.
-Neither command supplies paid accounts or credentials.
+These live commands do not supply paid accounts or credentials.
+
+`live-torrents` installs each sampled provider through its review screen in an
+isolated database, then opens a supported torrent for the 1968 film. It prefers
+the public-domain directory's known copy when an index offers it, handles an
+explicit video-file choice, and records rendered playback, provider errors and
+setup requirements in `streaming/simulator/.cache/evidence/live-torrents.json`.
+One sampled torrent does not establish availability of every result from an index.
+Startup allows continued payload progress for up to three minutes after video
+preparation begins, with a one-minute transfer-stall deadline. Playback stalls
+after the first frame retain the existing deadline. Pausing before the first
+frame suspends both startup deadlines. An expired automatic source follows the
+same three-attempt failover limit as opening errors; explicit source choices
+remain explicit. Back can cancel preparation.
 
 The live torrent test uses an instrumentation-only public-network setting:
 LAN discovery and port mapping are off, and native peers, trackers and DHT nodes

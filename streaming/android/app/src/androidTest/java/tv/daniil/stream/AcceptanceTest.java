@@ -69,6 +69,25 @@ public final class AcceptanceTest extends AppHarness {
         catch (Exception e) { throw new AssertionError(e); }
     }
 
+    @Test public void startupTimeoutTriesTheNextAutomaticSource() throws Exception {
+        readyLibrary("failover-stall"); launch(); tap("Generated Film", true); tap("Play", false);
+        waitUntil("silent torrent metadata preparation", 10_000, () -> {
+            WatchActivity activity = watch();
+            return activity != null && Boolean.TRUE.equals(field(activity, "switching")) && field(activity, "engine") != null;
+        });
+        WatchActivity activity = watch();
+        // Expire the host's deadline on its owning thread; the real engine, heartbeat and next source still run.
+        instrumentation.runOnMainSync(() -> {
+            try {
+                java.lang.reflect.Field deadline = WatchActivity.class.getDeclaredField("lastAdvanceMs");
+                deadline.setAccessible(true); deadline.setLong(activity, SystemClock.elapsedRealtime() - 100_000);
+            } catch (Exception e) { throw new AssertionError(e); }
+        });
+        waitUntil("timeout advances to the playable source", 40_000,
+                () -> state() != null && state().renderedFirstFrame && state().playing);
+        assertEquals(2, field(activity, "attempts"));
+    }
+
     @Test public void contentFileAndMagnetImportsUseRealMetadataAndPlayback() throws Exception {
         android.content.Intent file = new android.content.Intent(android.content.Intent.ACTION_VIEW,
                 android.net.Uri.parse("content://tv.daniil.stream.test.files/series.torrent"), context, MainActivity.class)
