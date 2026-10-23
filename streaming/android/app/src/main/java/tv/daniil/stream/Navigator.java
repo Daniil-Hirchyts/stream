@@ -1,5 +1,7 @@
 package tv.daniil.stream;
 
+import androidx.annotation.Nullable;
+import android.view.View;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
 import tv.daniil.stream.addon.Title;
@@ -19,6 +21,10 @@ interface Navigator {
     void play(Title title, String video, String sourceKey);
     void edit(String title, String hint, String initial, Consumer<String> accept);
     void choose(String title, String[] options, Consumer<Integer> accept);
+    default void chooseWithPreview(String title, @Nullable View header, String[] options, int selected,
+                                   Consumer<Integer> accept, @Nullable Consumer<Integer> onPreview) {
+        choose(title, options, accept);
+    }
     void alert(String title, String message);
     void openWebsite(String address);
     /** Runs {@code task} on a worker, then rebuilds the current route. */

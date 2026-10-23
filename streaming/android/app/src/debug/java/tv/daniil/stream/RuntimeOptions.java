@@ -16,6 +16,11 @@ public final class RuntimeOptions {
         String fixture = test.getString("addonDirectory", "");
         return fixture.isEmpty() ? java.util.Collections.emptyList() : java.util.Collections.singletonList(fixture);
     }
+    /** The owner's debug app sets itself up as a release does; test databases and local-only runs never do. */
+    static boolean installDefaults(Context context) {
+        return !context.getSharedPreferences("instrumentation", Context.MODE_PRIVATE).getBoolean("localOnly", false)
+                && !databaseName(context).startsWith("test-");
+    }
     /**
      * What onboarding offers to add. Local-only instrumentation must not reach public providers, so it offers only
      * the fixture add-ons it names (none by default).

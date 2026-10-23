@@ -21,20 +21,24 @@ public final class SubtitleStyle {
     public enum Setting {
         SIZE("size", R.string.subtitle_size, 1, new String[] {"small", "medium", "large", "xlarge"},
                 new int[] {R.string.size_small, R.string.size_medium, R.string.size_large, R.string.size_xlarge}),
-        FONT("font", R.string.subtitle_font, 0, new String[] {"standard", "bold", "condensed", "serif"},
-                new int[] {R.string.font_standard, R.string.font_bold, R.string.font_condensed, R.string.font_serif}),
-        COLOR("color", R.string.subtitle_color, 0, new String[] {"white", "yellow", "cyan"},
-                new int[] {R.string.color_white, R.string.color_yellow, R.string.color_cyan}),
+        FONT("font", R.string.subtitle_font, 0,
+                new String[] {"standard", "bold", "condensed", "serif", "monospace", "casual", "cursive", "smallcaps"},
+                new int[] {R.string.font_standard, R.string.font_bold, R.string.font_condensed, R.string.font_serif,
+                        R.string.font_monospace, R.string.font_casual, R.string.font_cursive, R.string.font_smallcaps}),
+        COLOR("color", R.string.subtitle_color, 0,
+                new String[] {"white", "yellow", "cyan", "green", "magenta", "blue", "amber", "red"},
+                new int[] {R.string.color_white, R.string.color_yellow, R.string.color_cyan, R.string.color_green,
+                        R.string.color_magenta, R.string.color_blue, R.string.color_amber, R.string.color_red}),
         EDGE("edge", R.string.subtitle_edge, 2, new String[] {"outline", "shadow", "box"},
                 new int[] {R.string.edge_outline, R.string.edge_shadow, R.string.edge_box}),
         POSITION("position", R.string.subtitle_position, 1, new String[] {"low", "standard", "raised"},
                 new int[] {R.string.position_low, R.string.position_standard, R.string.position_raised});
 
         public final String key;
-        final int title;
-        final int fallback;
-        final String[] values;
-        final int[] labels;
+        public final int title;
+        public final int fallback;
+        public final String[] values;
+        public final int[] labels;
 
         Setting(String key, int title, int fallback, String[] values, int[] labels) {
             this.key = key;
@@ -47,20 +51,22 @@ public final class SubtitleStyle {
 
     // Text height as a fraction of the video height; Media3's default is 0.0533.
     private static final float[] SIZES = {0.042f, 0.0533f, 0.066f, 0.082f};
-    private static final int[] COLORS = {Color.WHITE, 0xFFFFE15A, 0xFF8BE9FF};
+    private static final int[] COLORS = {
+            Color.WHITE, 0xFFFFE15A, 0xFF8BE9FF, 0xFFA8F387, 0xFFFF80DF, 0xFF82B1FF, 0xFFFFB84D, 0xFFFF6E6E};
     // Gap below the last line, as a fraction of the video height.
     private static final float[] BOTTOM_GAP = {0.04f, 0.08f, 0.16f};
     private static final int BOX = 0xB3000000;
-    // System families every Android TV has: medium sans (the default), bold sans for bright or busy pictures,
-    // condensed for long lines, and serif for a classic film look.
+    // System families every Android TV has: sans-serif medium, bold, condensed, serif, monospace, casual, cursive, and small caps.
     private static final Typeface[] FONTS = {
             Typeface.create("sans-serif-medium", Typeface.NORMAL), Typeface.create("sans-serif", Typeface.BOLD),
-            Typeface.create("sans-serif-condensed", Typeface.BOLD), Typeface.create("serif", Typeface.NORMAL)};
+            Typeface.create("sans-serif-condensed", Typeface.BOLD), Typeface.create("serif", Typeface.NORMAL),
+            Typeface.create("monospace", Typeface.NORMAL), Typeface.create("casual", Typeface.NORMAL),
+            Typeface.create("cursive", Typeface.NORMAL), Typeface.create("sans-serif-smallcaps", Typeface.NORMAL)};
 
     private final SharedPreferences prefs;
     private final int[] choice = new int[Setting.values().length];
 
-    SubtitleStyle(SharedPreferences prefs) {
+    public SubtitleStyle(SharedPreferences prefs) {
         this.prefs = prefs;
         for (Setting setting : Setting.values()) {
             int index = indexOf(setting, prefs.getString("subtitle_" + setting.key, null));
@@ -85,23 +91,72 @@ public final class SubtitleStyle {
         return set(setting, indexOf(setting, value));
     }
 
-    void applyTo(SubtitleView view) {
-        int edge = get(Setting.EDGE);
-        view.setStyle(new CaptionStyleCompat(COLORS[get(Setting.COLOR)],
-                edge == 2 ? BOX : Color.TRANSPARENT, Color.TRANSPARENT,
-                edge == 0 ? CaptionStyleCompat.EDGE_TYPE_OUTLINE
-                        : edge == 1 ? CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW : CaptionStyleCompat.EDGE_TYPE_NONE,
-                Color.BLACK, FONTS[get(Setting.FONT)]));
+    public static int colorFor(int index) {
+        return COLORS[Math.max(0, Math.min(index, COLORS.length - 1))];
+    }
+
+    public static Typeface typefaceFor(int index) {
+        return FONTS[Math.max(0, Math.min(index, FONTS.length - 1))];
+    }
+
+    public static float sizeFractionFor(int index) {
+        return SIZES[Math.max(0, Math.min(index, SIZES.length - 1))];
+    }
+
+    public static float bottomGapFor(int index) {
+        return BOTTOM_GAP[Math.max(0, Math.min(index, BOTTOM_GAP.length - 1))];
+    }
+
+    public static int boxColor() {
+        return BOX;
+    }
+
+    public static int colorsCount() {
+        return COLORS.length;
+    }
+
+    public static int fontsCount() {
+        return FONTS.length;
+    }
+
+    public int color() {
+        return colorFor(get(Setting.COLOR));
+    }
+
+    public Typeface typeface() {
+        return typefaceFor(get(Setting.FONT));
+    }
+
+    public float sizeFraction() {
+        return sizeFractionFor(get(Setting.SIZE));
+    }
+
+    public int edge() {
+        return get(Setting.EDGE);
+    }
+
+    public float bottomGap() {
+        return bottomGapFor(get(Setting.POSITION));
+    }
+
+    public void applyTo(SubtitleView view) {
+        apply(view, get(Setting.SIZE), get(Setting.FONT), get(Setting.COLOR), get(Setting.EDGE), get(Setting.POSITION));
+    }
+
+    public static void apply(SubtitleView view, int sizeIndex, int fontIndex, int colorIndex, int edgeIndex, int positionIndex) {
+        int color = colorFor(colorIndex);
+        Typeface font = typefaceFor(fontIndex);
+        int edgeType = edgeIndex == 0 ? CaptionStyleCompat.EDGE_TYPE_OUTLINE
+                : edgeIndex == 1 ? CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW : CaptionStyleCompat.EDGE_TYPE_NONE;
+        view.setStyle(new CaptionStyleCompat(color,
+                edgeIndex == 2 ? BOX : Color.TRANSPARENT, Color.TRANSPARENT,
+                edgeType, Color.BLACK, font));
         // Site-supplied colours and sizes would override the viewer's choice, so only cue positions are kept.
         view.setApplyEmbeddedStyles(false);
-        view.setFractionalTextSize(SIZES[get(Setting.SIZE)], true);
+        view.setFractionalTextSize(sizeFractionFor(sizeIndex), true);
         // WebVTT cues are anchored to the bottom edge by line number, which ignores Media3's bottom padding
         // fraction. The player pads the view by bottomGap() instead, so every format moves together.
         view.setBottomPaddingFraction(0f);
-    }
-
-    float bottomGap() {
-        return BOTTOM_GAP[get(Setting.POSITION)];
     }
 
     public JSONObject toJson() throws JSONException {

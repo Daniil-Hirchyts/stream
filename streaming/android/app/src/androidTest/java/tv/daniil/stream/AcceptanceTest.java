@@ -3,6 +3,7 @@ package tv.daniil.stream;
 import static org.junit.Assert.*;
 import android.view.KeyEvent;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import java.util.ArrayList;
@@ -15,7 +16,7 @@ public final class AcceptanceTest extends AppHarness {
     @Test public void directMp4MkvHlsAndDashRenderAndAdvance() throws Exception {
         for (String format : new String[]{"mp4", "mkv", "hls", "dash"}) {
             for (InstalledAddon addon : services.store.addons()) services.addons.remove(addon.id);
-            readyLibrary("http-" + format); launch(); tap("Generated Film", false); tap("Play", true);
+            readyLibrary("http-" + format); launch(); tap("Generated Film", false); tap("Play", true); chooseFirstSource();
             waitUntil(format + " first frame", 40_000, () -> state() != null && state().renderedFirstFrame && state().playing && state().positionMs > 1000);
             WatchActivity activity = watch();
             if (format.equals("mkv")) {
@@ -41,7 +42,7 @@ public final class AcceptanceTest extends AppHarness {
     private static tv.daniil.playback.PlaybackSnapshot stateOnMain(WatchActivity activity) { return activity.playbackSnapshot(); }
 
     @Test public void automaticFailoverIsBoundedAndManualSourcesDoNotSilentlyChange() throws Exception {
-        readyLibrary("failover"); launch(); tap("Generated Film", true); tap("Play", false);
+        readyLibrary("failover"); launch(); tap("Generated Film", true); startAutomaticFixturePlayback();
         waitUntil("second source renders", 40_000, () -> state() != null && state().renderedFirstFrame && state().playing);
         WatchActivity activity = watch();
         assertEquals(2, field(activity, "attempts"));
@@ -54,7 +55,7 @@ public final class AcceptanceTest extends AppHarness {
         assertEquals(1, field(watch(), "attempts")); assertFalse(state().renderedFirstFrame);
         instrumentation.runOnMainSync(watch()::finish); instrumentation.waitForIdleSync(); browse.close(); browse = null;
         for (InstalledAddon addon : services.store.addons()) services.addons.remove(addon.id);
-        readyLibrary("failover-all"); launch(); tap("Generated Film", true); tap("Play", false);
+        readyLibrary("failover-all"); launch(); tap("Generated Film", true); startAutomaticFixturePlayback();
         waitUntil("bounded failure", 40_000, () -> {
             tv.daniil.playback.PlaybackSnapshot snapshot = state();
             return snapshot != null && snapshot.error != null && snapshot.error.code.equals("opening")
@@ -64,7 +65,7 @@ public final class AcceptanceTest extends AppHarness {
         waitUntil("source choice is accessible after failure", 5000, () -> visible("Choose source"));
     }
     @Test public void decoderAndNetworkFailuresAfterFramesResumeOnDifferentSources() throws Exception {
-        readyLibrary("recover-after-frame"); launch(); tap("Generated Film", true); tap("Play", false);
+        readyLibrary("recover-after-frame"); launch(); tap("Generated Film", true); startAutomaticFixturePlayback();
         waitUntil("initial video", 30_000, () -> state() != null && state().renderedFirstFrame && state().playing);
         WatchActivity activity = watch();
         instrumentation.runOnMainSync(() -> { AppFlowTest.session(activity).setSpeed(1.5f); AppFlowTest.session(activity).seekTo(8000); });
@@ -175,9 +176,68 @@ public final class AcceptanceTest extends AppHarness {
         waitUntil("Card focus restored", 10_000, () -> { java.util.concurrent.atomic.AtomicBoolean focused = new java.util.concurrent.atomic.AtomicBoolean(); browse.onActivity(activity -> focused.set(activity.getCurrentFocus() != null && String.valueOf(activity.getCurrentFocus().getTag()).contains("fixture:film"))); return focused.get(); });
         tap("Search", true); waitUntil("search keyboard", 5000, () -> visible("Type g"));
         for (char c : "generated".toCharArray()) tap("Type " + c, c % 2 == 0);
-        waitUntil("search results", 10_000, () -> visible("Generated Film")); tap("Close search", false);
-        tap("Browse catalogues", true); tap("Generated films", false);
-        tap("genre", true); tap("Generated", false); tap("Next page", true);
-        waitUntil("next page", 10_000, () -> visible("Previous page")); tap("Previous page", false);
+        waitUntil("search results", 10_000, () -> visible("Generated Film")); captureUi("search"); tap("Close search", false);
+        tap("Browse catalogues", true); captureUi("categories"); tap("Generated films", false);
+        tap("Generated", true); captureUi("catalogue-header");
+        for (int step = 0; step < 3; step++) {
+            java.util.concurrent.atomic.AtomicBoolean reached = new java.util.concurrent.atomic.AtomicBoolean();
+            browse.onActivity(activity -> reached.set(activity.getCurrentFocus() != null
+                    && "Next page".contentEquals(activity.getCurrentFocus().getContentDescription() == null ? "" : activity.getCurrentFocus().getContentDescription())));
+            if (reached.get()) break;
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN); android.os.SystemClock.sleep(250);
+        }
+        waitUntil("remote reaches footer next page", 5000, () -> {
+            java.util.concurrent.atomic.AtomicBoolean focused = new java.util.concurrent.atomic.AtomicBoolean();
+            browse.onActivity(activity -> focused.set(activity.getCurrentFocus() != null
+                    && "Next page".contentEquals(activity.getCurrentFocus().getContentDescription() == null ? "" : activity.getCurrentFocus().getContentDescription())));
+            return focused.get();
+        });
+        captureUi("catalogue-pagination"); instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+        waitUntil("next page", 10_000, () -> visible("Films · Page 2")); captureUi("catalogue");
+        tap("Previous page", false);
+        waitUntil("first page", 10_000, () -> visible("Films · Page 1"));
+        tap("Back", true);
+        waitUntil("back to categories", 5000, () -> visible("Browse") && visible("Generated films"));
     }
+    @Ignore("Captures a screenshot but asserts neither option visibility nor fading; use manual design review until there is a meaningful assertion.")
+    @Test public void dialogFadeKeepsFocusedRoundedOptionVisible() throws Exception {
+        launch(); tap("Settings", true); tap("Subtitles", false); tap("Subtitle color", true);
+        for (int i = 0; i < 6; i++) instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
+        instrumentation.waitForIdleSync();
+        captureUi("dialog");
+        tap("Cancel", false);
+        waitUntil("dialog dismissed", 5000, () -> visible("Subtitle size"));
+    }
+    @Test public void searchGridKeepsFocusedCardsInsideVisibleViewport() throws Exception {
+        launch(); tap("Search", true); waitUntil("keyboard ready", 5000, () -> visible("Type a"));
+        // Exercise the production search renderer with enough local cards to cross both viewport edges.
+        browse.onActivity(activity -> {
+            tv.daniil.stream.ui.Item item = tv.daniil.stream.ui.Item.keyboard("keyboard", "", ignored -> {});
+            item.tiles = new ArrayList<>();
+            for (int i = 0; i < 25; i++) item.tiles.add(new tv.daniil.stream.ui.Item.Tile("edge-card:" + i,
+                    tv.daniil.stream.ui.Item.Tile.Style.POSTER, "Generated " + i, "2026", null, null, () -> {}));
+            try {
+                java.lang.reflect.Field field = MainActivity.class.getDeclaredField("adapter"); field.setAccessible(true);
+                ((tv.daniil.stream.ui.PageAdapter) field.get(activity)).set(java.util.Collections.singletonList(item), "edge-card:0");
+            } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
+        });
+        instrumentation.waitForIdleSync();
+        for (int i = 0; i < 3; i++) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN); android.os.SystemClock.sleep(300); }
+        captureUi("search-scroll");
+        browse.onActivity(activity -> {
+            android.view.View focus = activity.getCurrentFocus(); assertNotNull(focus);
+            assertTrue("Focus stayed in search results", String.valueOf(focus.getTag()).startsWith("edge-card:"));
+            android.graphics.Rect visible = new android.graphics.Rect(); assertTrue(focus.getGlobalVisibleRect(visible));
+            assertEquals("Focused card and caption are fully visible", focus.getHeight(), visible.height());
+        });
+    }
+    private void captureUi(String name) throws Exception {
+        android.os.SystemClock.sleep(300);
+        android.graphics.Bitmap bitmap = instrumentation.getUiAutomation().takeScreenshot();
+        assertNotNull("UI evidence " + name, bitmap);
+        try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(context.getFilesDir(), "ui-" + name + ".png"))) {
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out);
+        } finally { bitmap.recycle(); }
+    }
+
 }

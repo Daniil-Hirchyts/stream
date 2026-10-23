@@ -42,7 +42,10 @@ public abstract class AppHarness {
         instrumentation.getUiAutomation().setServiceInfo(info);
         app = (TvApplication) context.getApplicationContext();
         SharedPreferences options = context.getSharedPreferences("instrumentation", Context.MODE_PRIVATE);
-        oldConfiguration = options.getAll(); database = InstrumentationRegistry.getArguments().getString("database", "test-" + UUID.randomUUID() + ".db");
+        // An interrupted run leaves its overrides behind; never keep those as the configuration to restore.
+        oldConfiguration = new java.util.HashMap<>(options.getAll());
+        for (String key : new String[]{"database", "localOnly", "cacheBytes", "peer", "addonDirectory"}) oldConfiguration.remove(key);
+        database = InstrumentationRegistry.getArguments().getString("database", "test-" + UUID.randomUUID() + ".db");
         assertTrue("Isolated test database", database.matches("test-[a-z0-9-]+\\.db"));
         origin = InstrumentationRegistry.getArguments().getString("fixtures", "http://127.0.0.1:58133");
         // The store's directory is the fixture service's, never Stremio's public one.
@@ -212,8 +215,31 @@ public abstract class AppHarness {
         WatchActivity activity = watch(); assertNotNull(activity); Rect bounds = new Rect();
         instrumentation.runOnMainSync(() -> { assertTrue(activity.findViewById(id).getGlobalVisibleRect(bounds)); }); pointer(bounds.centerX(), bounds.centerY(), mouse);
     }
+    /** Follow the explicit source-selection UI, using a real pointer on its first playable row. */
+    void chooseFirstSource() {
+        Rect bounds = new Rect();
+        waitUntil("playable source row", 30000, () -> {
+            bounds.setEmpty(); browse.onActivity(activity -> sourceBounds(activity.findViewById(R.id.page_rows), bounds));
+            return !bounds.isEmpty();
+        });
+        pointer(bounds.centerX(), bounds.centerY(), true);
+    }
+    private boolean sourceBounds(android.view.View view, Rect bounds) {
+        if (view.isClickable() && String.valueOf(view.getTag()).startsWith("source:") && view.getGlobalVisibleRect(bounds)) return true;
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) if (sourceBounds(group.getChildAt(i), bounds)) return true;
+        }
+        return false;
+    }
+    /** Exercise the player's internal automatic-recovery mode directly; normal Play now requires a source choice. */
+    void startAutomaticFixturePlayback() throws Exception {
+        Title title = Title.parse(services.store.addons().get(0).id, new JSONObject()
+                .put("id", "fixture:film").put("type", "movie").put("name", "Generated Film"));
+        instrumentation.runOnMainSync(() -> context.startActivity(WatchActivity.intent(context, title, title.id, "").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
+    }
     void playFilm() throws Exception {
-        readyLibrary(); launch(); tap("Generated Film", false); tap("Play", true);
+        readyLibrary(); launch(); tap("Generated Film", false); tap("Play", true); chooseFirstSource();
         waitUntil("first frame and advancing playback", 60_000, () -> state() != null && state().renderedFirstFrame && state().positionMs >= 2000);
     }
 }

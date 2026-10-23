@@ -19,7 +19,7 @@ import tv.daniil.stream.ui.Page;
 
 /** Home, Search, Library, History and catalogue browsing. Builders run on workers and block on providers. */
 final class BrowseScreens {
-    private static final int POSTER_COLUMNS = 6, LANDSCAPE_COLUMNS = 3, CATALOGUE_COLUMNS = 4;
+    private static final int POSTER_COLUMNS = 6, LANDSCAPE_COLUMNS = 3, CATALOGUE_COLUMNS = 3, CATALOGUE_PAGE_SIZE = 24;
     private final Navigator nav;
     private final TvApplication.Services services;
 
@@ -67,9 +67,9 @@ final class BrowseScreens {
         }
         if (failed) page.add(Item.notice(R.drawable.ic_tv_offline, stale ? "Showing saved catalogues" : "Some providers are unavailable", ""));
         // Browsing and refreshing need a catalogue; an empty Home shows only the way to add one.
-        if (!catalogues.isEmpty()) page.add(Item.actions("home-actions",
+        if (!catalogues.isEmpty()) page.tools = java.util.Arrays.asList(
                 new Item.Action("browse", Item.Action.Style.SECONDARY, "Browse catalogues", () -> nav.push(new Route("Catalogues"))).icon(R.drawable.ic_tv_list),
-                new Item.Action("refresh", Item.Action.Style.ICON, "Refresh", nav::refresh).icon(R.drawable.ic_tv_refresh)));
+                new Item.Action("refresh", Item.Action.Style.ICON, "Refresh", nav::refresh).icon(R.drawable.ic_tv_refresh));
         return page;
     }
 
@@ -150,47 +150,40 @@ final class BrowseScreens {
     }
 
     /**
-     * Every enabled catalogue as a card, grouped by kind (Films, Series, …). A card shows its catalogue's first title,
-     * from the same cached answers Home uses; a catalogue that needs a filter first is asked for nothing.
+     * Every enabled catalogue as a title-only block, grouped by kind (Films, Series, …) in a fixed order.
+     * Nothing is fetched until the viewer opens a block.
      */
-    Page catalogues(Cancellation scope) throws Exception {
+    Page catalogues() {
         Page page = new Page().title("Browse");
-        Map<String, List<AddonRepository.CatalogQuery>> byType = new LinkedHashMap<>();
-        List<AddonRepository.CatalogQuery> ready = new ArrayList<>();
+        Map<String, List<Tile>> byType = new java.util.TreeMap<>(java.util.Comparator.comparingInt(BrowseScreens::typeOrder).thenComparing(t -> t));
         for (InstalledAddon a : services.store.addons()) if (a.enabled) for (AddonManifest.Catalog c : a.manifest.catalogs) {
-            AddonRepository.CatalogQuery query = new AddonRepository.CatalogQuery(a, c, Collections.emptyMap());
-            byType.computeIfAbsent(c.type, type -> new ArrayList<>()).add(query);
-            if (!needsFilter(c)) ready.add(query);
+            if (!browsable(c)) continue;
+            String name = c.name.trim().isEmpty() ? typeLabel(c.type) : c.name.trim();
+            byType.computeIfAbsent(c.type, type -> new ArrayList<>()).add(new Tile("catalogue:" + a.id + c.type + c.id, Tile.Style.LANDSCAPE,
+                    name, "", null, null, () -> {
+                Route next = new Route("Catalogue"); next.value = new JSONArray().put(a.id).put(c.type).put(c.id).toString(); nav.push(next);
+            }).description(name).block());
         }
         if (byType.isEmpty()) return page.add(Item.message(R.drawable.ic_tv_extension, "No catalogues", "Install a catalogue add-on from Add-ons.",
                 new Item.Action("catalogues-add", Item.Action.Style.PRIMARY, "Browse add-ons", () -> nav.push(StoreScreens.route("Catalogues"))).icon(R.drawable.ic_tv_extension)));
-        AddonRepository.Result<Title> found = ready.isEmpty() ? null : services.addons.catalogs(ready, scope);
-        for (Map.Entry<String, List<AddonRepository.CatalogQuery>> group : byType.entrySet()) {
-            List<Tile> cards = new ArrayList<>();
-            for (AddonRepository.CatalogQuery q : group.getValue()) {
-                AddonManifest.Catalog c = q.catalog; InstalledAddon a = q.addon;
-                List<Title> titles = found == null ? Collections.emptyList()
-                        : found.byResource.getOrDefault(a.id + ":" + c.type + ":" + c.id, Collections.emptyList());
-                String image = null;
-                for (Title t : titles) { image = t.background != null ? t.background : t.poster; if (image != null) break; }
-                String name = c.name.trim().isEmpty() ? typeLabel(c.type) : c.name.trim();
-                String detail = a.manifest.name + (needsFilter(c) ? "  ·  Choose a filter" : "");
-                cards.add(new Tile("catalogue:" + a.id + c.type + c.id, Tile.Style.LANDSCAPE, name, detail, image, null, () -> {
-                    Route next = new Route("Catalogue"); next.value = new JSONArray().put(a.id).put(c.type).put(c.id).toString(); nav.push(next);
-                }).description(name));
-            }
-            page.add(Item.header(typeLabel(group.getKey()), cards.size() == 1 ? "1 catalogue" : cards.size() + " catalogues"));
-            page.addAll(Item.grid("catalogues:" + group.getKey(), Tile.Style.LANDSCAPE, CATALOGUE_COLUMNS, cards));
+        int colorIndex = 0;
+        for (Map.Entry<String, List<Tile>> group : byType.entrySet()) {
+            for (Tile tile : group.getValue()) tile.colorIndex = colorIndex++;
+            page.add(Item.header(typeLabel(group.getKey())));
+            page.addAll(Item.grid("catalogues:" + group.getKey(), Tile.Style.LANDSCAPE, CATALOGUE_COLUMNS, group.getValue()));
         }
-        if (found != null && !found.failures.isEmpty()) page.add(Item.notice(R.drawable.ic_tv_offline, found.stale ? "Showing saved catalogues" : "Some providers are unavailable", ""));
         return page;
     }
-    private static boolean needsFilter(AddonManifest.Catalog catalog) {
-        for (AddonManifest.Extra e : catalog.extras) if (e.required) return true;
-        return false;
+    /** Internal episode-query catalogues need app-supplied ID lists, not a viewer-entered filter. */
+    static boolean browsable(AddonManifest.Catalog catalog) {
+        for (AddonManifest.Extra extra : catalog.extras)
+            if (extra.required && (extra.name.equals("lastVideosIds") || extra.name.equals("calendarVideosIds"))) return false;
+        return true;
     }
-
-    Page catalogue(Route route, Cancellation scope) throws Exception {
+    /** Films, then Series, then everything else. */
+    private static int typeOrder(String type) { return type.equals("movie") ? 0 : type.equals("series") ? 1 : 2; }
+    Page catalogue(Route route, Cancellation scope) throws Exception { return catalogue(route, scope, ignored -> {}); }
+    Page catalogue(Route route, Cancellation scope, java.util.function.Consumer<Page> progress) throws Exception {
         JSONArray identity = new JSONArray(route.value);
         InstalledAddon addon = null; AddonManifest.Catalog catalog = null;
         for (InstalledAddon a : services.store.addons()) if (a.id.equals(identity.getString(0))) {
@@ -200,43 +193,68 @@ final class BrowseScreens {
         if (addon == null || catalog == null || !addon.enabled) {
             return new Page().title("Catalogue").add(Item.message(R.drawable.ic_tv_info, "Catalogue unavailable", "The add-on was disabled or removed."));
         }
-        Page page = new Page().title(shelfTitle(catalog));
-        page.add(Item.header(addon.manifest.name, catalog.supports("skip") ? "Page " + (route.page + 1) : ""));
-        List<Item.Action> filters = new ArrayList<>();
+        Page page = new Page();
+        page.tools = Collections.singletonList(new Item.Action("refresh-catalogue", Item.Action.Style.ICON, "Refresh", nav::refresh).icon(R.drawable.ic_tv_refresh));
+        page.add(Item.catalogueHeader(shelfTitle(catalog), typeLabel(catalog.type) + (catalog.supports("skip") ? " · Page " + (route.page + 1) : "")));
+        // Filters with listed values are rows of chips on the page (no long list in a dialog); free text asks in a dialog.
         boolean complete = true;
+        List<Item.Action> typed = new ArrayList<>();
         for (AddonManifest.Extra e : catalog.extras) if (!e.name.equals("skip")) {
             if (e.required && !route.extras.containsKey(e.name)) complete = false;
             if (e.name.equals("search") && !e.required) continue;
-            String value = route.extras.getOrDefault(e.name, e.required ? "Choose" : "Any");
-            filters.add(new Item.Action("filter:" + e.name, Item.Action.Style.CHIP, capitalise(e.name), () -> filter(route, e)).detail(value)
-                    .selected(route.extras.containsKey(e.name)));
+            String chosen = route.extras.get(e.name);
+            if (e.options.isEmpty()) {
+                typed.add(new Item.Action("filter:" + e.name, Item.Action.Style.CHIP, capitalise(e.name), () -> filter(route, e))
+                        .detail(chosen != null ? chosen : e.required ? "Choose" : "Any").selected(chosen != null));
+                continue;
+            }
+            List<Item.Action> values = new ArrayList<>();
+            if (!e.required) values.add(new Item.Action("filter:" + e.name + ":", Item.Action.Style.CHIP, "Any", () -> choose(route, e.name, ""))
+                    .selected(chosen == null));
+            for (String option : e.options) values.add(new Item.Action("filter:" + e.name + ":" + option, Item.Action.Style.CHIP, option,
+                    () -> choose(route, e.name, option)).selected(option.equals(chosen)));
+            page.add(Item.chips("filters:" + e.name, capitalise(e.name), values));
         }
-        if (!filters.isEmpty()) page.add(Item.chips("filters", "", filters));
+        if (!typed.isEmpty()) page.add(Item.chips("filters", "", typed));
         if (!complete) return page.add(Item.message(R.drawable.ic_tv_list, "Choose the required filters", "Then this catalogue will load."));
         Map<String, String> extras = new LinkedHashMap<>(route.extras);
-        if (catalog.supports("skip")) extras.put("skip", Integer.toString(route.page * 20));
+        if (catalog.supports("skip")) extras.put("skip", Integer.toString(route.page * CATALOGUE_PAGE_SIZE));
+        progress.accept(page.copy().add(Item.skeleton("Catalogue results")));
         AddonRepository.Result<Title> found = services.addons.catalogs(Collections.singletonList(new AddonRepository.CatalogQuery(addon, catalog, extras)), scope);
         List<Tile> tiles = new ArrayList<>();
-        for (Title t : found.items) tiles.add(poster("catalogue", t));
-        if (tiles.isEmpty()) page.add(Item.message(R.drawable.ic_tv_movie, "No titles on this page", "Try other filters."));
+        // Providers often return 100 items per request. Bound the visible page to the same stride as skip,
+        // otherwise advancing one page repeats most of the previous page's posters.
+        int limit = catalog.supports("skip") ? Math.min(CATALOGUE_PAGE_SIZE, found.items.size()) : found.items.size();
+        for (int i = 0; i < limit; i++) tiles.add(poster("catalogue", found.items.get(i)));
+        boolean paginated = catalog.supports("skip");
+        if (tiles.isEmpty()) page.add(Item.message(R.drawable.ic_tv_movie, "No titles on this page",
+                route.page > 0 ? "Go to the previous page or change the filters." : "Try other filters."));
         else page.addAll(Item.grid("catalogue-grid", Tile.Style.POSTER, POSTER_COLUMNS, tiles));
         if (!found.failures.isEmpty()) page.add(Item.notice(R.drawable.ic_tv_offline, "Provider unavailable", found.stale ? "Showing saved entries." : "Try refreshing this catalogue."));
-        List<Item.Action> paging = new ArrayList<>();
-        if (catalog.supports("skip") && route.page > 0) paging.add(new Item.Action("previous-page", Item.Action.Style.SECONDARY, "Previous page", () -> { route.page--; route.scroll = null; nav.refresh(); }));
-        if (catalog.supports("skip") && !tiles.isEmpty()) paging.add(new Item.Action("next-page", Item.Action.Style.SECONDARY, "Next page", () -> { route.page++; route.scroll = null; nav.refresh(); }));
-        paging.add(new Item.Action("refresh-catalogue", Item.Action.Style.ICON, "Refresh", nav::refresh).icon(R.drawable.ic_tv_refresh));
-        page.add(Item.actions("paging", paging));
+        if (paginated) page.add(pagination(route, "bottom", !tiles.isEmpty()));
+        page.initialFocus = tiles.isEmpty() ? "refresh-catalogue" : tiles.get(0).key;
         return page;
     }
+    private Item pagination(Route route, String placement, boolean hasNext) {
+        List<Item.Action> controls = new ArrayList<>();
+        if (route.page > 0) controls.add(new Item.Action("previous-page:" + placement, Item.Action.Style.SECONDARY,
+                "Previous page", () -> changePage(route, -1)).text("‹ Previous page"));
+        if (hasNext) controls.add(new Item.Action("next-page:" + placement, Item.Action.Style.SECONDARY,
+                "Next page", () -> changePage(route, 1)).text("Next page ›"));
+        return Item.pagination("paging:" + placement, "Page " + (route.page + 1), controls);
+    }
+    private void changePage(Route route, int delta) {
+        route.page = Math.max(0, route.page + delta); route.scroll = null;
+        route.focus = ""; nav.refresh();
+    }
+
+    /** A free-text filter (no listed values). */
     private void filter(Route route, AddonManifest.Extra e) {
-        java.util.function.Consumer<String> set = value -> {
-            if (value.isEmpty()) route.extras.remove(e.name); else route.extras.put(e.name, value);
-            route.page = 0; nav.refresh();
-        };
-        if (e.options.isEmpty()) { nav.edit(capitalise(e.name), "Value", route.extras.getOrDefault(e.name, ""), set); return; }
-        List<String> values = new ArrayList<>(e.options);
-        if (!e.required) values.add(0, "Any");
-        nav.choose(capitalise(e.name), values.toArray(new String[0]), i -> set.accept(!e.required && i == 0 ? "" : values.get(i)));
+        nav.edit(capitalise(e.name), "Value", route.extras.getOrDefault(e.name, ""), value -> choose(route, e.name, value));
+    }
+    private void choose(Route route, String name, String value) {
+        if (value.isEmpty()) route.extras.remove(name); else route.extras.put(name, value);
+        route.page = 0; route.scroll = null; route.focus = ""; nav.refresh();
     }
 
     // Shared tile builders.

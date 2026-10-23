@@ -3,6 +3,7 @@ package tv.daniil.playback;
 import android.app.Activity;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
@@ -53,6 +54,7 @@ public final class MenuPanel {
         final boolean checked;
         private final int kind;
         private final Runnable action;
+        @Nullable private Runnable focusAction;
 
         private Item(int kind, String label, @Nullable String value, boolean checked, Runnable action) {
             this.kind = kind;
@@ -74,6 +76,12 @@ public final class MenuPanel {
 
         public static Item action(String label, @Nullable String value, Runnable run) {
             return new Item(ACTION, label, value, false, run);
+        }
+
+        /** Optional immediate feedback while moving through appearance choices, without pressing OK. */
+        public Item onFocus(Runnable run) {
+            focusAction = run;
+            return this;
         }
     }
 
@@ -208,6 +216,13 @@ public final class MenuPanel {
         entry.focus = next;
         bindRows();
         reveal(false);
+        previewFocused();
+    }
+
+    private void previewFocused() {
+        Entry entry = top();
+        if (!entry.items.isEmpty() && entry.items.get(entry.focus).focusAction != null)
+            entry.items.get(entry.focus).focusAction.run();
     }
 
     private void activate() {
@@ -240,6 +255,14 @@ public final class MenuPanel {
                 entry.focus = index;
                 bindRows();
                 item.action.run();
+            });
+            row.setOnHoverListener((view, event) -> {
+                if (item.focusAction != null && event.getActionMasked() == MotionEvent.ACTION_HOVER_ENTER && entry.focus != index) {
+                    entry.focus = index;
+                    bindRows();
+                    previewFocused();
+                }
+                return false;
             });
             ((TextView) row.findViewById(R.id.row_label)).setText(item.label);
             TextView value = row.findViewById(R.id.row_value);

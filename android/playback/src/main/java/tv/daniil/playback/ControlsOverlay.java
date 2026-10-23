@@ -126,6 +126,11 @@ final class ControlsOverlay {
         handler.removeCallbacks(tick);
         if (!shown) return;
         shown = false;
+        // A hidden Options button must not keep receiving OK after the inactivity timeout.
+        if (root.hasFocus() && root.getParent() instanceof View) {
+            View surface = (View) root.getParent();
+            if (surface.isFocusable()) surface.requestFocus();
+        }
         Ui.fade(root, false);
         onVisibilityChanged.run();
     }

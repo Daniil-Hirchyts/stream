@@ -28,6 +28,7 @@ validate some current video servers. Keep TLS verification enabled.
 | Shared playback | `android/playback/` (Java/XML library, Media3) | `tv.daniil.playback`: `PlaybackSession`/`PlayerScreen`, subtitles, tracks, overlay, menu, errors. No Gradle build of its own: each app includes it as `:playback`. Changes must pass the receiver suite (and the standalone app's, once it exists). |
 | Daniil TV engine | `streaming/native/` (C++17; libtorrent 2.1.2 + `patches/libtorrent`) | Bounded piece cache, libtorrent disk subsystem, read-ahead/eviction controller, JNI. Sources pinned in `deps.lock`, fetched and verified by `fetch-deps.sh` into ignored `.deps/`; change libtorrent only through `patches/` (the checkout is reset). Host `dtv-fixture`, `dtv-tests`. |
 | Daniil TV Android | `streaming/android/` (Gradle: `:app`, `:torrent`, shared `:playback`) | `tv.daniil.stream`: Java/XML/RecyclerView navigation/player host, add-ons, encrypted SQLite library/history/preferences and private imports. `tv.daniil.torrent`: JNI engine/Media3 data source, three ABIs. See `streaming/android/README.md`. |
+| Daniil TV sounds | `streaming/sounds/` (Python: numpy, scipy) | `sounds.py` renders the interface sounds into `streaming/android/app/src/main/res/raw/sfx_*.wav` (deterministic; regenerate, don't hand-edit) and, with `audition`, an ignored listening page. |
 | Daniil TV simulator | `streaming/simulator.sh`, `streaming/simulator/` | Generated media and torrents, fixture service on 58133, real seeder on 58134 (adb reverse), device tests; emulator identity checks in `simulator/emulator.sh`. |
 | Local simulator | `casting/simulator.sh`, `casting/simulator/`, `casting/Simulator.command` | Builds/starts the real components, generates local fixtures, hosts test room/live screen, tests playback. No mock Chrome APIs in the real test room. |
 | Fire TV maintenance | `scripts/`, `profiles/`, `restore-firetv.sh` | Separate owner-specific cleanup/recovery tools using Python and CleanYourTV. Not a casting runtime dependency. |
@@ -137,8 +138,13 @@ patch or moving libtorrent.
 
 The new app's data APIs block and belong on application workers. Each navigation
 or search owns a cancellable provider scope; configuration changes cancel older
-work. Never install Cinemeta or a source provider without an explicit acceptance
-in Settings or the store's review page (its starter page included). The Add-ons store lists
+work. A new install sets itself up on its first start, by the owner's decision, so it
+is ready without configuration: the starter add-ons (Cinemeta, Internet Archive,
+OpenSubtitles) and the public, unconfigured torrent sources Meteor, MediaFusion,
+Peerflix and TorrentsDB (`StarterAddons.SOURCES`). Each default is installed once: one the viewer
+removes is never added back. Never install any other catalogue or source
+provider without an explicit acceptance in Settings or the store's review page.
+Test databases and local-only instrumentation never install defaults. The Add-ons store lists
 built-in add-ons (`daniiltv://`), lists published through `addon_catalog` and
 Stremio's directory; under local-only instrumentation it uses only the fixture
 directory, never Stremio's. Never cache playable stream addresses for resume or log

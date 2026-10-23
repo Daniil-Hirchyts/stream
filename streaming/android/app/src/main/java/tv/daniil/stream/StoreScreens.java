@@ -39,9 +39,11 @@ final class StoreScreens {
     /** The starter pack's review page: the store's page for installing Cinemeta, Internet Archive and OpenSubtitles together. */
     static Route starters() { Route r = new Route("Add-on review"); r.value = StarterAddons.PACK; return r; }
 
-    Page store(Route route, Cancellation scope) throws Exception {
+    Page store(Route route, Cancellation scope) throws Exception { return store(route, scope, ignored -> {}); }
+    Page store(Route route, Cancellation scope, java.util.function.Consumer<Page> progress) throws Exception {
         String filter = route.extras.getOrDefault("filter", "All");
         Page page = new Page().title("Add-on store").narrow();
+        page.tools = java.util.Collections.singletonList(new Action("refresh-store", Action.Style.ICON, "Refresh add-on lists", this::refreshLists).icon(R.drawable.ic_tv_refresh));
         List<Action> chips = new ArrayList<>();
         for (String f : FILTERS) chips.add(new Action("filter:" + f, Action.Style.CHIP, f, () -> {
             route.extras.put("filter", f); route.scroll = null; route.focus = "filter:" + f; nav.refresh();
@@ -64,6 +66,7 @@ final class StoreScreens {
         AddonRepository.Result<AddonListing> found;
         if (cached != null && cached.configuration.equals(configuration) && android.os.SystemClock.elapsedRealtime() - cached.loadedAt < LIST_CACHE_MS) found = cached.result;
         else {
+            progress.accept(page.copy().add(Item.skeleton("Store results")));
             found = services.addons.store(scope);
             scope.check(); lists = new Lists(configuration, found);
         }
@@ -76,9 +79,7 @@ final class StoreScreens {
             page.addAll(rows); shown += rows.size();
         }
         if (shown == 0) page.add(Item.message(R.drawable.ic_tv_extension, "Nothing listed", ""));
-        if (!found.failures.isEmpty()) page.add(Item.notice(R.drawable.ic_tv_offline, found.stale ? "Showing saved lists" : "Some lists are unavailable", "",
-                new Action("refresh-store", Action.Style.SECONDARY, "Refresh", this::refreshLists).icon(R.drawable.ic_tv_refresh)));
-        else { page.add(Item.header("")); page.add(Item.row("refresh-store", 0, "Refresh add-on lists", "", this::refreshLists)); }
+        if (!found.failures.isEmpty()) page.add(Item.notice(R.drawable.ic_tv_offline, found.stale ? "Showing saved lists" : "Some lists are unavailable", ""));
         return page;
     }
     private void refreshLists() { lists = null; nav.refresh(); }
@@ -138,8 +139,7 @@ final class StoreScreens {
             if (e.kind == AddonException.Kind.CANCELLED) throw e;
             Page page = new Page().title("Add-on").narrow();
             page.add(Item.message(R.drawable.ic_tv_offline, "This add-on isn't responding", tv.daniil.stream.ui.Failures.message(e),
-                    new Action("retry-review", Action.Style.PRIMARY, "Retry", nav::refresh).icon(R.drawable.ic_tv_refresh),
-                    new Action("review-back", Action.Style.SECONDARY, "Back", nav::back)));
+                    new Action("retry-review", Action.Style.PRIMARY, "Retry", nav::refresh).icon(R.drawable.ic_tv_refresh)));
             if (curated != null) page.add(Item.actions("offline-setup", setupActions(curated.configureUrl)));
             page.initialFocus = "retry-review";
             return page;
@@ -166,7 +166,7 @@ final class StoreScreens {
         } else {
             actions.add(new Action("install-addon", Action.Style.PRIMARY, "Install", () -> nav.then(() -> {
                 services.addons.install(url, manifest); return null;
-            }, nav::refresh)).icon(R.drawable.ic_tv_add));
+            }, () -> { tv.daniil.stream.ui.Sounds.play(tv.daniil.stream.ui.Sounds.Sound.INSTALLED); nav.refresh(); })).icon(R.drawable.ic_tv_add));
             page.initialFocus = "install-addon";
         }
         if ((manifest.configurable || curated != null) && (present != null || !manifest.configurationRequired) && !builtin) {

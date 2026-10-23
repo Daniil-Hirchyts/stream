@@ -37,10 +37,16 @@ description, and the backdrop cross-fades to its art once focus settles.
 Shelves scroll horizontally. Page titles scroll with their page.
 
 
-- **First run:** no onboarding. An empty Home offers Get add-ons, which opens
-  the store's starter page; its Install adds the starter add-ons from their
-  current manifests. Local-only instrumentation lists none, so tests never
-  reach public providers.
+- **First run:** no onboarding and no setup. On its first start the app
+  installs the starter add-ons (Cinemeta, Internet Archive, OpenSubtitles)
+  and the torrent sources Meteor, MediaFusion, Peerflix and TorrentsDB (their
+  public, unconfigured addresses) in the background from their current
+  manifests, and refreshes Home when they arrive. An add-on already installed
+  with the viewer's own configuration is not added again. Each default is installed once (remembered in the encrypted store),
+  so one the viewer removes stays removed; one that can't be reached is tried
+  again on the next start. If Home is still empty it offers Get add-ons, the
+  store's starter page. Test databases and local-only instrumentation install
+  no defaults, so tests never reach public providers.
 - **Tab bar:** Search, Home, Library and Settings sit in one floating pill. It
   slides away once content scrolls under it and returns when focus reaches it
   or the page is back at its top. Content scrolling up fades into the top edge.
@@ -61,9 +67,17 @@ Shelves scroll horizontally. Page titles scroll with their page.
   as "Last played") or didn't play on this TV. The marks hold only hashed source
   keys, never addresses. When none can play, the page says how many were found
   and why.
-- **Browse:** catalogue cards grouped by kind (Films, Series, …), each showing
-  its first title's artwork from the same cached answers Home uses, its add-on
-  and whether it needs a filter first.
+- **Browse:** plain blocks with each catalogue's name inside, no artwork and
+  nothing beneath, grouped Films, Series, then other kinds. A block names its
+  add-on only when several add-ons supply catalogues, and says when it needs a
+  filter first. A catalogue's listed filters (genre, year, …) are rows of chips
+  on its page rather than a long list in a dialog; free-text filters ask in one.
+- **Scrolling:** moving back up a long page returns it to its very top (Home's
+  spotlight shows again), using each block's last measured height once the top
+  blocks have been recycled. A block that fills the page (Search, Settings)
+  scrolls inside itself and never moves the page.
+- **Search:** typing replaces only the results beside the keyboard, so the
+  focused key never moves. Results fade out at the column's top and bottom.
 - **Alerts:** choices are filled platters; Cancel or Close sits apart under a
   rule, outlined and grey until focused.
 - **Search keyboard:** a six-column grid with no gaps, on three pages
@@ -91,6 +105,25 @@ Shelves scroll horizontally. Page titles scroll with their page.
   own columns. The activity indicator is an eight-spoke wheel after Apple's,
   an animated vector turning at a constant speed on the render thread, so it
   keeps moving while the main thread is busy.
+- **Sounds:** made, not sampled, by `streaming/sounds/sounds.py` with Rauta's
+  method (gym-lib): each moment is a short score rendered by a small synth and
+  mastered to one A-weighted loudness scale, then chosen by ear. The app plays
+  Glass, made dark and plain like a TV's own interface: low, damped single
+  tones with a felt tap and no melodies; a small slide up or down says which
+  way something went, and a completion is the same tone tapped twice.
+  Navigation has quiet ticks: focus moving (in the player's controls and menu
+  too), a row's end, typing; tabs, pages, chips, dialogs and the player's
+  pause, play, skips and menu have small sounds; favourite, watched, an add-on
+  installed, a failure, up next and a title's end have fuller ones. Ticks
+  follow only the viewer's arrows and touches, never focus a page restores, and
+  lean up to a semitone with their place across the screen. `ui.Sounds` plays
+  them as sonification (never taking audio focus) with one voice: a new sound
+  cuts a smaller or equal one, is dropped under a larger one, a held arrow ticks
+  at most every 45 ms and quick presses are spaced out; OK's select gives way
+  to a more particular sound in the same press. Off with Settings → Playback →
+  Interface sounds, or the TV's own System sounds switch.
+  `python3 streaming/sounds/sounds.py audition` writes a listening page with
+  the app's set beside Bright glass, Pure and Marimba.
 - **Text:** short. Player steps name the step and the source; errors say what
   happened in one sentence and leave the next step to their buttons.
 - **Contrast:** small text is at least 4.5:1 on the canvas; tertiary grey is
@@ -151,11 +184,13 @@ Cast keeps its own look:
   pointer uses the header's chevron or clicks outside. Rows use
   `layout/row_menu.xml`, `bg_option_row`, `option_label` and `menu_icon`; the
   focused row turns white with dark text, as everywhere else.
-- **Subtitle font:** Standard, Bold, Condensed or Serif, from the shared
-  player's subtitle style (system families every Android TV has), in
-  Settings → Subtitles and the player's Subtitle style menu. Daniil Cast's
-  receiver offers the same choice on the TV; the Chrome extension doesn't
-  send it.
+- **Subtitle font & style:** Standard, Bold, Condensed, Serif, Monospace,
+  Casual, Cursive or Small caps, with expanded colors (White, Yellow, Cyan,
+  Green, Magenta, Blue, Amber, Red), from the shared player's subtitle style
+  (system families every Android TV has), with a live preview card in
+  Settings → Subtitles and choice dialogs, plus the player's Subtitle style menu.
+  Daniil Cast's receiver offers the same choice on the TV; the Chrome extension
+  doesn't send fonts.
 
 Screens are built off the main thread as `ui.Page` lists of `ui.Item` blocks
 (`BrowseScreens`, `TitleScreens`, `SetupScreens`), and `ui.PageAdapter` turns
@@ -315,8 +350,8 @@ separate and is never an import descriptor or library asset.
 ```sh
 ./streaming/simulator.sh engine-test   # 10 JNI/Media3 tests, real BitTorrent
 ./streaming/simulator.sh data-test     # add-ons, encryption, persistence, imports
-./streaming/simulator.sh test          # engine, data and app suites on the verified AVD
-./streaming/simulator.sh smoke         # visible real-app catalogue → torrent playback
+./streaming/simulator.sh test          # engine, data and 10 core app tests on the verified AVD
+./streaming/simulator.sh smoke         # one visible catalogue → torrent/seek/cache/favourite flow
 ./streaming/simulator.sh soak          # 30 real minutes of playback/seek cycles
 ./streaming/simulator.sh site          # real screen and bounded input, port 58133
 ./streaming/simulator.sh profile       # dumpsys memory/graphics and screenshot
@@ -356,7 +391,9 @@ regenerates the bundled Inter subsets.
 `:app:testDebugUnitTest` runs JVM tests of the store protocol, listing rules,
 built-in add-on, torrent discovery and source sorting without a device or network.
 
-The suites keep one test per behaviour. Rewinding into evicted data is proved
+The [test review](TESTING.md) records the 12 disabled low-value checks and the
+routine/extended split. Disabled checks carry JUnit `@Ignore` reasons; broader
+UI/settings/import coverage remains available with `acceptance`. Rewinding into evicted data is proved
 end to end by `AppFlowTest` (the engine suite keeps one whole-file read through
 a turning-over cache; metadata is checked for each hash version), and playback
 measurements run only under `profile`, not `test` or `acceptance`. Source
@@ -430,7 +467,8 @@ lives outside the app. The launcher verifies serial, emulator flag and AVD name
 before every device operation and preserves runner output in
 `streaming/simulator/.cache/evidence/`.
 
-The default class list excludes the long soak and two-phase process-death test.
+The routine app selection excludes extended UI/settings/import paths, the long
+soak and two-phase process-death test. CI still invokes process-death separately.
 Debug app tests use isolated databases/player preferences and local-only peers.
 After installing the current debug app/test APKs and starting services,
 `streaming/simulator/process-death.sh` terminates actual playback after durable

@@ -27,7 +27,7 @@ public final class ProcessDeathTest extends AppHarness {
         } else {
             assertEquals(1, services.store.history(true).size()); assertTrue(services.store.history(true).get(0).positionMs >= 31_000);
             File[] orphaned = new File(context.getCacheDir(), "payload").listFiles(); assertTrue("Startup recovered orphan payload", orphaned == null || orphaned.length == 0);
-            launch(); tap("Generated Film", true); tap("Resume", false);
+            launch(); tap("Generated Film", true); tap("Resume", false); chooseFirstSource();
             waitUntil("real playback resumes after process death", 45_000, () -> state() != null && state().renderedFirstFrame && state().playing && state().positionMs >= 31_000);
         }
     }

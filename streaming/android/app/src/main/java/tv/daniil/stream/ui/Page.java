@@ -9,6 +9,8 @@ import tv.daniil.stream.addon.Title;
 /** What one route shows: its blocks plus the surrounding chrome (title, column width, artwork, first focus). */
 public final class Page {
     public final List<Item> items = new ArrayList<>();
+    /** Quiet fixed upper-right actions, outside the scrolling content. Refresh stays rightmost. */
+    public List<Item.Action> tools = java.util.Collections.emptyList();
     /** Shown above the content; null for tab roots and pages with their own header. */
     @Nullable public String title;
     /** Full-screen artwork behind the page. */
@@ -24,6 +26,11 @@ public final class Page {
     public Page addAll(Collection<Item> more) { items.addAll(more); return this; }
     public Page title(String value) { title = value; return this; }
     public Page narrow() { narrow = true; return this; }
+    /** A snapshot for progress delivery while a worker continues adding result blocks. */
+    public Page copy() {
+        Page copy = new Page(); copy.items.addAll(items); copy.title = title; copy.backdrop = backdrop;
+        copy.tools = tools; copy.blurBackdrop = blurBackdrop; copy.narrow = narrow; copy.initialFocus = initialFocus; return copy;
+    }
     /** Home starts on its first card so the spotlight and artwork describe something. */
     @Nullable public String firstTile() {
         for (Item item : items) if (!item.tiles.isEmpty()) return item.tiles.get(0).key;

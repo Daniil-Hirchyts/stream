@@ -30,6 +30,7 @@ import tv.daniil.playback.*;
 import tv.daniil.stream.addon.*;
 import tv.daniil.stream.data.TvStore;
 import tv.daniil.stream.ui.Failures;
+import tv.daniil.stream.ui.Sounds;
 import tv.daniil.stream.ui.Tv;
 import tv.daniil.torrent.*;
 
@@ -54,6 +55,9 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     /** How each candidate went before, read with them; this activity's own outcomes are added as they happen. */
     private Map<String, TvStore.SourceMark> marks = new java.util.HashMap<>();
     private MediaSource selected;
+    /** What the sounds last heard: the play state (only the viewer's change of it sounds), and where the position was and when. */
+    private Boolean heardPlay;
+    private long heardAt, heardPosition;
     private int candidate, attempts;
     private long startMs, firstFrameMs, lastAdvanceMs, previousPosition, bufferingStarted, bufferingMs, seekStarted, seekRecoveryMs;
     private long resumePosition;
@@ -64,6 +68,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private String audioChoice = "", subtitleChoice = "";
     private Dialog choiceDialog;
     private boolean autoplay = true;
+    private boolean developerMode;
     /** Public torrents: trackers answer within seconds, a cold DHT lookup can take most of a minute. */
     private static final long METADATA_MS = 60_000;
     private final java.util.Set<String> attemptedSources = new java.util.HashSet<>();
@@ -81,7 +86,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 .putExtra("type", title.type).putExtra("name", title.name).putExtra("video", video).putExtra("source", sourceKey);
     }
     @Override public void onCreate(Bundle state) {
-        super.onCreate(state); app = (TvApplication) getApplication(); loader = app.playbackLoader;
+        super.onCreate(state); app = (TvApplication) getApplication(); loader = app.playbackLoader; Sounds.get(this);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         video = getIntent().getStringExtra("video"); explicitKey = getIntent().getStringExtra("source");
         if (state != null) { video = state.getString("video", video); resumePosition = state.getLong("position", 0); }
@@ -89,12 +94,13 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackPressed);
     }
     @Override protected void onStart() {
-        super.onStart(); visible = true; releasing = false;
+        super.onStart(); visible = true; releasing = false; Sounds.get(this).refresh(this);
         setContentView(R.layout.activity_watch);
         int mine = ++generation;
         preparation = loader.submit(() -> {
             try {
                 TvApplication.Services data = app.services();
+                boolean diagnosticsEnabled = SetupScreens.developerMode(data);
                 Title saved = null;
                 String id = getIntent().getStringExtra("titleId"), provider = getIntent().getStringExtra("provider");
                 for (TvStore.LibraryEntry e : data.store.library(false)) if (e.title.id.equals(id) && e.title.provider.equals(provider)) saved = e.title;
@@ -102,7 +108,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 Title chosen = saved;
                 main.post(() -> {
                     if (!current(mine)) return;
-                    services = data; title = chosen;
+                    services = data; title = chosen; developerMode = diagnosticsEnabled;
                     session = new PlaybackSession(this, data.playerPreferences, getString(R.string.app_name), "DaniilTV/0.1", this, 24 << 20);
                     session.player().setTrackSelectionParameters(session.player().getTrackSelectionParameters().buildUpon().setMaxVideoSize(1920, 1080).build());
                     session.player().addAnalyticsListener(new AnalyticsListener() {
@@ -122,6 +128,10 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         });
     }
     private boolean current(int mine) { return visible && !releasing && mine == generation && !isFinishing(); }
+    /** Keep source names and transport steps behind the viewer's diagnostics switch. */
+    private void showLoading(String id, String step, String detail, boolean untilReady) {
+        screen.setLoading(new PlayerScreen.Loading(id, developerMode ? step : "Loading", developerMode ? detail : null, untilReady));
+    }
     /** Keep the first remote key usable after a pointer action; focus is taken before View handles the click. */
     @android.annotation.SuppressLint("ClickableViewAccessibility") // Returning false preserves each view's normal click/drag handling.
     private void bindRemoteFocus() {
@@ -132,7 +142,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             findViewById(id).setOnTouchListener((view, event) -> {
                 if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
                     // A pointer click must activate immediately, rather than only taking keyboard focus.
-                    if (view.getId() == R.id.control_options || view.getId() == R.id.center_icon)
+                    if (view.getId() == R.id.control_options || view.getId() == R.id.control_stop || view.getId() == R.id.center_icon)
                         view.setFocusableInTouchMode(false);
                     if (view.getId() == R.id.center_icon) keepPausedOnRecovery = false;
                     surface.requestFocus();
@@ -163,7 +173,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             while (sourceFailures.length() > 0) sourceFailures.remove(0); }
         switching = true; lastAdvanceMs = SystemClock.elapsedRealtime(); scope = services.addons.newRequest();
         int mine = generation; Cancellation request = scope;
-        screen.setTitle(title.name); screen.setLoading(new PlayerScreen.Loading("sources", "Finding sources", null, false)); screen.render();
+        screen.setTitle(title.name); showLoading("sources", "Finding sources", null, false);
         preparation = loader.submit(() -> {
             try {
                 closeNative();
@@ -173,6 +183,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                     if (!found.items.isEmpty()) metadata = found.items.get(0);
                 }
                 autoplay = services.store.preference("autoplay", "true").equals("true");
+                Sounds.get(this).setEnabled(SetupScreens.soundsOn(services));
                 TvStore.Progress progress = services.store.progress(metadata.key(), video);
                 long resume = resumePosition > 0 ? resumePosition : progress != null && !progress.watched ? progress.positionMs : 0;
                 List<MediaSource> choices = Collections.emptyList();
@@ -208,10 +219,10 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         int mine = generation; scope = services.addons.newRequest(); Cancellation request = scope;
         selected = source;
         if (chosenIndex < 0) { attempts++; if (source != null) { attemptedSources.add(SourcePolicy.retryKey(source)); attemptedProviders.add(source.provider); } }
-        handledError = null; observedVideo = observedAudio = null;
+        handledError = null; observedVideo = observedAudio = null; heardPlay = null; heardAt = 0;
         switching = true; failureQueued = false; preferencesInitialized = false; firstFrameMs = 0; droppedFrames = 0;
         startMs = lastAdvanceMs = SystemClock.elapsedRealtime(); previousPosition = -1;
-        screen.setLoading(new PlayerScreen.Loading("preparing", "Opening source", sourceLabel(source), false)); screen.render();
+        showLoading("preparing", "Opening source", sourceLabel(source), false);
         preparation = loader.submit(() -> {
             try {
                 // A chosen file reuses the metadata session; a changed source closes the previous one first.
@@ -249,8 +260,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                         else torrentSource = torrentSource.withFallbackTrackers(MediaSource.PUBLIC_TRACKERS);
                         torrent = engine.add(torrentSource);
                         // Real swarms need time to answer through trackers and DHT; loopback fixtures answer at once.
-                        main.post(() -> { if (current(mine) && switching) { screen.setLoading(new PlayerScreen.Loading("peers", "Finding peers",
-                                sourceLabel(source), false)); screen.render(); } });
+                        main.post(() -> { if (current(mine) && switching) showLoading("peers", "Finding peers", sourceLabel(source), false); });
                     }
                     List<TorrentFile> files = engine.awaitMetadata(torrent, options.localOnly ? 20_000 : METADATA_MS);
                     int explicit = chosenIndex >= 0 ? chosenIndex : source == null ? services.store.importDescriptor(title.id).optInt("fileIdx", -1) : source.fileIndex;
@@ -274,7 +284,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 main.post(() -> {
                     if (!current(mine)) return;
                     switching = false; lastAdvanceMs = SystemClock.elapsedRealtime(); startupWatchdog.start(lastAdvanceMs); session.load(playback);
-                    screen.setLoading(new PlayerScreen.Loading("video", "Preparing video", null, true)); screen.render();
+                    showLoading("video", "Preparing video", null, true);
                 });
             } catch (Exception e) {
                 if (!current(mine)) return;
@@ -308,6 +318,18 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     }
     private static String mime(String url) { String lower = Uri.parse(url).getPath(); lower = lower == null ? "" : lower.toLowerCase(java.util.Locale.ROOT); return lower.endsWith(".srt") ? "application/x-subrip" : lower.endsWith(".ass") || lower.endsWith(".ssa") ? "text/x-ssa" : "text/vtt"; }
     private String episodeLabel() { for (Title.Episode e : title.episodes) if (e.id.equals(video)) return "S" + e.season + " E" + e.number + " · " + e.name; return ""; }
+    /** Viewing context stays separate from the shared audio/subtitle summary. */
+    private void updateWatchingInfo(PlaybackSnapshot snapshot) {
+        if (title == null) return;
+        List<String> info = new ArrayList<>();
+        if (!title.releaseInfo.isEmpty()) info.add(title.releaseInfo);
+        if (!title.genres.isEmpty()) info.add(String.join(" / ", title.genres.subList(0, Math.min(2, title.genres.size()))));
+        if (!title.rating.isEmpty()) info.add("★ " + title.rating);
+        if (snapshot.durationMs > 0) info.add(((snapshot.durationMs + 59_999) / 60_000) + " min");
+        android.widget.TextView view = findViewById(R.id.watching_info);
+        view.setText(String.join("  ·  ", info));
+        view.setVisibility(info.isEmpty() ? View.GONE : View.VISIBLE);
+    }
     private void chooseFile(MediaSource source, List<TorrentFile> files) {
         String[] names = new String[files.size()]; for (int i = 0; i < names.length; i++) names[i] = files.get(i).name() + " · " + files.get(i).size / (1 << 20) + " MiB";
         choiceDialog = show(Tv.choices(this, "Choose a video file", names, which -> open(source, files.get(which).index), this::finish));
@@ -350,9 +372,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 switching = true;
                 session.stop();
                 findViewById(R.id.player_root).requestFocus();
-                screen.setLoading(new PlayerScreen.Loading("sources", "Trying another source",
-                        sourceLabel(candidates.get(next)), false));
-                screen.render();
+                showLoading("sources", "Trying another source", sourceLabel(candidates.get(next)), false);
                 main.post(() -> { if (current(mine)) open(candidates.get(chosen), -1); }); return;
             }
         }
@@ -369,6 +389,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     /** A source's own name, on one line, under the title while it opens. */
     private static String sourceLabel(MediaSource source) { return source == null ? "Import" : source.name.replace('\n', ' ').trim(); }
     private void failure(String heading, String message, String code) {
+        Sounds.play(Sounds.Sound.WARNING);
         switching = false;
         if (screen == null || session == null) return;
         handledError = new PlaybackErrors.Description(code, heading, message, "", 0, true);
@@ -384,6 +405,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     @Override public void onUnsupportedFormat(String format) { queueFailure("This TV can't decode " + format + ".", "unsupported"); }
     @Override public void onPlaybackChanged(PlaybackSnapshot snapshot) {
         if (releasing || session == null || switching) return;
+        updateWatchingInfo(snapshot);
         if (keepPausedOnRecovery && snapshot.error == null) {
             if (snapshot.playWhenReady) { session.pause(); return; }
             if (snapshot.started) keepPausedOnRecovery = false;
@@ -391,6 +413,11 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         if (snapshot.videoFormat != null) observedVideo = snapshot.videoFormat;
         if (snapshot.audioFormat != null) observedAudio = snapshot.audioFormat;
         if (snapshot.renderedFirstFrame && firstFrameMs == 0) { firstFrameMs = SystemClock.elapsedRealtime() - startMs; markSource(TvStore.SourceMark.PLAYED); }
+        // The viewer's pause and play, heard as small sounds; never the first state a source starts in.
+        if (snapshot.started && snapshot.error == null) {
+            if (heardPlay != null && heardPlay != snapshot.playWhenReady) Sounds.play(snapshot.playWhenReady ? Sounds.Sound.RESUME : Sounds.Sound.PAUSE);
+            heardPlay = snapshot.playWhenReady;
+        }
         if (snapshot.error != null) {
             // Compare the actual host-owned description, not strings shared with Media3's error vocabulary.
             if (snapshot.error != handledError) queueFailure(playbackFailure(snapshot.error), "opening");
@@ -417,7 +444,18 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         if (error.code.equals("format")) return "No readable video in this source.";
         return error.message;
     }
-    @Override public void onProgress(PlaybackSnapshot snapshot) { if (!releasing) save(snapshot); }
+    @Override public void onProgress(PlaybackSnapshot snapshot) { if (!releasing) { hearSeek(snapshot); save(snapshot); } }
+    /** A skip, however it was made (remote, timeline, menu), sounds by its direction: the position jumped from where time had it. */
+    private void hearSeek(PlaybackSnapshot snapshot) {
+        long now = SystemClock.elapsedRealtime();
+        if (!switching && snapshot.started && heardAt != 0) {
+            long expected = heardPosition + (snapshot.playing ? (long) ((now - heardAt) * snapshot.speed) : 0);
+            long jump = snapshot.positionMs - expected;
+            if (jump > 4000) Sounds.play(Sounds.Sound.SEEK_FORWARD); else if (jump < -4000) Sounds.play(Sounds.Sound.SEEK_BACK);
+        }
+        heardAt = now; heardPosition = snapshot.positionMs;
+    }
+    @Override public void onMenuToggled(boolean open) { Sounds.play(open ? Sounds.Sound.MENU_OPEN : Sounds.Sound.MENU_CLOSE); }
     private void save(PlaybackSnapshot snapshot) {
         if (services == null || title == null || snapshot == null || !snapshot.loaded) return;
         Title outgoing = title; String outgoingVideo = video; long position = snapshot.positionMs, duration = snapshot.durationMs; boolean ended = snapshot.ended;
@@ -434,8 +472,10 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         });
     }
     @Override public void onEnded() {
-        if (!visible || releasing || screen == null || !autoplay) return;
-        Title.Episode next = neighbour(1); if (next != null) screen.offerUpNext(next.name, "Season " + next.season, () -> episode(next));
+        if (!visible || releasing || screen == null) return;
+        Title.Episode next = autoplay ? neighbour(1) : null;
+        Sounds.play(next != null ? Sounds.Sound.UP_NEXT : Sounds.Sound.FINISHED);
+        if (next != null) screen.offerUpNext(next.name, "Season " + next.season, () -> episode(next));
     }
     private Title.Episode neighbour(int offset) { if (title == null) return null; for (int i = 0; i < title.episodes.size(); i++) if (title.episodes.get(i).id.equals(video)) { int next = i + offset; return next < 0 || next >= title.episodes.size() ? null : title.episodes.get(next); } return null; }
     private void episode(Title.Episode next) {
@@ -461,17 +501,26 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         }
         if (switching || !session.started() || screen.isMenuOpen()) return false;
         int focus = focused == null ? View.NO_ID : focused.getId();
-        if (code == KeyEvent.KEYCODE_BACK && (focus == R.id.control_options || focus == R.id.center_icon || focus == R.id.progress))
+        boolean header = focus == R.id.control_options || focus == R.id.control_stop;
+        if (code == KeyEvent.KEYCODE_BACK && (header || focus == R.id.center_icon || focus == R.id.progress))
             findViewById(R.id.player_root).requestFocus();
-        if ((ok && focus != R.id.control_options) || code == KeyEvent.KEYCODE_MEDIA_PLAY
+        if ((ok && !header) || code == KeyEvent.KEYCODE_MEDIA_PLAY
                 || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) keepPausedOnRecovery = false;
-        if (ok && focus == R.id.control_options) { focused.performClick(); return true; }
+        if (ok && header) { focused.performClick(); return true; }
+        if (header && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+            screen.showControls();
+            View destination = findViewById(code == KeyEvent.KEYCODE_DPAD_LEFT ? R.id.control_stop : R.id.control_options);
+            destination.setFocusableInTouchMode(true); destination.requestFocus();
+            return true;
+        }
         if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) {
             screen.showControls();
             int target = code == KeyEvent.KEYCODE_DPAD_UP
-                    ? (focus == R.id.progress ? R.id.center_icon : R.id.control_options)
-                    : (focus == R.id.control_options ? R.id.center_icon : R.id.progress);
+                    ? (focus == R.id.progress ? R.id.center_icon : R.id.control_stop)
+                    : (header ? R.id.center_icon : R.id.progress);
             View destination = findViewById(target);
+            // Seeking temporarily hides the centre glyph; never send focus to that hidden control.
+            if (!destination.isShown()) destination = findViewById(code == KeyEvent.KEYCODE_DPAD_UP ? R.id.control_stop : R.id.progress);
             destination.setFocusableInTouchMode(true);
             destination.requestFocus();
             return true;
@@ -491,17 +540,13 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             if (canChooseSource()) result.add(MenuPanel.Item.action("Choose source", null, this::chooseSources));
             if (neighbour(-1) != null) result.add(MenuPanel.Item.action("Previous episode", null, () -> onPreviousEpisode()));
             if (neighbour(1) != null) result.add(MenuPanel.Item.action("Next episode", null, () -> onNextEpisode()));
-        } else result.add(MenuPanel.Item.action("Developer", "Playback diagnostics", this::diagnostics));
+        } else if (developerMode) result.add(MenuPanel.Item.action("Developer", "Playback diagnostics", this::diagnostics));
         return result;
     }
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (!visible || releasing || session == null) return;
             PlaybackSnapshot state = session.snapshot(); long now = SystemClock.elapsedRealtime();
-            View focused = getCurrentFocus();
-            if (!switching && state.error == null && !screen.isMenuOpen() && focused != null
-                    && (focused.getId() == R.id.control_options || focused.getId() == R.id.center_icon
-                    || focused.getId() == R.id.progress)) screen.showControls();
             if (state.positionMs > previousPosition + 50 && state.playing) { lastAdvanceMs = now; previousPosition = state.positionMs; if (seekStarted > 0) { seekRecoveryMs = now - seekStarted; seekStarted = 0; } }
             if (!state.buffering && !switching && !state.playWhenReady) lastAdvanceMs = now;
             boolean torrentStartup = engine != null && !switching && !state.renderedFirstFrame;
@@ -545,8 +590,17 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         Tv.Alert alert = Tv.alert(this, "Playback diagnostics", diagnosticSnapshot().toString().replace(",\"", ", \""));
         alert.cancelButton("close", "Close", alert.dialog::dismiss); choiceDialog = show(alert);
     }
-    @Override public boolean dispatchKeyEvent(KeyEvent event) { return screen != null && screen.dispatchKeyEvent(event) || super.dispatchKeyEvent(event); }
-    @Override public void onBackPressed() { if (screen != null && screen.onRemoteKey(KeyEvent.KEYCODE_BACK)) return; finish(); }
+    /** The player's controls and menu belong to the shared player: an arrow that moves its focus ticks here. */
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        boolean move = event.getAction() == KeyEvent.ACTION_DOWN && Sounds.arrow(event.getKeyCode());
+        if (move) Sounds.input();
+        View before = getCurrentFocus();
+        boolean handled = screen != null && screen.dispatchKeyEvent(event) || super.dispatchKeyEvent(event);
+        View after = getCurrentFocus();
+        if (move && after != null && after != before) Sounds.focus(after);
+        return handled;
+    }
+    @Override public void onBackPressed() { if (screen != null && screen.onRemoteKey(KeyEvent.KEYCODE_BACK)) return; Sounds.play(Sounds.Sound.BACK); finish(); }
     @Override protected void onStop() {
         visible = false; releasing = true;
         if (session != null) { PlaybackSnapshot state = session.snapshot(); resumePosition = state.positionMs; save(state); }

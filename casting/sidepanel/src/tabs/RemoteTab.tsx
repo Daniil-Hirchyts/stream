@@ -10,7 +10,10 @@ import { HelperSetup } from "./HelperSetup";
 // Subtitle style choices shared with the TV app. The fractions mirror SubtitleStyle.java, so the preview is to scale.
 const SIZE = { small: .042, medium: .0533, large: .066, xlarge: .082 };
 const GAP = { low: .04, standard: .08, raised: .16 };
-const COLOR = { white: "#ffffff", yellow: "#ffe15a", cyan: "#8be9ff" };
+const COLOR = {
+  white: "#ffffff", yellow: "#ffe15a", cyan: "#8be9ff",
+  green: "#a8f387", magenta: "#ff80df", blue: "#82b1ff", amber: "#ffb84d", red: "#ff6e6e"
+};
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
 const DEFAULT_STYLE: SubtitleStyle = { size: "medium", color: "white", edge: "box", position: "standard" };
 
@@ -264,7 +267,7 @@ function StyleEditor({ style, onChange }: { style: SubtitleStyle; onChange: (cha
           { value: "xlarge", label: <span style={{ fontSize: 17 }}>A</span>, title: "Extra large" }]} />
       </div>
       <div className="style-row"><span>Color</span>
-        <Segmented label="Color" value={local.color} onChange={color => change({ color })} options={(["white", "yellow", "cyan"] as const)
+        <Segmented label="Color" value={local.color} onChange={color => change({ color })} options={(["white", "yellow", "cyan", "green", "magenta", "blue", "amber", "red"] as const)
           .map(color => ({ value: color, title: color, label: <i className="swatch" style={{ "--swatch": COLOR[color] } as CSSProperties} /> }))} />
       </div>
       <div className="style-row"><span>Back</span>

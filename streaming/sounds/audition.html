@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daniil TV Sounds</title>
+<style>
+  /* The listening page for streaming/sounds/sounds.py: every moment on every instrument, the app's choice marked. */
+  :root {
+    --bg: #F4F4F6; --card: #FFFFFF; --sunk: #E9E9EE; --fg: #141418; --muted: #6B6B76; --line: #DCDCE3;
+    --accent: #141418; --accent-ink: #FFFFFF; --chosen: #2F6FEB;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0E0E12; --card: #1A1A20; --sunk: #24242C; --fg: #F2F2F5; --muted: #9A9AA6; --line: #2E2E38;
+      --accent: #F2F2F5; --accent-ink: #0E0E12; --chosen: #7FA8FF; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0E0E12; --card: #1A1A20; --sunk: #24242C; --fg: #F2F2F5; --muted: #9A9AA6; --line: #2E2E38;
+    --accent: #F2F2F5; --accent-ink: #0E0E12; --chosen: #7FA8FF; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 400 15px/1.45 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif; }
+  button { font: inherit; color: inherit; cursor: pointer; border: 0; }
+  .page { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; display: flex; flex-direction: column; gap: 22px; }
+  h1 { font-size: 34px; line-height: 1.05; margin: 0; letter-spacing: -0.02em; }
+  .intro p { color: var(--muted); margin: 8px 0 0; max-width: 64ch; }
+  .instruments { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .instrument { background: var(--card); border-radius: 18px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .instrument h2 { margin: 0; font-size: 18px; }
+  .instrument p { margin: 0; color: var(--muted); font-size: 13px; }
+  .instrument button { align-self: flex-start; background: var(--sunk); border-radius: 999px; padding: 6px 14px; font-weight: 500; }
+  .group { display: flex; flex-direction: column; gap: 6px; }
+  .group h3 { margin: 14px 4px 2px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .row { background: var(--card); border-radius: 14px; padding: 10px 12px 10px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+  .what { flex: 1 1 220px; min-width: 0; }
+  .what b { font-weight: 600; }
+  .what span { display: block; color: var(--muted); font-size: 13px; }
+  .plays { display: flex; gap: 6px; flex-wrap: wrap; }
+  .plays button { background: var(--sunk); border-radius: 999px; padding: 7px 14px; font-size: 14px; font-weight: 500; position: relative; }
+  .plays button.chosen { box-shadow: inset 0 0 0 2px var(--chosen); }
+  .plays button.playing { background: var(--accent); color: var(--accent-ink); }
+  .legend { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .legend i { width: 16px; height: 16px; border-radius: 999px; box-shadow: inset 0 0 0 2px var(--chosen); display: inline-block; }
+  @media (max-width: 520px) { h1 { font-size: 28px; } .plays button { padding: 7px 11px; } }
+</style>
+</head>
+<body>
+<main class="page">
+  <section class="intro">
+    <h1>Daniil TV sounds</h1>
+    <p>Every moment of the app on each instrument. The app plays the outlined one: Pure for taps and cues, Marimba for
+      things completed, as chosen by ear for Rauta. In the app, focus and chip sounds also climb a scale from left to
+      right across the screen.</p>
+  </section>
+  <section class="instruments" id="instruments"></section>
+  <p class="legend"><i></i> What the app plays now</p>
+  <section id="groups"></section>
+</main>
+<script>
+  const manifest = /*MANIFEST*/null;
+  let current = null;
+  function play(instrument, event, button) {
+    if (current) { current.audio.pause(); current.button && current.button.classList.remove("playing"); }
+    const audio = new Audio(`${instrument}/${event}.wav`);
+    current = { audio, button };
+    if (button) { button.classList.add("playing"); audio.onended = () => button.classList.remove("playing"); }
+    return audio.play().then(() => new Promise(done => { audio.onended = () => { button && button.classList.remove("playing"); done(); }; }));
+  }
+  async function playAll(instrument) {
+    for (const e of manifest.events) {
+      const button = document.querySelector(`[data-event="${e.id}"][data-instrument="${instrument}"]`);
+      await play(instrument, e.id, button);
+      await new Promise(r => setTimeout(r, 250));
+    }
+  }
+  const shelf = document.getElementById("instruments");
+  for (const i of manifest.instruments) {
+    const card = document.createElement("article"); card.className = "instrument";
+    card.innerHTML = `<h2>${i.name}</h2><p>${i.about}</p>`;
+    const all = document.createElement("button"); all.textContent = "Play every moment";
+    all.onclick = () => playAll(i.id);
+    card.append(all); shelf.append(card);
+  }
+  const groups = document.getElementById("groups");
+  const byGroup = {};
+  for (const e of manifest.events) (byGroup[e.group] ||= []).push(e);
+  for (const [group, events] of Object.entries(byGroup)) {
+    const section = document.createElement("div"); section.className = "group";
+    section.innerHTML = `<h3>${group}</h3>`;
+    for (const e of events) {
+      const row = document.createElement("div"); row.className = "row";
+      row.innerHTML = `<div class="what"><b>${e.name}</b><span>${e.when}</span></div>`;
+      const plays = document.createElement("div"); plays.className = "plays";
+      for (const i of manifest.instruments) {
+        const b = document.createElement("button");
+        b.textContent = i.name; b.dataset.event = e.id; b.dataset.instrument = i.id;
+        if (manifest.chosen[e.id] === i.id) { b.classList.add("chosen"); b.title = "The app plays this one"; }
+        b.onclick = () => play(i.id, e.id, b);
+        plays.append(b);
+      }
+      row.append(plays); section.append(row);
+    }
+    groups.append(section);
+  }
+</script>
+</body>
+</html>

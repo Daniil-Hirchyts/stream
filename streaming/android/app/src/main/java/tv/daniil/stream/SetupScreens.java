@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import tv.daniil.playback.SubtitleStyle;
 import tv.daniil.stream.addon.AddonManifest;
 import tv.daniil.stream.addon.AddonUrl;
 import tv.daniil.stream.addon.Title;
@@ -21,9 +22,6 @@ import tv.daniil.stream.ui.Page;
 final class SetupScreens {
     static final String[] LANGUAGE_NAMES = {"Automatic", "English", "Russian", "French", "German", "Spanish", "Italian", "Ukrainian", "Japanese", "Off"};
     static final String[] LANGUAGES = {"", "eng", "rus", "fra", "deu", "spa", "ita", "ukr", "jpn", "off"};
-    private static final String[][] SUBTITLE_STYLES = {
-            {"size", "small", "medium", "large", "xlarge"}, {"font", "standard", "bold", "condensed", "serif"}, {"color", "white", "yellow", "cyan"},
-            {"edge", "outline", "shadow", "box"}, {"position", "low", "standard", "raised"}};
     private final Context context;
     private final Navigator nav;
     private final TvApplication.Services services;
@@ -73,35 +71,61 @@ final class SetupScreens {
                         () -> language("subtitleLanguage", "Subtitle language"))));
 
         List<Item> subtitles = new ArrayList<>();
-        for (String[] style : SUBTITLE_STYLES) {
-            String setting = style[0];
-            String[] values = Arrays.copyOfRange(style, 1, style.length);
+        subtitles.add(Item.subtitlePreview("subtitle-preview", services.playerPreferences));
+        SubtitleStyle subtitleStyle = new SubtitleStyle(services.playerPreferences);
+        for (SubtitleStyle.Setting s : SubtitleStyle.Setting.values()) {
+            String setting = s.key;
+            String[] values = s.values;
             String current = services.playerPreferences.getString("subtitle_" + setting, "");
+            int currentIndex = current.isEmpty() ? s.fallback : subtitleStyle.get(s);
+            final int chosenIndex = currentIndex;
             subtitles.add(Item.row("subtitle-" + setting, 0, "Subtitle " + setting, current.isEmpty() ? "Default" : label(current), () -> {
                 String[] labels = new String[values.length];
                 for (int i = 0; i < values.length; i++) labels[i] = label(values[i]);
-                nav.choose("Subtitle " + setting, labels, i -> nav.mutate(() -> {
+
+                tv.daniil.stream.ui.SubtitlePreviewView dialogPreview = new tv.daniil.stream.ui.SubtitlePreviewView(context);
+                dialogPreview.setCompact(true);
+                dialogPreview.updateFrom(services.playerPreferences);
+
+                nav.chooseWithPreview("Subtitle " + setting, dialogPreview, labels, chosenIndex, i -> nav.mutate(() -> {
                     services.playerPreferences.edit().putString("subtitle_" + setting, values[i]).apply();
                     services.store.setPreference("subtitle_" + setting, values[i]);
                     return null;
-                }));
+                }), i -> {
+                    switch (setting) {
+                        case "size": dialogPreview.setSize(i); break;
+                        case "font": dialogPreview.setFont(i); break;
+                        case "color": dialogPreview.setColor(i); break;
+                        case "edge": dialogPreview.setEdge(i); break;
+                        case "position": dialogPreview.setPosition(i); break;
+                    }
+                });
             }));
         }
         category(categories, panes, "settings:subtitles", R.drawable.ic_tv_subtitles, "Subtitles", subtitles);
 
-        boolean autoplay = services.store.preference("autoplay", "true").equals("true");
+        boolean autoplay = services.store.preference("autoplay", "true").equals("true"), sounds = soundsOn(services);
         category(categories, panes, "settings:playback", R.drawable.ic_tv_play, "Playback", Arrays.asList(
                 Item.row("cache-size", 0, "Playback cache", services.store.preference("cacheMiB", "256") + " MiB",
                         () -> nav.choose("Playback cache", new String[]{"128 MiB", "256 MiB", "512 MiB"},
                                 i -> nav.mutate(() -> { services.store.setPreference("cacheMiB", new String[]{"128", "256", "512"}[i]); return null; }))),
                 Item.row("autoplay", 0, "Play next episode", autoplay ? "On" : "Off",
                         () -> nav.mutate(() -> { services.store.setPreference("autoplay", autoplay ? "false" : "true"); return null; })),
+                Item.row("interface-sounds", 0, "Interface sounds", sounds ? "On" : "Off", () -> nav.mutate(() -> {
+                    services.store.setPreference("interfaceSounds", sounds ? "false" : "true");
+                    tv.daniil.stream.ui.Sounds.get(context).setEnabled(!sounds); return null;
+                })),
                 // Clearing keeps imports, favourites and watch history.
                 Item.row("clear-cache", 0, "Clear app playback and metadata cache", "",
                         () -> nav.mutate(() -> { clearCaches(context, services); return null; }))));
 
-        category(categories, panes, "settings:about", R.drawable.ic_tv_info, "About", Collections.singletonList(
-                Item.row("developer", 0, "Developer", "", () -> nav.push(new Route("Developer")))));
+        boolean developerMode = developerMode(services);
+        List<Item> about = new ArrayList<>();
+        about.add(Item.row("developer-mode", 0, "Developer mode", developerMode ? "On" : "Off", () -> nav.mutate(() -> {
+            services.store.setPreference("developerMode", developerMode ? "false" : "true"); return null;
+        })));
+        if (developerMode) about.add(Item.row("developer", 0, "Developer", "", () -> nav.push(new Route("Developer"))));
+        category(categories, panes, "settings:about", R.drawable.ic_tv_info, "About", about);
 
         return new Page().add(Item.split("settings", categories, panes, route.extras.getOrDefault("category", ""),
                 key -> route.extras.put("category", key)));
@@ -111,6 +135,10 @@ final class SetupScreens {
         panes.put(key, rows);
     }
     /** Removes only this app's disposable payload/subtitle files and cached metadata. */
+    /** The viewer's interface sounds switch (on unless turned off). Reads the store: call on a worker. */
+    static boolean soundsOn(TvApplication.Services services) { return !services.store.preference("interfaceSounds", "true").equals("false"); }
+    /** Diagnostics are opt-in. Read the encrypted store on an application worker. */
+    static boolean developerMode(TvApplication.Services services) { return services.store.preference("developerMode", "false").equals("true"); }
     static void clearCaches(Context context, TvApplication.Services services) {
         services.store.clearMetadata();
         delete(new File(context.getCacheDir(), "payload"));
@@ -152,6 +180,7 @@ final class SetupScreens {
 
     Page developer() throws Exception {
         Page page = new Page().title("Developer").narrow();
+        if (!developerMode(services)) return page.add(Item.text("Developer mode is off", "Enable it in Settings → About."));
         page.add(Item.text("Version", context.getString(R.string.app_name) + " " + context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName
                 + "\n" + tv.daniil.torrent.TorrentEngine.version()));
         page.add(Item.text("Device", android.os.Build.MODEL + " · Android API " + android.os.Build.VERSION.SDK_INT + " · " + String.join(", ", android.os.Build.SUPPORTED_ABIS)));
@@ -175,7 +204,11 @@ final class SetupScreens {
         } catch (Exception ignored) { /* unknown provider language */ }
         return code;
     }
-    private static String label(String value) { return value.equals("xlarge") ? "Extra large" : BrowseScreens.capitalise(value); }
+    private static String label(String value) {
+        if (value.equals("xlarge")) return "Extra large";
+        if (value.equals("smallcaps")) return "Small caps";
+        return BrowseScreens.capitalise(value);
+    }
     static void delete(File file) {
         File[] children = file.listFiles();
         if (children != null) for (File child : children) delete(child);

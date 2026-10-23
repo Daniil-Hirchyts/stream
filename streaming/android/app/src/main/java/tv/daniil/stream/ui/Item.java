@@ -10,7 +10,7 @@ import tv.daniil.stream.addon.Title;
 
 /** One block of a page. Screens build these on workers; {@link PageAdapter} turns them into views. */
 public final class Item {
-    public enum Kind { SPOTLIGHT, DETAILS, INTRO, TITLE, HEADER, SHELF, GRID, ACTIONS, CHIPS, LIST, SOURCE, FIELD, KEYBOARD, SPLIT, SKELETON, MESSAGE, NOTICE, TEXT, LOADING }
+    public enum Kind { SPOTLIGHT, DETAILS, INTRO, TITLE, HEADER, SHELF, GRID, ACTIONS, CHIPS, LIST, SOURCE, FIELD, KEYBOARD, SPLIT, SKELETON, MESSAGE, NOTICE, TEXT, LOADING, SUBTITLE_PREVIEW, CATALOGUE_HEADER, PAGINATION }
 
     /** A poster, landscape thumbnail or catalogue card. */
     public static final class Tile {
@@ -34,6 +34,10 @@ public final class Item {
         public Tile progress(float value) { progress = value; return this; }
         public Tile badge(@DrawableRes int icon) { badge = icon; return this; }
         public Tile description(String value) { description = value; return this; }
+        /** A plain block with its title inside and no artwork or caption (a Browse category). */
+        public boolean block;
+        public int colorIndex;
+        public Tile block() { block = true; return this; }
     }
 
     /** A focusable button. Icon-only buttons are described by their label. */
@@ -87,6 +91,13 @@ public final class Item {
     public static Item pageTitle(String title) { Item i = new Item(Kind.TITLE, "title:" + title); i.title = title; return i; }
     public static Item header(String title) { Item i = new Item(Kind.HEADER, "header:" + title); i.title = title; return i; }
     public static Item header(String title, String detail) { Item i = header(title); i.detail = detail; return i; }
+    public static Item catalogueHeader(String title, String detail) {
+        Item i = new Item(Kind.CATALOGUE_HEADER, "catalogue-header"); i.title = title; i.detail = detail;
+        return i;
+    }
+    public static Item pagination(String key, String status, List<Action> actions) {
+        Item i = new Item(Kind.PAGINATION, key); i.title = status; i.actions = actions; return i;
+    }
     public static Item shelf(String key, String title, String detail, Tile.Style style, List<Tile> tiles) {
         Item i = new Item(Kind.SHELF, key); i.title = title; i.detail = detail; i.style = style; i.tiles = tiles; return i;
     }
@@ -123,6 +134,12 @@ public final class Item {
     }
     @Nullable public List<Item> children;
     @Nullable public java.util.Map<String, List<Item>> panes;
+    @Nullable public android.content.SharedPreferences playerPreferences;
+    public static Item subtitlePreview(String key, android.content.SharedPreferences prefs) {
+        Item i = new Item(Kind.SUBTITLE_PREVIEW, key);
+        i.playerPreferences = prefs;
+        return i;
+    }
     public static Item keyboard(String key, String value, Consumer<String> input) {
         Item i = new Item(Kind.KEYBOARD, key); i.value = value; i.keyboardInput = input; return i;
     }

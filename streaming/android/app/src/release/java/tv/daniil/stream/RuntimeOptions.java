@@ -8,6 +8,8 @@ public final class RuntimeOptions {
     static String databaseName(Context context) { return "daniiltv.db"; }
     static java.util.List<String> addonDirectory(Context context) { return java.util.Collections.singletonList(tv.daniil.stream.addon.AddonRepository.DIRECTORY); }
     static java.util.List<String> starterAddons(Context context) { return StarterAddons.ALL; }
+    /** A new install sets itself up with the starter add-ons. */
+    static boolean installDefaults(Context context) { return true; }
     public final boolean localOnly = false;
     public final boolean publicNetworkOnly = false;
     public final String peer = "";

@@ -9,6 +9,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
 import android.view.MotionEvent;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -36,9 +37,11 @@ import tv.daniil.stream.addon.Title;
 import tv.daniil.stream.ui.Artwork;
 import tv.daniil.stream.ui.Backdrop;
 import tv.daniil.stream.ui.Failures;
+import tv.daniil.stream.ui.IntroView;
 import tv.daniil.stream.ui.Item;
 import tv.daniil.stream.ui.Page;
 import tv.daniil.stream.ui.PageAdapter;
+import tv.daniil.stream.ui.Sounds;
 import tv.daniil.stream.ui.Tv;
 
 /**
@@ -57,8 +60,12 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private Artwork artwork;
     private Backdrop backdrop;
     private LinearLayout navigation;
-    private View topBar, topBarControls, searchButton, searchExpandedView, searchClose, scrollFade;
+    private View topBar, topBarControls, searchButton, searchExpandedView, searchClose, scrollFade, pageBack, pageTools;
+    private PageAdapter.Layout pageLayout;
     private boolean topBarHidden;
+    @Nullable private Route shownRoute;
+    @Nullable private Page shownPage;
+    private final java.util.Map<Route, Page> retainedPages = new java.util.IdentityHashMap<>();
     private TextView searchQuery;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Route> stack = new ArrayList<>();
@@ -76,19 +83,37 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     @Nullable private Runnable searchDebounce;
     /** A tab was chosen: leave focus on the tab bar rather than jumping into the new page. */
     private boolean stayOnTabs;
+    private boolean waitingForContentFocus;
     @Nullable private Uri incomingFile;
+    /** The start screen, over the browse shell until Home and its first artwork are ready (owner launches only). */
+    @Nullable private IntroView intro;
+    private long introStarted;
+    private boolean introHome, introArtwork;
+    /** Where the next page enters from: 1 after opening a screen, -1 after Back, 0 for a tab (it rises instead). */
+    private int enterDirection;
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         app = (TvApplication) getApplication();
+        Sounds.get(this);
         incomingHandled = saved != null && saved.getBoolean("incomingHandled");
         incomingFile = incomingHandled ? null : incoming(getIntent());
         setContentView(R.layout.activity_browse);
+        // Instrumentation finds controls as soon as they exist, so only the owner's launches show the start screen.
+        if (saved == null && RuntimeOptions.installDefaults(this)) {
+            intro = new IntroView(this);
+            ((FrameLayout) findViewById(R.id.browse_root)).addView(intro, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            introStarted = android.os.SystemClock.uptimeMillis();
+            // However slow the providers are, the start screen never holds the app for long.
+            main.postDelayed(this::finishIntro, 12_000);
+        }
         artwork = new Artwork(new java.io.File(getCacheDir(), "artwork"));
         backdrop = new Backdrop(artwork, findViewById(R.id.backdrop), findViewById(R.id.backdrop_back), findViewById(R.id.backdrop_soft), findViewById(R.id.backdrop_scrim));
         list = findViewById(R.id.page_rows);
-        list.setLayoutManager(new PageAdapter.Layout(this, RecyclerView.VERTICAL, 40));
+        pageLayout = new PageAdapter.Layout(this, RecyclerView.VERTICAL, 40);
+        list.setLayoutManager(pageLayout);
         list.setItemAnimator(null);
+        list.setFocusableInTouchMode(true); list.setDefaultFocusHighlightEnabled(false);
         // Off-screen shelves keep their views: scrolling back never rebuilds a row or reloads its artwork.
         list.setItemViewCacheSize(10);
         adapter = new PageAdapter(this, artwork, this);
@@ -101,12 +126,25 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         searchExpandedView = findViewById(R.id.search_expanded);
         searchQuery = findViewById(R.id.search_query);
         searchClose = findViewById(R.id.search_close);
+        pageBack = findViewById(R.id.page_back);
+        pageTools = findViewById(R.id.home_tools);
+        pageBack.setTooltipText("Back");
+        Tv.control(pageBack, "nav:back", this::back, key -> {}, 1f, false);
+        pageBack.setNextFocusLeftId(R.id.page_back); pageBack.setNextFocusUpId(R.id.page_back);
+        pageBack.setOnKeyListener((view, code, event) -> {
+            if (code != KeyEvent.KEYCODE_DPAD_DOWN) return false;
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                View target = stack.isEmpty() ? null : list.findViewWithTag(route().focus);
+                if (target != null) target.requestFocus(); else focusFirst();
+            }
+            return true;
+        });
         searchButton.setDefaultFocusHighlightEnabled(false);
         searchClose.setDefaultFocusHighlightEnabled(false);
         for (String screen : TABS) navigation.addView(tab(screen));
         // The tab bar's ends hold focus rather than dropping into whatever content lies beyond them.
         View lastTab = navigation.getChildAt(TABS.length - 1);
-        lastTab.setId(View.generateViewId()); lastTab.setNextFocusRightId(lastTab.getId());
+        lastTab.setNextFocusRightId(lastTab.getId());
         searchButton.setNextFocusLeftId(R.id.search_button);
         // tvOS: the tab bar slides away while content scrolls and returns when focus reaches it or the page is at its top.
         list.addOnScrollListener(new RecyclerView.OnScrollListener() {
@@ -129,21 +167,82 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     }
     private TextView tab(String screen) {
         TextView tab = Tv.heading(this, screen, 15.5f, R.color.tv_tab_text);
+        tab.setId(View.generateViewId());
         tab.setGravity(Gravity.CENTER); tab.setBackgroundResource(R.drawable.tv_tab); tab.setContentDescription(screen);
         tab.setPadding(Tv.dp(this, 17), 0, Tv.dp(this, 17), 0);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, Tv.dp(this, 38));
         params.setMarginStart(Tv.dp(this, 2)); params.setMarginEnd(Tv.dp(this, 2));
         tab.setLayoutParams(params);
-        Tv.control(tab, "nav:" + screen, () -> { stayOnTabs = true; root(screen); }, key -> {}, Tv.LIFT_ROW, false);
+        Tv.control(tab, "nav:" + screen, () -> { Sounds.play(Sounds.Sound.TAB); stayOnTabs = true; root(screen); }, key -> {}, Tv.LIFT_ROW, false);
         return tab;
     }
     private void initialize() {
-        work(() -> app.services(), value -> {
+        work(() -> { TvApplication.Services s = app.services(); Sounds.get(this).setEnabled(SetupScreens.soundsOn(s)); return s; }, value -> {
             services = value;
             browse = new BrowseScreens(this, services); titles = new TitleScreens(this, services); setup = new SetupScreens(this, this, services); store = new StoreScreens(this, services);
-            // No onboarding: the app opens on Home, which offers the starter add-ons while it has nothing to show.
+            // No onboarding: the app opens on Home and sets itself up with the starter add-ons in the background.
+            if (route().screen.equals("Starting") && intro != null) { introSetup(); offerIncomingFile(); return; }
             if (route().screen.equals("Starting")) root("Home"); else render();
             offerIncomingFile();
+            if (RuntimeOptions.installDefaults(this)) app.workers.execute(() -> {
+                if (StarterAddons.installDefaults(services) > 0) main.post(() -> { if (!stopped && !isFinishing() && !stack.isEmpty() && route().screen.equals("Home")) render(); });
+            });
+        });
+    }
+
+    // Start screen.
+    /** Starter add-ons install before Home is first built, so a first launch opens on filled shelves. */
+    private void introSetup() {
+        Runnable home = () -> {
+            if (introHome || isFinishing()) return;
+            introHome = true;
+            root("Home");
+        };
+        app.workers.execute(() -> {
+            int added = StarterAddons.installDefaults(services);
+            main.post(() -> {
+                if (!introHome) home.run();
+                else if (added > 0 && !stopped && !isFinishing() && !stack.isEmpty() && route().screen.equals("Home")) render();
+            });
+        });
+        // Unreachable add-on servers don't hold Home back; a late install refreshes it as before.
+        main.postDelayed(home, 6_000);
+    }
+    /** Warms the artwork Home shows first (the spotlight and the leading posters), feeding the posters to the wall. */
+    private void introArtwork(Page page) {
+        if (intro == null || introArtwork) return;
+        introArtwork = true;
+        List<String> posters = new ArrayList<>();
+        String spotlight = null;
+        for (Item item : page.items) for (Item.Tile tile : item.tiles) {
+            if (spotlight == null && tile.media != null) spotlight = Backdrop.art(tile.media);
+            if (tile.image != null && posters.size() < 27 && !posters.contains(tile.image)) posters.add(tile.image);
+        }
+        int total = posters.size() + (spotlight == null ? 0 : 2);
+        if (total == 0) { finishIntro(); return; }
+        int[] done = {0};
+        Runnable arrived = () -> {
+            done[0]++;
+            if (done[0] == total) finishIntro();
+        };
+        if (spotlight != null) {
+            artwork.fetch(spotlight, Artwork.BACKDROP, false, bitmap -> arrived.run());
+            artwork.softened(spotlight, bitmap -> arrived.run());
+        }
+        for (String url : posters) artwork.fetch(url, Artwork.THUMBNAIL, false, bitmap -> { if (intro != null) intro.poster(bitmap); arrived.run(); });
+        // Artwork is optional: failed downloads never answer, so the wait has an end.
+        main.postDelayed(this::finishIntro, 4_000);
+    }
+    /** Leaves once the opening animation has played out, revealing the page already in place beneath. */
+    private void finishIntro() {
+        if (intro == null || intro.finishing()) return;
+        long wait = IntroView.minimumMs() - (android.os.SystemClock.uptimeMillis() - introStarted);
+        wait = Math.max(wait, intro.postersMs());
+        if (wait > 0) { main.postDelayed(this::finishIntro, wait); return; }
+        IntroView leaving = intro;
+        leaving.finish(() -> {
+            ((ViewGroup) leaving.getParent()).removeView(leaving);
+            if (intro == leaving) intro = null;
         });
     }
 
@@ -212,7 +311,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         searchQuery.setText(empty ? "Search films, series and imports" : value);
         searchQuery.setTextColor(getColor(empty ? R.color.tv_text_secondary : R.color.tv_text));
     }
-    @Override public void push(Route next) { rememberFocus(); stack.add(next); render(); }
+    @Override public void push(Route next) { Sounds.play(Sounds.Sound.OPEN); rememberFocus(); stack.add(next); enterDirection = 1; render(); }
     @Override public void back() { onBackPressed(); }
     @Override public void refresh() { render(); }
     private void cancelWork() { generation++; if (scope != null) scope.close(); if (pending != null) pending.cancel(true); }
@@ -222,12 +321,38 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         if (stopped || services == null) return;
         scope = services.addons.newRequest();
         Route route = route(); Cancellation request = scope;
+        if (shownRoute != route && !stayOnTabs) {
+            // Hold focus before removing the clicked card. Skeletons have no controls; letting the framework
+            // choose a fallback here briefly highlights Home before the page's Play button arrives.
+            waitingForContentFocus = true;
+            list.setDescendantFocusability(ViewGroup.FOCUS_BEFORE_DESCENDANTS);
+            list.requestFocus();
+        }
         chrome(route.screen);
-        loading();
-        topBarHidden = true; updateTopBar();
-        work(() -> build(route, request), this::show);
+        retainedPages.keySet().retainAll(stack);
+        if (shownRoute != route) enter();
+        Page retained = retainedPages.get(route);
+        if (shownRoute != route && retained != null) show(retained);
+        boolean updating = shownRoute == route && shownPage != null;
+        if (!updating) { loading(); topBarHidden = true; updateTopBar(); }
+        else if (route.screen.equals("Search")) loading();
+        int mine = generation;
+        Consumer<Page> progress = partial -> main.post(() -> {
+            if (mine == generation && !stopped && !isFinishing()) showPartial(partial);
+        });
+        work(() -> build(route, request, progress), this::show);
     }
-    private Page build(Route route, Cancellation request) throws Exception {
+    /** A new page slides a little way in from the direction of travel and fades up, rather than simply replacing the last. */
+    private void enter() {
+        int direction = enterDirection; enterDirection = 0;
+        list.animate().cancel();
+        list.setAlpha(0f);
+        list.setTranslationX(direction * Tv.dp(this, 36));
+        list.setTranslationY(direction == 0 ? Tv.dp(this, 16) : 0);
+        list.animate().alpha(1f).translationX(0).translationY(0).setDuration(280)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.8f)).start();
+    }
+    private Page build(Route route, Cancellation request, Consumer<Page> progress) throws Exception {
         switch (route.screen) {
             case "Home": return browse.home(request);
             case "Search": return browse.search(route, request);
@@ -236,12 +361,12 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             case "Imports": return setup.imports();
             case "Settings": return setup.settings(route);
             case "Add-on": return setup.addon(route);
-            case "Add-ons": return store.store(route, request);
+            case "Add-ons": return store.store(route, request, progress);
             case "Add-on review": return store.review(route, request);
-            case "Catalogues": return browse.catalogues(request);
-            case "Catalogue": return browse.catalogue(route, request);
+            case "Catalogues": return browse.catalogues();
+            case "Catalogue": return browse.catalogue(route, request, progress);
             case "Details": return titles.details(route, request);
-            case "Sources": return titles.sources(route, request);
+            case "Sources": return titles.sources(route, request, progress);
             case "Developer": return setup.developer();
             default: return browse.home(request);
         }
@@ -254,21 +379,70 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         searchExpandedView.setVisibility(expanded ? View.VISIBLE : View.GONE);
         String rootScreen = stack.isEmpty() ? "Home" : primaryTab(stack.get(0).screen);
         for (int i = 0; i < navigation.getChildCount(); i++) navigation.getChildAt(i).setActivated(TABS[i].equals(rootScreen));
+        boolean canGoBack = stack.size() > 1;
+        pageBack.setVisibility(canGoBack ? View.VISIBLE : View.GONE);
+        View lastTab = navigation.getChildAt(TABS.length - 1);
+        if (shownRoute != route()) {
+            lastTab.setNextFocusRightId(lastTab.getId());
+            pageTools.setVisibility(View.GONE);
+        }
+        pageBack.setNextFocusRightId(currentTab().getId());
+        searchButton.setNextFocusLeftId(canGoBack ? R.id.page_back : R.id.search_button);
+        pageLayout.navigationTarget(canGoBack ? pageBack : currentTab());
         syncSearchQuery();
     }
     /** Hides the tab bar once content has scrolled under it, unless it has focus; shows it again at the top. */
     private void updateTopBar() {
         int offset = list.computeVerticalScrollOffset();
         scrollFade.setAlpha(Math.min(1f, offset / (float) Tv.dp(this, 32)));
-        boolean hide = !searchExpanded && !topBar.hasFocus() && offset > Tv.dp(this, 24);
+        boolean hide = !searchExpanded && !topBar.hasFocus() && !pageBack.hasFocus() && offset > Tv.dp(this, 24);
         if (hide == topBarHidden) return;
         topBarHidden = hide;
         topBar.animate().cancel();
         topBar.animate().translationY(hide ? -topBar.getHeight() : 0).alpha(hide ? 0f : 1f).setDuration(hide ? 220 : 260).start();
     }
-    private void show(Page page) {
+    private void showPartial(Page page) { show(page, true); }
+    private void show(Page page) { show(page, false); }
+    /** Page actions share Home's fixed toolbar. Refresh always occupies the rightmost slot. */
+    private void bindTools(Page page) {
+        List<View> visible = new ArrayList<>();
+        int[] ids = {R.id.home_browse, R.id.home_refresh};
+        int[] icons = {R.drawable.ic_tv_list, R.drawable.ic_tv_refresh};
+        for (int i = 0; i < ids.length; i++) {
+            View tool = findViewById(ids[i]); Item.Action action = null;
+            for (Item.Action candidate : page.tools) if (candidate.icon == icons[i]) { action = candidate; break; }
+            tool.setVisibility(action == null ? View.GONE : View.VISIBLE);
+            if (action == null) { tool.setTag(null); continue; }
+            tool.setContentDescription(action.label); tool.setTooltipText(action.label);
+            Tv.control(tool, action.key, action.action, key -> {}, 1f, false);
+            tool.setOnKeyListener((view, code, event) -> {
+                if (code != KeyEvent.KEYCODE_DPAD_DOWN) return false;
+                if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                    View target = list.findViewWithTag(route().focus);
+                    if (target != null) target.requestFocus(); else focusFirst();
+                }
+                return true;
+            });
+            visible.add(tool);
+        }
+        pageTools.setVisibility(visible.isEmpty() ? View.GONE : View.VISIBLE);
+        View lastTab = navigation.getChildAt(TABS.length - 1);
+        lastTab.setNextFocusRightId(visible.isEmpty() ? lastTab.getId() : visible.get(0).getId());
+        for (int i = 0; i < visible.size(); i++) {
+            View tool = visible.get(i);
+            tool.setNextFocusLeftId(i == 0 ? lastTab.getId() : visible.get(i - 1).getId());
+            tool.setNextFocusRightId(i + 1 < visible.size() ? visible.get(i + 1).getId() : tool.getId());
+        }
+    }
+    private void show(Page page, boolean partial) {
+        boolean updating = shownRoute == route() && shownPage != null;
+        Page previousPage = shownPage;
+        shownRoute = route(); shownPage = page;
+        if (!partial) retainedPages.put(shownRoute, page);
+        if (!partial && intro != null && shownRoute.screen.equals("Home")) introArtwork(page);
         contentReady = false;
         Route route = route();
+        bindTools(page);
         // Titles scroll with their page, as on tvOS, rather than floating over it.
         List<Item> items = page.items;
         if (page.title != null) { items = new ArrayList<>(page.items); items.add(0, Item.pageTitle(page.title)); }
@@ -276,30 +450,58 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         // Home's spotlight sets the artwork itself; clearing it first would flash the plain canvas.
         boolean spotlight = !page.items.isEmpty() && page.items.get(0).kind == Item.Kind.SPOTLIGHT;
         contentTop(spotlight);
-        if (!spotlight) backdrop.show(page.backdrop, true, page.blurBackdrop);
+        boolean sameBackdrop = updating && previousPage != null && previousPage.blurBackdrop == page.blurBackdrop
+                && java.util.Objects.equals(previousPage.backdrop == null ? null : previousPage.backdrop.cacheJson(),
+                        page.backdrop == null ? null : page.backdrop.cacheJson());
+        if (!spotlight && !sameBackdrop) backdrop.show(page.backdrop, true, page.blurBackdrop);
+        // A partial page is visual context, not a second focus destination on the way to the real controls.
+        if (partial && waitingForContentFocus) { adapter.set(items, ""); return; }
+        boolean preserveNavigation = !list.hasFocus()
+                && (pageBack.hasFocus() || topBar.hasFocus() || pageTools.hasFocus());
         // Restore the route's focus; otherwise start on the page's first choice, unless the user is on the tabs.
         String wanted = !route.focus.isEmpty() ? route.focus : page.initialFocus != null ? page.initialFocus : "";
         boolean tabs = stayOnTabs && navigation.hasFocus();
         stayOnTabs = false;
         if (wanted.isEmpty() && !tabs && page.firstTile() != null) wanted = page.firstTile();
-        adapter.set(items, wanted);
-        if (route.scroll != null) list.getLayoutManager().onRestoreInstanceState(route.scroll);
-        else list.scrollToPosition(0);
+        if (adapter.set(items, preserveNavigation ? "" : wanted)) {
+            if (!partial) finishContentFocusWait();
+            contentReady = true; return;
+        }
+        if (partial && updating) { contentReady = true; return; }
+        if (!updating || !preserveNavigation) {
+            if (route.scroll != null) list.getLayoutManager().onRestoreInstanceState(route.scroll);
+            else list.scrollToPosition(0);
+        }
         String target = wanted;
         int mine = generation;
-        list.post(() -> {
+        afterPageLayout(() -> {
             if (mine != generation || stopped) return;
-            View found = target.isEmpty() ? null : list.findViewWithTag(target);
+            finishContentFocusWait();
+            if (preserveNavigation) { contentReady = true; return; }
+            View found = target.isEmpty() ? null : pageTools.findViewWithTag(target);
+            if (found == null && !target.isEmpty()) found = list.findViewWithTag(target);
             if (found != null) found.requestFocus();
             else if (!target.isEmpty() && adapter.position(target) >= 0) {
                 list.scrollToPosition(adapter.position(target));
-                list.post(() -> {
+                afterPageLayout(() -> {
                     if (mine != generation || stopped) return;
                     View restored = list.findViewWithTag(target);
                     if (restored != null) restored.requestFocus(); else focusFirst();
                 });
             } else if (!tabs) focusFirst();
             contentReady = true;
+        });
+    }
+    private void finishContentFocusWait() {
+        waitingForContentFocus = false;
+        list.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+    }
+    private void afterPageLayout(Runnable action) {
+        if (!list.hasPendingAdapterUpdates() && !list.isLayoutRequested()) { list.post(action); return; }
+        list.getViewTreeObserver().addOnGlobalLayoutListener(new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override public void onGlobalLayout() {
+                list.getViewTreeObserver().removeOnGlobalLayoutListener(this); action.run();
+            }
         });
     }
     private void focusFirst() {
@@ -325,10 +527,19 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         contentReady = false;
         if (!stack.isEmpty()) {
             Route current = route();
+            if (current.screen.equals("Sources") && current.title != null) {
+                Page shell = titles.sourcesPage(current);
+                showPartial(shell.add(Item.skeleton("Source results"))); return;
+            }
+            if (current.screen.equals("Details") && current.title != null) {
+                Page shell = titles.detailsPage(current.title, "");
+                showPartial(shell.add(Item.skeleton("Detail controls"))); return;
+            }
             if (current.screen.equals("Search") && browse != null) {
                 Item search = browse.searchLoading(current);
                 String focus = current.focus.isEmpty() ? "keyboard:a" : current.focus;
-                adapter.set(java.util.Collections.singletonList(search), focus);
+                // Typing updates the results beside the keyboard; the focused key stays focused and keeps being remembered.
+                if (adapter.set(java.util.Collections.singletonList(search), focus)) contentReady = true;
                 return;
             }
             if (hasPageSkeleton(current.screen)) {
@@ -369,10 +580,18 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         }
     }
     private void failed(Throwable e) {
+        finishIntro();
+        Sounds.play(Sounds.Sound.WARNING);
+        if (shownRoute == route() && shownPage != null) {
+            Page retained = shownPage.copy();
+            retained.items.removeIf(item -> item.kind == Item.Kind.SKELETON || item.key.equals("notice:Unable to update") || item.key.equals("notice:Loading add-on details"));
+            retained.add(Item.notice(R.drawable.ic_tv_offline, "Unable to update", Failures.message(e),
+                    new Item.Action("retry-update", Item.Action.Style.SECONDARY, "Retry", this::refresh)));
+            show(retained); return;
+        }
         Page page = new Page().add(Item.message(e instanceof AddonException && ((AddonException) e).kind == AddonException.Kind.CERTIFICATE ? R.drawable.ic_tv_info : R.drawable.ic_tv_offline,
                 "Unable to load", Failures.message(e),
-                new Item.Action("retry", Item.Action.Style.PRIMARY, "Retry", () -> { if (services == null) { loading(); initialize(); } else render(); }).icon(R.drawable.ic_tv_refresh),
-                new Item.Action("back", Item.Action.Style.SECONDARY, "Back", this::onBackPressed)));
+                new Item.Action("retry", Item.Action.Style.PRIMARY, "Retry", () -> { if (services == null) { loading(); initialize(); } else render(); }).icon(R.drawable.ic_tv_refresh)));
         page.initialFocus = "retry";
         show(page);
     }
@@ -397,6 +616,10 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     @Override public void openTitle(Title title, String video) { push(Route.of("Details", title, video)); }
     @Override public void sources(Title title, String video) { push(Route.of("Sources", title, video)); }
     @Override public void play(Title title, String video, String sourceKey) {
+        // A catalogue Play/Resume has not chosen a source. Selection is explicit; imports already identify a torrent.
+        if (!title.provider.equals("local") && (sourceKey == null || sourceKey.isEmpty())) {
+            sources(title, video); return;
+        }
         then(() -> { services.store.remember(title); return null; }, () -> startActivity(WatchActivity.intent(this, title, video, sourceKey)));
     }
 
@@ -462,6 +685,10 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         input.requestFocus();
     }
     @Override public void choose(String title, String[] options, Consumer<Integer> accept) { show(Tv.choices(this, title, options, accept, null)); }
+    @Override public void chooseWithPreview(String title, @Nullable View header, String[] options, int selected,
+                                           Consumer<Integer> accept, @Nullable Consumer<Integer> onPreview) {
+        show(Tv.choices(this, title, header, options, selected, accept, onPreview, null));
+    }
     @Override public void alert(String title, String message) { showGlassMessage(title, message, false, null); }
     @Override public void openWebsite(String address) {
         try {
@@ -476,7 +703,10 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
      * first. One that can't be reached is skipped and named, and can be added later.
      */
     @Override public void installStarters(List<String> addons) {
-        loading();
+        if (shownPage != null) {
+            Page partial = shownPage.copy(); partial.items.removeIf(item -> item.key.equals("starter-actions"));
+            showPartial(partial.add(Item.skeleton("Install action")));
+        }
         work(() -> {
             List<String> missed = new ArrayList<>();
             for (String url : addons) {
@@ -487,6 +717,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             }
             return missed;
         }, missed -> {
+            Sounds.play(missed.isEmpty() ? Sounds.Sound.INSTALLED : Sounds.Sound.WARNING);
             root("Home");
             if (!missed.isEmpty()) alert("Some add-ons weren't added", String.join(", ", missed) + " didn't respond. Try again from the add-on store.");
         });
@@ -494,10 +725,15 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     @Override public void addAddon() { edit("Add add-on", "https://… or stremio://…/manifest.json", "", this::previewAddon); }
     @Override public void previewAddon(String input) {
         String address = AddonUrl.normalize(input);
-        loading();
+        if (shownPage != null) showPartial(shownPage.copy().add(Item.notice(R.drawable.ic_tv_info,
+                "Loading add-on details", "")));
         int mine = generation;
         Cancellation request = scope;
         work(() -> services.addons.preview(address, request), manifest -> {
+            if (shownPage != null) {
+                Page restored = shownPage.copy(); restored.items.removeIf(item -> item.key.equals("notice:Loading add-on details"));
+                showPartial(restored);
+            }
             if (manifest.configurationRequired) {
                 Route review = new Route("Add-on review"); review.value = address; push(review); return;
             }
@@ -506,9 +742,9 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             String details = (manifest.description.isEmpty() ? "" : manifest.description + "\n\n") + supplies
                     + (torrents ? "\nTorrent sources play directly on this TV and share data with peers." : "")
                     + "\n\n" + manifest.catalogs.size() + " catalogues. The provider receives your searches and the titles you open.";
-            showGlassConfirmation("Install " + manifest.name + "?", details, "Install", () -> mutate(() -> {
+            showGlassConfirmation("Install " + manifest.name + "?", details, "Install", () -> then(() -> {
                         services.addons.install(address, manifest); return null;
-                    }), () -> { if (mine == generation) render(); });
+                    }, () -> { Sounds.play(Sounds.Sound.INSTALLED); rememberFocus(); render(); }), () -> { if (mine == generation) render(); });
         });
     }
     @Override public void importAddress() {
@@ -566,16 +802,51 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     // Lifecycle and Back.
     /** tvOS order: Back leaves a pushed screen, then moves to the tab bar, then Home, then exits. */
     @Override public void onBackPressed() {
-        if (stack.size() > 1) { cancelWork(); stack.remove(stack.size() - 1); render(); return; }
-        if (searchExpanded && !stack.isEmpty() && stack.get(0).screen.equals("Search")) { closeSearch(); return; }
+        if (intro != null) { finish(); return; }
+        if (stack.size() > 1) { Sounds.play(Sounds.Sound.BACK); cancelWork(); stack.remove(stack.size() - 1); enterDirection = -1; render(); return; }
+        if (searchExpanded && !stack.isEmpty() && stack.get(0).screen.equals("Search")) { Sounds.play(Sounds.Sound.BACK); closeSearch(); return; }
         boolean tabs = topBarControls.getVisibility() == View.VISIBLE && services != null;
-        if (tabs && !navigation.hasFocus()) { currentTab().requestFocus(); return; }
-        if (tabs && !route().screen.equals("Home")) { root("Home"); return; }
+        if (tabs && !navigation.hasFocus()) { Sounds.play(Sounds.Sound.BACK); currentTab().requestFocus(); return; }
+        if (tabs && !route().screen.equals("Home")) { Sounds.play(Sounds.Sound.BACK); root("Home"); return; }
         finish();
     }
+    /**
+     * Arrows are the viewer's navigation, for the focus ticks. One that moves nothing (a row's end, the page's side)
+     * bumps, unless focus arrives a moment later (a list that lays out the next row first).
+     */
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        // Nothing beneath the start screen is visible yet, so only Back reaches the app.
+        if (intro != null && event.getKeyCode() != KeyEvent.KEYCODE_BACK) return true;
+        boolean move = event.getAction() == KeyEvent.ACTION_DOWN && Sounds.arrow(event.getKeyCode());
+        if (move) Sounds.input();
+        View before = getCurrentFocus();
+        if (move && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP && waitingForContentFocus && before == list) {
+            View entry = pageBack.getVisibility() == View.VISIBLE ? pageBack : currentTab();
+            if (entry.isShown()) { entry.requestFocus(); return true; }
+        }
+        boolean handled = super.dispatchKeyEvent(event);
+        View after = getCurrentFocus();
+        if (move && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP && insidePage(before) && !insidePage(after)) {
+            View entry = pageBack.getVisibility() == View.VISIBLE ? pageBack : currentTab();
+            if (entry.isShown()) { entry.requestFocus(); handled = true; }
+        }
+        if (move && event.getRepeatCount() == 0 && before != null && getCurrentFocus() == before)
+            main.postDelayed(() -> { if (!stopped && getCurrentFocus() == before) Sounds.play(Sounds.Sound.EDGE); }, 90);
+        return handled;
+    }
+
+    private boolean insidePage(@Nullable View view) {
+        while (view != null) {
+            if (view == list) return true;
+            view = view.getParent() instanceof View ? (View) view.getParent() : null;
+        }
+        return false;
+    }
+
     @Override protected void onStop() { super.onStop(); stopped = true; cancelWork(); artwork.cancel(); }
     @Override protected void onStart() {
         super.onStart();
+        Sounds.get(this).refresh(this);
         boolean returning = stopped; stopped = false;
         if (returning) { if (services == null) initialize(); else render(); }
     }

@@ -483,10 +483,10 @@ public final class PlayerScreen implements PlaybackSession.Listener, MenuPanel.L
             List<MenuPanel.Item> items = new ArrayList<>();
             for (int i = 0; i < setting.values.length; i++) {
                 int index = i;
-                items.add(MenuPanel.Item.choice(activity.getString(setting.labels[i]), null, style.get(setting) == i, () -> {
-                    if (style.set(setting, index)) onStyleChanged(false);
-                    menu.pop();
-                }));
+                Runnable apply = () -> {
+                    if (style.set(setting, index)) onStyleChanged(true);
+                };
+                items.add(MenuPanel.Item.choice(activity.getString(setting.labels[i]), null, style.get(setting) == i, apply).onFocus(apply));
             }
             return items;
         });

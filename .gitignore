@@ -6,3 +6,4 @@
 backups/
 # Machine-local Android and build output; component ignores cover their own caches.
 **/local.properties
+streaming/sounds/build/

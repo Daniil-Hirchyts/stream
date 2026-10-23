@@ -17,6 +17,7 @@ import tv.daniil.stream.ui.Item;
 import tv.daniil.stream.ui.Item.Action;
 import tv.daniil.stream.ui.Item.Tile;
 import tv.daniil.stream.ui.Page;
+import tv.daniil.stream.ui.Sounds;
 
 /** Title details (with seasons and episodes) and explicit source selection. */
 final class TitleScreens {
@@ -47,8 +48,7 @@ final class TitleScreens {
         TvStore.Progress progress = services.store.progress(title.key(), video);
         boolean resume = progress != null && !progress.watched && progress.positionMs > 0;
 
-        Page page = new Page(); page.backdrop = title;
-        page.add(Item.details(title, note));
+        Page page = detailsPage(title, note);
         // Every button says what it does; the two toggles show their state by their look ("Favourite" lit when set).
         List<Action> actions = new ArrayList<>();
         boolean series = title.type.equals("series") && !title.episodes.isEmpty();
@@ -57,10 +57,10 @@ final class TitleScreens {
         if (!local) actions.add(new Action("sources", Action.Style.SECONDARY, "Sources", () -> nav.sources(chosen, selected)).icon(R.drawable.ic_tv_list));
         boolean isFavourite = favourite, watched = progress != null && progress.watched;
         actions.add(new Action("favourite", Action.Style.SECONDARY, isFavourite ? "Remove favourite" : "Add favourite",
-                () -> nav.mutate(() -> { services.store.favourite(chosen, !isFavourite); return null; }))
+                () -> { Sounds.play(isFavourite ? Sounds.Sound.FAVOURITE_OFF : Sounds.Sound.FAVOURITE_ON); nav.mutate(() -> { services.store.favourite(chosen, !isFavourite); return null; }); })
                 .text("Favourite").icon(isFavourite ? R.drawable.ic_tv_heart : R.drawable.ic_tv_heart_outline).selected(isFavourite));
         actions.add(new Action("watched", Action.Style.SECONDARY, watched ? "Mark unwatched" : "Mark watched",
-                () -> nav.mutate(() -> { services.store.watched(chosen, selected, !watched); return null; }))
+                () -> { Sounds.play(watched ? Sounds.Sound.WATCHED_OFF : Sounds.Sound.WATCHED_ON); nav.mutate(() -> { services.store.watched(chosen, selected, !watched); return null; }); })
                 .text(watched ? "Watched" : "Mark watched").icon(R.drawable.ic_tv_check).selected(watched));
         if (local) {
             actions.add(new Action("rename", Action.Style.SECONDARY, "Rename import", () -> nav.edit("Rename import", "Title", chosen.name, name -> nav.mutate(() -> {
@@ -71,9 +71,8 @@ final class TitleScreens {
             actions.add(new Action("remove-import", Action.Style.SECONDARY, "Remove import", () -> nav.then(() -> { services.imports.remove(chosen.id); return null; }, nav::back))
                     .icon(R.drawable.ic_tv_delete));
         } else {
-            actions.add(new Action("more", Action.Style.ICON, "More", () -> nav.choose(chosen.name, new String[]{"Refresh details", "Remove from library"}, which -> {
-                if (which == 0) nav.refresh();
-                else nav.then(() -> { services.store.removeLibrary(chosen.key()); return null; }, () -> nav.root("Library"));
+            actions.add(new Action("more", Action.Style.ICON, "More", () -> nav.choose(chosen.name, new String[]{"Remove from library"}, which -> {
+                nav.then(() -> { services.store.removeLibrary(chosen.key()); return null; }, () -> nav.root("Library"));
             })).icon(R.drawable.ic_tv_more));
         }
         page.add(Item.actions("title-actions", actions));
@@ -116,7 +115,7 @@ final class TitleScreens {
                         route.video = e.id;
                         if (which == 0) nav.play(title, e.id, "");
                         else if (which == 1) nav.sources(title, e.id);
-                        else nav.mutate(() -> { services.store.watched(title, e.id, which == 2); return null; });
+                        else { Sounds.play(which == 2 ? Sounds.Sound.WATCHED_ON : Sounds.Sound.WATCHED_OFF); nav.mutate(() -> { services.store.watched(title, e.id, which == 2); return null; }); }
                     }));
             if (p != null && p.watched) tile.badge(R.drawable.ic_tv_check);
             else if (p != null && p.durationMs > 0) tile.progress(p.positionMs / (float) p.durationMs);
@@ -140,12 +139,29 @@ final class TitleScreens {
     }
     private static final long SOURCES_FRESH_MS = 10 * 60_000;
 
-    Page sources(Route route, Cancellation scope) throws Exception {
+    /** The initial and loaded pages share the same fixed toolbar, including during provider requests. */
+    Page detailsPage(Title title, String note) {
+        Page page = new Page(); page.backdrop = title;
+        if (!title.provider.equals("local")) page.tools = java.util.Collections.singletonList(
+                new Action("refresh-details", Action.Style.ICON, "Refresh details", nav::refresh).icon(R.drawable.ic_tv_refresh));
+        return page.add(Item.details(title, note));
+    }
+    Page sourcesPage(Route route) {
         Title title = route.title;
-        Page page = new Page().title("Sources").narrow(); page.backdrop = title; page.blurBackdrop = true;
-        page.add(Item.header(title.name, title.type.equals("series") ? episodeName(title, route.video) : ""));
+        Page page = new Page().title(title.name).narrow(); page.backdrop = title; page.blurBackdrop = true;
+        page.tools = java.util.Collections.singletonList(new Action("refresh-sources", Action.Style.ICON, "Refresh sources", () -> {
+            route.cache = null; nav.refresh();
+        }).icon(R.drawable.ic_tv_refresh));
+        return page.add(Item.text("Sources", title.type.equals("series") ? episodeName(title, route.video) : ""));
+    }
+
+    Page sources(Route route, Cancellation scope) throws Exception { return sources(route, scope, ignored -> {}); }
+    Page sources(Route route, Cancellation scope, java.util.function.Consumer<Page> progress) throws Exception {
+        Title title = route.title;
+        Page page = sourcesPage(route);
         Fetched fetched = route.cache instanceof Fetched && android.os.SystemClock.elapsedRealtime() - route.cachedAt < SOURCES_FRESH_MS ? (Fetched) route.cache : null;
         if (fetched == null) {
+            progress.accept(page.copy().add(Item.skeleton("Source results")));
             List<InstalledAddon> providers = services.addons.providers("stream", title.type, route.video);
             fetched = new Fetched(providers, providers.isEmpty() ? null : services.addons.streams(title.type, route.video, scope));
             route.cache = fetched; route.cachedAt = android.os.SystemClock.elapsedRealtime();
@@ -172,7 +188,7 @@ final class TitleScreens {
                     nav.mutate(() -> { services.store.setPreference("sourceSort", next); return null; });
                 }).text(current ? o.label + (reverse ? "  ↑" : "  ↓") : o.label).selected(current));
             }
-            page.add(Item.chips("source-sort", "Sort by", sorts));
+            page.add(Item.chips("source-sort", "", sorts));
             String last = ""; long lastAt = 0; int played = 0;
             for (MediaSource source : playable) {
                 TvStore.SourceMark mark = marks.get(SourcePolicy.key(source));
@@ -211,9 +227,6 @@ final class TitleScreens {
         } else if (found != null && !found.failures.isEmpty()) {
             page.add(Item.notice(R.drawable.ic_tv_offline, "Some providers are unavailable", Availability.failures(found.failures, installed)));
         }
-        page.add(Item.actions("source-actions", new Action("refresh-sources", Action.Style.SECONDARY, "Refresh sources", () -> {
-            route.cache = null; nav.refresh();
-        }).icon(R.drawable.ic_tv_refresh)));
         return page;
     }
     private static final String DOT = "  ·  ";

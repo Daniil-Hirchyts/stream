@@ -32,7 +32,7 @@ public final class LiveFilmTest extends AppHarness {
     }
 
     @Test public void internetArchiveFilmPlaysFromTheStore() throws Exception {
-        launch(); installAndOpen("Internet Archive", "tt0063350", "Night of the Living Dead"); tap("Play", true);
+        launch(); installAndOpen("Internet Archive", "tt0063350", "Night of the Living Dead"); tap("Play", true); chooseFirstSource();
         waitUntil("Night of the Living Dead plays from archive.org", 120_000,
                 () -> state() != null && state().renderedFirstFrame && state().playing && state().positionMs >= 5000);
         WatchActivity activity = watch();
@@ -41,7 +41,7 @@ public final class LiveFilmTest extends AppHarness {
     }
 
     @Test public void publicDomainMoviesTorrentPlaysFromTheStore() throws Exception {
-        launch(); installAndOpen("Public Domain Movies", "tt0063350", "Night of the Living Dead"); tap("Play", true);
+        launch(); installAndOpen("Public Domain Movies", "tt0063350", "Night of the Living Dead"); tap("Play", true); chooseFirstSource();
         waitUntil("Night of the Living Dead plays from the public swarm", 300_000,
                 () -> state() != null && state().renderedFirstFrame && state().playing && state().positionMs >= 5000);
         assertTrue(diagnostics().toString(), diagnostics().optInt("peers") > 0);

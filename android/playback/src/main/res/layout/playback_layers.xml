@@ -14,15 +14,9 @@
         android:paddingEnd="@dimen/idle_inset"
         android:visibility="gone">
 
-        <ProgressBar
-            style="@style/Spinner"
-            android:layout_width="48dp"
-            android:layout_height="48dp" />
-
         <TextView
             android:id="@+id/loading_step"
-            style="@style/Text.Overline"
-            android:layout_marginTop="32dp" />
+            style="@style/Text.Overline" />
 
         <TextView
             android:id="@+id/loading_title"
@@ -39,6 +33,12 @@
             android:layout_marginTop="14dp"
             android:gravity="center"
             android:visibility="gone" />
+
+        <ProgressBar
+            style="@style/Spinner"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="32dp" />
     </LinearLayout>
 
     <ProgressBar

@@ -4,7 +4,7 @@
 #
 #   ./streaming/simulator.sh fixtures        Generate test media and torrents
 #   ./streaming/simulator.sh services        Start the fixture service (58133) and seeder (58134) for the emulator
-#   ./streaming/simulator.sh test            Engine/playback and add-on/persistence tests (verified emulator only)
+#   ./streaming/simulator.sh test            Engine, data and core app regressions (verified emulator only)
 #   ./streaming/simulator.sh engine-test | data-test
 #   ./streaming/simulator.sh live-film       Optional: real public-domain films from the internet through the store
 #   ./streaming/simulator.sh live-addons     Optional: current public store manifests/resources/review installs
@@ -148,11 +148,34 @@ run_data_tests() {
   device install -r "$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk" || return 1
   device install -r -t "$ANDROID_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" || return 1
   instrument tv.daniil.stream.test -e class "$test_classes" \
-    -e fixtures "$FIXTURE_URL" -e seeder "127.0.0.1:$SEEDER_PORT" -e badCertificate https://127.0.0.1:58135/manifest.json "$@" || return 1
-  case "$test_classes" in *ProfileTest*)
-    device exec-out run-as tv.daniil.stream cat files/validation-profile.json >"$SIM_DIR/.cache/evidence/playback-profile.json" || return 1
-    device exec-out run-as tv.daniil.stream cat files/validation-profile.png >"$SIM_DIR/.cache/evidence/playback-profile.png" || return 1
-    ;; esac
+    -e fixtures "$FIXTURE_URL" -e seeder "127.0.0.1:$SEEDER_PORT" -e badCertificate https://127.0.0.1:58135/manifest.json "$@"
+  status=$?
+  case "$test_classes" in *ProfileTest*) [ "$status" -ne 0 ] || {
+    device exec-out run-as tv.daniil.stream cat files/validation-profile.json >"$SIM_DIR/.cache/evidence/playback-profile.json" || status=1
+    device exec-out run-as tv.daniil.stream cat files/validation-profile.png >"$SIM_DIR/.cache/evidence/playback-profile.png" || status=1
+  } ;; esac
+  clear_test_mode
+  return "$status"
+}
+
+# Keep routine runs focused on real playback and durable user outcomes. The remaining
+# UI/import/settings paths are available with acceptance; see android/TESTING.md.
+run_core_app_tests() {
+  core_tests=tv.daniil.stream.AppFlowTest,tv.daniil.stream.PlayerInteractionTest
+  for method in directMp4MkvHlsAndDashRenderAndAdvance \
+    automaticFailoverIsBoundedAndManualSourcesDoNotSilentlyChange \
+    decoderAndNetworkFailuresAfterFramesResumeOnDifferentSources \
+    contentFileAndMagnetImportsUseRealMetadataAndPlayback; do
+    core_tests="$core_tests,tv.daniil.stream.AcceptanceTest#$method"
+  done
+  run_data_tests "$core_tests"
+}
+
+# Whatever happened to the run, the owner's debug app leaves test mode: the harness overrides and any isolated test
+# databases an interrupted run left behind go. The owner's database and player preferences are never touched.
+clear_test_mode() {
+  device shell am force-stop tv.daniil.stream >/dev/null 2>&1
+  device shell run-as tv.daniil.stream sh -c "'rm -f shared_prefs/instrumentation.xml databases/test-* databases/addon-test-* shared_prefs/player-test-*.xml'" >/dev/null 2>&1
 }
 
 start_emulator() {
@@ -214,10 +237,10 @@ case "${1:-up}" in
   site) start_services && printf 'Live test room: %s/\n' "$FIXTURE_URL" ;;
   fixtures) "$SIM_DIR/fixtures.sh" ;;
   services) start_services ;;
-  test) run_tests && run_data_tests && run_data_tests tv.daniil.stream.AppFlowTest,tv.daniil.stream.AcceptanceTest,tv.daniil.stream.PlayerInteractionTest ;;
+  test) run_tests && run_data_tests && run_core_app_tests ;;
   engine-test) run_tests ;;
   data-test) run_data_tests ;;
-  smoke) run_data_tests tv.daniil.stream.AppFlowTest ;;
+  smoke) run_data_tests tv.daniil.stream.AppFlowTest#catalogueFavouritesPlaybackControlsAndEvictedRewindWork ;;
   # Not a required suite: public services and swarms change. Uses the internet, never the LAN or a physical TV.
   live-film) run_data_tests tv.daniil.stream.LiveFilmTest ;;
   live-addons)

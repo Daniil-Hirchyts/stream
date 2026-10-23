@@ -15,15 +15,9 @@
         android:paddingEnd="@dimen/idle_inset"
         android:visibility="gone">
 
-        <ProgressBar
-            style="@style/Spinner"
-            android:layout_width="48dp"
-            android:layout_height="48dp" />
-
         <TextView
             android:id="@+id/loading_step"
-            style="@style/Text.Overline"
-            android:layout_marginTop="32dp" />
+            style="@style/Text.Overline" />
 
         <TextView
             android:id="@+id/loading_title"
@@ -40,6 +34,12 @@
             android:layout_marginTop="14dp"
             android:gravity="center"
             android:visibility="gone" />
+
+        <ProgressBar
+            style="@style/Spinner"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="32dp" />
     </LinearLayout>
 
     <ProgressBar
@@ -81,6 +81,21 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
+            <!-- The shared exit action becomes a minimal Back button beside the title. -->
+            <ImageView
+                android:id="@+id/control_stop"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="16dp"
+                android:layout_gravity="top"
+                android:background="@drawable/tv_utility_button"
+                android:contentDescription="@string/hint_back"
+                android:defaultFocusHighlightEnabled="false"
+                android:padding="10dp"
+                android:rotation="180"
+                android:src="@drawable/ic_tv_chevron"
+                android:tint="@color/tv_on_glass_secondary" />
+
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -95,6 +110,18 @@
                     android:shadowColor="#B3000000"
                     android:shadowDy="1"
                     android:shadowRadius="8" />
+
+                <TextView
+                    android:id="@+id/watching_info"
+                    style="@style/Text.Caption"
+                    android:layout_marginTop="4dp"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:shadowColor="#B3000000"
+                    android:shadowDy="1"
+                    android:shadowRadius="6"
+                    android:textColor="@color/tv_text_on_artwork"
+                    android:visibility="gone" />
 
                 <TextView
                     android:id="@+id/controls_details"
@@ -120,17 +147,6 @@
                 android:src="@drawable/ic_tv_subtitles"
                 android:tint="@color/tv_on_glass" />
 
-            <ImageView
-                android:id="@+id/control_stop"
-                android:visibility="gone"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_marginStart="12dp"
-                android:background="@drawable/tv_button_round"
-                android:contentDescription="@string/hint_close"
-                android:padding="14dp"
-                android:src="@drawable/ic_tv_close"
-                android:tint="@color/tv_on_glass" />
         </LinearLayout>
 
         <ImageView
@@ -144,30 +160,6 @@
             android:src="@drawable/ic_play"
             android:visibility="gone" />
 
-        <LinearLayout
-            android:id="@+id/seek_bubble"
-            android:layout_width="wrap_content"
-            android:layout_height="56dp"
-            android:layout_gravity="center"
-            android:background="@drawable/pill"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="20dp"
-            android:paddingEnd="24dp"
-            android:visibility="gone">
-
-            <ImageView
-                android:id="@+id/seek_icon"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:importantForAccessibility="no"
-                android:tint="@color/tv_text" />
-
-            <TextView
-                android:id="@+id/seek_label"
-                style="@style/Text.Title"
-                android:layout_marginStart="10dp" />
-        </LinearLayout>
 
         <!-- The timeline, low on the screen, with the times under its ends. The remote plays and pauses (OK), skips
              (left and right) and opens the menu; a pointer clicks the centre glyph or drags the timeline. The
@@ -197,7 +189,35 @@
             <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="-10dp">
+                android:layout_marginTop="-10dp"
+                android:minHeight="28dp">
+
+                <!-- Seek feedback lives beside the timeline times, leaving the picture clear. -->
+                <LinearLayout
+                    android:id="@+id/seek_bubble"
+                    android:layout_width="wrap_content"
+                    android:layout_height="28dp"
+                    android:layout_gravity="center"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:accessibilityLiveRegion="polite"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:id="@+id/seek_icon"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:importantForAccessibility="no"
+                        android:tint="@color/tv_text" />
+
+                    <TextView
+                        android:id="@+id/seek_label"
+                        style="@style/Text.Caption"
+                        android:layout_marginStart="6dp"
+                        android:shadowColor="#B3000000"
+                        android:shadowDy="1"
+                        android:shadowRadius="6" />
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/elapsed"

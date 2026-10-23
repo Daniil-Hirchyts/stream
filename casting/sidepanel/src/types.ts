@@ -40,7 +40,7 @@ export interface Track {
 
 export interface SubtitleStyle {
   size: "small" | "medium" | "large" | "xlarge";
-  color: "white" | "yellow" | "cyan";
+  color: "white" | "yellow" | "cyan" | "green" | "magenta" | "blue" | "amber" | "red";
   edge: "outline" | "shadow" | "box";
   position: "low" | "standard" | "raised";
 }
