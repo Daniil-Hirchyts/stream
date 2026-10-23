@@ -175,9 +175,9 @@ Cast keeps its own look:
     buttons beside them: Audio and subtitles (the subtitle list, then Audio)
     and Player settings (quality, speed, subtitle style). Menu on the remote
     still opens everything. There is no "Now playing" label.
-  - Skip back and forward discs flank the centre glyph for a pointer; a skip
-    shows its total (+30 s) in a pill between the times. The player's buttons
-    grow while focused or under the pointer.
+  - A skip shows its total (+30 s) as plain text between the times, in the
+    times' own row, so nothing moves. The player's buttons grow while focused
+    or under the pointer; the overlay doesn't clip them.
   - Subtitles are chosen in the player. With subtitles off, nothing downloads
     before the video starts; the add-ons' subtitles are then fetched. The
     Subtitles list always shows Off, the loaded tracks and every add-on file

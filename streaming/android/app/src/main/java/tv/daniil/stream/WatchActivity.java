@@ -158,7 +158,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             });
         }
         for (int id : new int[]{R.id.player_root, tv.daniil.playback.R.id.player_view, R.id.controls, R.id.center_icon,
-                R.id.control_options, R.id.control_settings, R.id.control_stop, R.id.control_rewind, R.id.control_forward, R.id.progress}) {
+                R.id.control_options, R.id.control_settings, R.id.control_stop, R.id.progress}) {
             findViewById(id).setOnTouchListener((view, event) -> {
                 if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
                     // A pointer click must activate immediately, rather than only taking keyboard focus.
@@ -179,8 +179,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         }
     }
     /** The player's buttons, which grow while focused or under the pointer, like the app's own controls. */
-    private static final int[] LIFTED = {R.id.control_stop, R.id.control_options, R.id.control_settings,
-            R.id.center_icon, R.id.control_rewind, R.id.control_forward};
+    static final int[] LIFTED = {R.id.control_stop, R.id.control_options, R.id.control_settings, R.id.center_icon};
     /** Left and right move along the top row in this order. */
     private static final int[] HEADER = {R.id.control_stop, R.id.control_options, R.id.control_settings};
     private final Map<View, android.animation.Animator> lifts = new java.util.HashMap<>();

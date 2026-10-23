@@ -21,6 +21,11 @@ or unchanged Java View instance is weak evidence for that experience.
   their longer UI paths add breadth beyond the routine playback gate.
 - JVM tests still cover protocol parsing, source sorting/filtering, catalogue
   filters and startup timeout behaviour without a device or public network.
+  `FocusEffectsTest` (Robolectric, offline) focuses every control on browse,
+  Search and Settings and fails when any ancestor clips a grown control; it
+  also checks that a row's first tile grows from its leading edge without
+  moving the shelf, and that the player's buttons grow whole and its skip
+  label moves nothing. Its snapshots land in `app/build/focus-effects`.
 
 Native cache/eviction tests, sanitizer builds, emulator identity refusals,
 TLS rejection, encrypted persistence, migrations, request cancellation and

@@ -53,10 +53,12 @@
     <!-- Playback overlay, after tvOS: the title at the top with the two things a viewer reaches for (audio and
          subtitles) beside it, and the timeline at the bottom. Every control works by remote, pointer
          and touch. -->
+    <!-- Not clipping, so a focused button's growth is drawn whole. -->
     <FrameLayout
         android:id="@+id/controls"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:clipChildren="false"
         android:visibility="gone">
 
         <View
@@ -188,30 +190,6 @@
             android:src="@drawable/ic_play"
             android:visibility="gone" />
 
-        <!-- Skip back and forward beside play, for a pointer; the remote skips with left and right. -->
-        <ImageView
-            android:id="@+id/control_rewind"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:layout_gravity="center"
-            android:translationX="-112dp"
-            android:background="@drawable/tv_player_disc"
-            android:contentDescription="@string/control_rewind"
-            android:padding="17dp"
-            android:src="@drawable/ic_rewind"
-            android:tint="@color/tv_text" />
-
-        <ImageView
-            android:id="@+id/control_forward"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:layout_gravity="center"
-            android:translationX="112dp"
-            android:background="@drawable/tv_player_disc"
-            android:contentDescription="@string/control_forward"
-            android:padding="17dp"
-            android:src="@drawable/ic_forward"
-            android:tint="@color/tv_text" />
 
 
         <!-- The timeline, low on the screen, with the times under its ends. The remote plays and pauses (OK), skips
@@ -246,16 +224,14 @@
                 android:minHeight="28dp">
 
                 <!-- Seek feedback lives beside the timeline times, leaving the picture clear. -->
+                <!-- No box, and no taller than the times' row, so showing it moves nothing. -->
                 <LinearLayout
                     android:id="@+id/seek_bubble"
                     android:layout_width="wrap_content"
-                    android:layout_height="36dp"
+                    android:layout_height="28dp"
                     android:layout_gravity="center"
-                    android:background="@drawable/pill"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
-                    android:paddingStart="14dp"
-                    android:paddingEnd="18dp"
                     android:accessibilityLiveRegion="polite"
                     android:visibility="gone">
 
@@ -293,10 +269,24 @@
                     android:shadowRadius="6"
                     android:textColor="@color/tv_text_on_artwork" />
 
+                <ImageView
+                    android:id="@+id/control_rewind"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/control_rewind"
+                    android:visibility="gone" />
+
                 <TextView
                     android:id="@+id/control_play"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:visibility="gone" />
+
+                <ImageView
+                    android:id="@+id/control_forward"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/control_forward"
                     android:visibility="gone" />
             </FrameLayout>
         </LinearLayout>
