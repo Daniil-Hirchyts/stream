@@ -13,6 +13,7 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import tv.daniil.stream.addon.AddonException;
 import tv.daniil.stream.addon.AddonManifest;
@@ -183,6 +184,40 @@ public final class TvStore extends SQLiteOpenHelper {
         }
         return out;
     }
+
+    /** What happened the last time a source was opened for one video. Keys are {@code SourcePolicy.key}s, never addresses. */
+    public static final class SourceMark {
+        public static final String PLAYED = "played", FAILED = "failed";
+        public final String state;
+        public final long updatedMs;
+        public SourceMark(String state, long updatedMs) { this.state = state; this.updatedMs = updatedMs; }
+    }
+    /** Records a source's outcome; a source that played once stays "played" even if a later attempt fails. */
+    public synchronized void markSource(String titleKey, String video, String sourceKey, String state) {
+        Map<String, SourceMark> marks = sourceMarks(titleKey, video);
+        SourceMark before = marks.get(sourceKey);
+        String kept = state.equals(SourceMark.FAILED) && before != null && before.state.equals(SourceMark.PLAYED) ? SourceMark.PLAYED : state;
+        marks.put(sourceKey, new SourceMark(kept, System.currentTimeMillis()));
+        JSONObject out = new JSONObject();
+        try { for (Map.Entry<String, SourceMark> e : marks.entrySet()) out.put(e.getKey(), new JSONObject().put("state", e.getValue().state).put("at", e.getValue().updatedMs)); }
+        catch (JSONException e) { throw new IllegalStateException(e); }
+        save("preferences", "name", sourceMarksKey(titleKey, video), out.toString());
+    }
+    public synchronized Map<String, SourceMark> sourceMarks(String titleKey, String video) {
+        Map<String, SourceMark> marks = new java.util.LinkedHashMap<>();
+        String value = read("preferences", "name", sourceMarksKey(titleKey, video));
+        if (value == null) return marks;
+        try {
+            JSONObject data = new JSONObject(value);
+            for (java.util.Iterator<String> keys = data.keys(); keys.hasNext(); ) {
+                String key = keys.next(); JSONObject mark = data.getJSONObject(key);
+                marks.put(key, new SourceMark(mark.getString("state"), mark.optLong("at")));
+            }
+        } catch (JSONException ignored) { /* an unreadable history is shown as none */ }
+        return marks;
+    }
+    /** Hashed, so the plain preference name never reveals which title was watched. */
+    private static String sourceMarksKey(String titleKey, String video) { return "sources:" + hash(titleKey + "\n" + video); }
 
     public synchronized void setPreference(String key, String value) { save("preferences", "name", key, value); }
     public synchronized String preference(String key, String fallback) { String value = read("preferences", "name", key); return value == null ? fallback : value; }

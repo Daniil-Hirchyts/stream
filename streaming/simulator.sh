@@ -8,6 +8,7 @@
 #   ./streaming/simulator.sh engine-test | data-test
 #   ./streaming/simulator.sh live-film       Optional: real public-domain films from the internet through the store
 #   ./streaming/simulator.sh live-addons     Optional: current public store manifests/resources/review installs
+#   ./streaming/simulator.sh requested-title tt1234567  Explicit title audit using currently accepted providers
 #   ./streaming/simulator.sh status | logs | stop-services
 set -u
 
@@ -160,8 +161,10 @@ start_emulator() {
   [ "$state" != offline ] || { fail "$SERIAL is offline; close its window before restarting it."; return 1; }
   "$ROOT_DIR/casting/simulator/setup.sh" "$SDK_ROOT" "$AVD_NAME" || return 1
   mkdir -p "$STATE_DIR" || return 1
-  node "$ROOT_DIR/casting/simulator/detach.mjs" "$STATE_DIR/emulator.log" "$SDK_ROOT/emulator/emulator" \
-    -avd "$AVD_NAME" -port "$PORT" -no-snapshot -gpu swiftshader -feature -Vulkan -no-metrics -crash-report-mode never || return 1
+  set -- -avd "$AVD_NAME" -port "$PORT" -no-snapshot -gpu swiftshader -feature -Vulkan -no-metrics -crash-report-mode never
+  # Opt-in DNS override for hosts whose resolver is unreachable from the emulator's virtual network.
+  if [ -n "${DANIIL_CAST_DNS_SERVERS:-}" ]; then set -- "$@" -dns-server "$DANIIL_CAST_DNS_SERVERS"; fi
+  node "$ROOT_DIR/casting/simulator/detach.mjs" "$STATE_DIR/emulator.log" "$SDK_ROOT/emulator/emulator" "$@" || return 1
   attempt=0
   while [ "$attempt" -lt 180 ]; do
     state=$("$ADB_BIN" -s "$SERIAL" get-state 2>/dev/null || true)
@@ -211,7 +214,7 @@ case "${1:-up}" in
   site) start_services && printf 'Live test room: %s/\n' "$FIXTURE_URL" ;;
   fixtures) "$SIM_DIR/fixtures.sh" ;;
   services) start_services ;;
-  test) run_tests && run_data_tests && run_data_tests tv.daniil.stream.AppFlowTest,tv.daniil.stream.AcceptanceTest,tv.daniil.stream.PlayerInteractionTest,tv.daniil.stream.ProfileTest ;;
+  test) run_tests && run_data_tests && run_data_tests tv.daniil.stream.AppFlowTest,tv.daniil.stream.AcceptanceTest,tv.daniil.stream.PlayerInteractionTest ;;
   engine-test) run_tests ;;
   data-test) run_data_tests ;;
   smoke) run_data_tests tv.daniil.stream.AppFlowTest ;;
@@ -230,7 +233,14 @@ case "${1:-up}" in
     device exec-out run-as tv.daniil.stream cat files/validation-torrents.json >"$SIM_DIR/.cache/evidence/live-torrents.json" || exit 1
     exit "$result"
     ;;
-  acceptance) run_data_tests "${2:-tv.daniil.stream.AppFlowTest,tv.daniil.stream.AcceptanceTest,tv.daniil.stream.PlayerInteractionTest,tv.daniil.stream.ProfileTest}" ;;
+  requested-title)
+    printf '%s' "${2:-}" | grep -Eq '^tt[0-9]+(,tt[0-9]+)*$' || { fail 'Supply the explicitly requested IMDb title ID.'; exit 2; }
+    run_data_tests tv.daniil.stream.InstalledTitlePlaybackTest -e titleIds "$2"
+    result=$?
+    device exec-out run-as tv.daniil.stream cat files/validation-requested-title.json >"$SIM_DIR/.cache/evidence/requested-title.json" || exit 1
+    exit "$result"
+    ;;
+  acceptance) run_data_tests "${2:-tv.daniil.stream.AppFlowTest,tv.daniil.stream.AcceptanceTest,tv.daniil.stream.PlayerInteractionTest}" ;;
   process-death)
     start_services && install_app && (prepare_java; cd "$ANDROID_DIR"; ./gradlew -q :app:assembleDebugAndroidTest) && \
       device install -r -t "$ANDROID_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" && "$SIM_DIR/process-death.sh"

@@ -99,7 +99,7 @@ start_emulator() {
   printf 'Starting %s with a visible window and sound...\n' "$AVD_NAME"
   node "$SCRIPT_DIR/simulator/detach.mjs" "$SIM_STATE_DIR/emulator.log" \
     "$EMULATOR_BIN" -avd "$AVD_NAME" -port "$PORT" \
-    -no-snapshot -gpu swiftshader -feature -Vulkan || return 1
+    -no-snapshot -gpu "${DANIIL_CAST_GPU:-host}" -feature -Vulkan || return 1
   wait_for_emulator
 }
 

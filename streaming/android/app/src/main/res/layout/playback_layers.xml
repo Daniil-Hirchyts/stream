@@ -51,7 +51,7 @@
         android:visibility="gone" />
 
     <!-- Playback overlay, after tvOS: the title at the top with the two things a viewer reaches for (audio and
-         subtitles, and leaving) beside it, and the timeline at the bottom. Every control works by remote, pointer
+         subtitles) beside it, and the timeline at the bottom. Every control works by remote, pointer
          and touch. -->
     <FrameLayout
         android:id="@+id/controls"
@@ -122,6 +122,7 @@
 
             <ImageView
                 android:id="@+id/control_stop"
+                android:visibility="gone"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:layout_marginStart="12dp"
@@ -340,10 +341,22 @@
                 android:text="@string/hint_sources"
                 android:visibility="gone" />
 
+            <!-- Close is the way out: set apart and outlined, as Tv.Alert.cancelButton draws it. -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="24dp"
+                android:layout_marginTop="16dp"
+                android:layout_marginEnd="24dp"
+                android:background="@color/tv_hairline" />
+
             <TextView
                 android:id="@+id/error_close"
                 style="@style/TvPlayerAlertButton"
-                android:text="@string/hint_close" />
+                android:layout_marginTop="16dp"
+                android:background="@drawable/tv_dialog_cancel"
+                android:text="@string/hint_close"
+                android:textColor="@color/tv_on_glass_secondary" />
         </LinearLayout>
     </FrameLayout>
 </merge>

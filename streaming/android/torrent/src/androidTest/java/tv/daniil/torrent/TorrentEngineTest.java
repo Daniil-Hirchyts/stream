@@ -151,7 +151,8 @@ public final class TorrentEngineTest {
         }
     }
 
-    @Test public void everyByteArrivesAfterTheCacheTurnsOverV1() throws Exception {
+    /** One hash version is enough here: eviction is version-blind, and metadata is checked for each version above. */
+    @Test public void everyByteArrivesAfterTheCacheTurnsOver() throws Exception {
         readWholeFile(fixtures.torrent("film-v1"));
     }
 
@@ -166,14 +167,6 @@ public final class TorrentEngineTest {
             engine = null;
             open();
         }
-    }
-
-    @Test public void everyByteArrivesAfterTheCacheTurnsOverV2() throws Exception {
-        readWholeFile(fixtures.torrent("film-v2"));
-    }
-
-    @Test public void everyByteArrivesAfterTheCacheTurnsOverHybrid() throws Exception {
-        readWholeFile(fixtures.torrent("film-hybrid"));
     }
 
     /** Reads the 68 MB film through a 16 MiB cache, hashing it, then rewinds into evicted pieces. */

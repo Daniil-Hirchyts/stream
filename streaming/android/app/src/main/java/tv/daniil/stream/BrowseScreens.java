@@ -19,7 +19,7 @@ import tv.daniil.stream.ui.Page;
 
 /** Home, Search, Library, History and catalogue browsing. Builders run on workers and block on providers. */
 final class BrowseScreens {
-    private static final int POSTER_COLUMNS = 6, LANDSCAPE_COLUMNS = 3;
+    private static final int POSTER_COLUMNS = 6, LANDSCAPE_COLUMNS = 3, CATALOGUE_COLUMNS = 4;
     private final Navigator nav;
     private final TvApplication.Services services;
 
@@ -143,22 +143,51 @@ final class BrowseScreens {
             Title title = library.get(p.titleKey);
             if (title != null) tiles.add(progressTile("history", title, p));
         }
-        if (tiles.isEmpty()) return page.add(Item.message(R.drawable.ic_tv_movie, "No watch history yet", "Play a title and it appears here, ready to resume."));
+        if (tiles.isEmpty()) return page.add(Item.message(R.drawable.ic_tv_movie, "No watch history yet", "Titles you play appear here."));
         page.add(Item.header("Watch history", "Most recent first"));
         page.addAll(Item.grid("history", Tile.Style.LANDSCAPE, LANDSCAPE_COLUMNS, tiles));
         return page;
     }
 
-    Page catalogues() {
+    /**
+     * Every enabled catalogue as a card, grouped by kind (Films, Series, …). A card shows its catalogue's first title,
+     * from the same cached answers Home uses; a catalogue that needs a filter first is asked for nothing.
+     */
+    Page catalogues(Cancellation scope) throws Exception {
         Page page = new Page().title("Browse");
+        Map<String, List<AddonRepository.CatalogQuery>> byType = new LinkedHashMap<>();
+        List<AddonRepository.CatalogQuery> ready = new ArrayList<>();
         for (InstalledAddon a : services.store.addons()) if (a.enabled) for (AddonManifest.Catalog c : a.manifest.catalogs) {
-            page.add(Item.row("catalogue:" + a.id + c.type + c.id, R.drawable.ic_tv_movie, shelfTitle(c), "", () -> {
-                Route next = new Route("Catalogue"); next.value = new JSONArray().put(a.id).put(c.type).put(c.id).toString(); nav.push(next);
-            }));
+            AddonRepository.CatalogQuery query = new AddonRepository.CatalogQuery(a, c, Collections.emptyMap());
+            byType.computeIfAbsent(c.type, type -> new ArrayList<>()).add(query);
+            if (!needsFilter(c)) ready.add(query);
         }
-        if (page.items.isEmpty()) page.add(Item.message(R.drawable.ic_tv_extension, "No catalogues", "Install a catalogue add-on from Add-ons.",
+        if (byType.isEmpty()) return page.add(Item.message(R.drawable.ic_tv_extension, "No catalogues", "Install a catalogue add-on from Add-ons.",
                 new Item.Action("catalogues-add", Item.Action.Style.PRIMARY, "Browse add-ons", () -> nav.push(StoreScreens.route("Catalogues"))).icon(R.drawable.ic_tv_extension)));
+        AddonRepository.Result<Title> found = ready.isEmpty() ? null : services.addons.catalogs(ready, scope);
+        for (Map.Entry<String, List<AddonRepository.CatalogQuery>> group : byType.entrySet()) {
+            List<Tile> cards = new ArrayList<>();
+            for (AddonRepository.CatalogQuery q : group.getValue()) {
+                AddonManifest.Catalog c = q.catalog; InstalledAddon a = q.addon;
+                List<Title> titles = found == null ? Collections.emptyList()
+                        : found.byResource.getOrDefault(a.id + ":" + c.type + ":" + c.id, Collections.emptyList());
+                String image = null;
+                for (Title t : titles) { image = t.background != null ? t.background : t.poster; if (image != null) break; }
+                String name = c.name.trim().isEmpty() ? typeLabel(c.type) : c.name.trim();
+                String detail = a.manifest.name + (needsFilter(c) ? "  ·  Choose a filter" : "");
+                cards.add(new Tile("catalogue:" + a.id + c.type + c.id, Tile.Style.LANDSCAPE, name, detail, image, null, () -> {
+                    Route next = new Route("Catalogue"); next.value = new JSONArray().put(a.id).put(c.type).put(c.id).toString(); nav.push(next);
+                }).description(name));
+            }
+            page.add(Item.header(typeLabel(group.getKey()), cards.size() == 1 ? "1 catalogue" : cards.size() + " catalogues"));
+            page.addAll(Item.grid("catalogues:" + group.getKey(), Tile.Style.LANDSCAPE, CATALOGUE_COLUMNS, cards));
+        }
+        if (found != null && !found.failures.isEmpty()) page.add(Item.notice(R.drawable.ic_tv_offline, found.stale ? "Showing saved catalogues" : "Some providers are unavailable", ""));
         return page;
+    }
+    private static boolean needsFilter(AddonManifest.Catalog catalog) {
+        for (AddonManifest.Extra e : catalog.extras) if (e.required) return true;
+        return false;
     }
 
     Page catalogue(Route route, Cancellation scope) throws Exception {
@@ -172,6 +201,7 @@ final class BrowseScreens {
             return new Page().title("Catalogue").add(Item.message(R.drawable.ic_tv_info, "Catalogue unavailable", "The add-on was disabled or removed."));
         }
         Page page = new Page().title(shelfTitle(catalog));
+        page.add(Item.header(addon.manifest.name, catalog.supports("skip") ? "Page " + (route.page + 1) : ""));
         List<Item.Action> filters = new ArrayList<>();
         boolean complete = true;
         for (AddonManifest.Extra e : catalog.extras) if (!e.name.equals("skip")) {
@@ -188,7 +218,7 @@ final class BrowseScreens {
         AddonRepository.Result<Title> found = services.addons.catalogs(Collections.singletonList(new AddonRepository.CatalogQuery(addon, catalog, extras)), scope);
         List<Tile> tiles = new ArrayList<>();
         for (Title t : found.items) tiles.add(poster("catalogue", t));
-        if (tiles.isEmpty()) page.add(Item.message(R.drawable.ic_tv_movie, "No titles on this page", "Change filters or return to the previous page."));
+        if (tiles.isEmpty()) page.add(Item.message(R.drawable.ic_tv_movie, "No titles on this page", "Try other filters."));
         else page.addAll(Item.grid("catalogue-grid", Tile.Style.POSTER, POSTER_COLUMNS, tiles));
         if (!found.failures.isEmpty()) page.add(Item.notice(R.drawable.ic_tv_offline, "Provider unavailable", found.stale ? "Showing saved entries." : "Try refreshing this catalogue."));
         List<Item.Action> paging = new ArrayList<>();

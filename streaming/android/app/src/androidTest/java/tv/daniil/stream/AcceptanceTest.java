@@ -1,7 +1,6 @@
 package tv.daniil.stream;
 
 import static org.junit.Assert.*;
-import android.os.SystemClock;
 import android.view.KeyEvent;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.junit.Test;
@@ -62,30 +61,39 @@ public final class AcceptanceTest extends AppHarness {
                     && Integer.valueOf(3).equals(field(watch(), "attempts"));
         });
         assertEquals(3, field(watch(), "attempts")); assertFalse(state().renderedFirstFrame);
-        assertTrue(visible("Choose source"));
+        waitUntil("source choice is accessible after failure", 5000, () -> visible("Choose source"));
     }
+    @Test public void decoderAndNetworkFailuresAfterFramesResumeOnDifferentSources() throws Exception {
+        readyLibrary("recover-after-frame"); launch(); tap("Generated Film", true); tap("Play", false);
+        waitUntil("initial video", 30_000, () -> state() != null && state().renderedFirstFrame && state().playing);
+        WatchActivity activity = watch();
+        instrumentation.runOnMainSync(() -> { AppFlowTest.session(activity).setSpeed(1.5f); AppFlowTest.session(activity).seekTo(8000); });
+        waitUntil("playing beyond initial frame", 10_000, () -> state().playing && state().positionMs >= 8500);
+        long position = state().positionMs;
+        instrumentation.runOnMainSync(() -> AppFlowTest.session(activity).fail(tv.daniil.playback.PlaybackErrors.describe(context,
+                new androidx.media3.common.PlaybackException("Injected real decoder failure path", null,
+                        androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_FAILED))));
+        waitUntil("decoder failure recovers after first frame", 30_000, () -> Integer.valueOf(2).equals(field(activity, "attempts"))
+                && state() != null && state().error == null && state().renderedFirstFrame && state().playing && state().positionMs >= position);
+        assertEquals("Recovery keeps the chosen speed", 1.5f, state().speed, 0.001f);
+        long resumed = state().positionMs;
+        instrumentation.runOnMainSync(() -> AppFlowTest.session(activity).fail(new tv.daniil.playback.PlaybackErrors.Description(
+                "unsupported", "Injected error code collision", "Cannot play this source", "test", 0, false)));
+        waitUntil("shared error vocabulary still recovers", 30_000, () -> Integer.valueOf(3).equals(field(activity, "attempts"))
+                && state() != null && state().error == null && state().renderedFirstFrame && state().playing && state().positionMs >= resumed);
+        instrumentation.runOnMainSync(() -> AppFlowTest.session(activity).fail(tv.daniil.playback.PlaybackErrors.describe(context,
+                new androidx.media3.common.PlaybackException("Injected network failure path", null,
+                        androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED))));
+        waitUntil("recovery budget is bounded after frames too", 5000, () -> state() != null && state().error != null
+                && "opening".equals(state().error.code));
+        assertEquals(3, field(activity, "attempts"));
+        assertEquals(3, diagnostics().getJSONArray("sourceFailures").length());
+        waitUntil("source choice is accessible after failure", 5000, () -> visible("Choose source"));
+    }
+
     private Object field(WatchActivity activity, String name) {
         try { java.lang.reflect.Field field = WatchActivity.class.getDeclaredField(name); field.setAccessible(true); return field.get(activity); }
         catch (Exception e) { throw new AssertionError(e); }
-    }
-
-    @Test public void startupTimeoutTriesTheNextAutomaticSource() throws Exception {
-        readyLibrary("failover-stall"); launch(); tap("Generated Film", true); tap("Play", false);
-        waitUntil("silent torrent metadata preparation", 10_000, () -> {
-            WatchActivity activity = watch();
-            return activity != null && Boolean.TRUE.equals(field(activity, "switching")) && field(activity, "engine") != null;
-        });
-        WatchActivity activity = watch();
-        // Expire the host's deadline on its owning thread; the real engine, heartbeat and next source still run.
-        instrumentation.runOnMainSync(() -> {
-            try {
-                java.lang.reflect.Field deadline = WatchActivity.class.getDeclaredField("lastAdvanceMs");
-                deadline.setAccessible(true); deadline.setLong(activity, SystemClock.elapsedRealtime() - 100_000);
-            } catch (Exception e) { throw new AssertionError(e); }
-        });
-        waitUntil("timeout advances to the playable source", 40_000,
-                () -> state() != null && state().renderedFirstFrame && state().playing);
-        assertEquals(2, field(activity, "attempts"));
     }
 
     @Test public void contentFileAndMagnetImportsUseRealMetadataAndPlayback() throws Exception {

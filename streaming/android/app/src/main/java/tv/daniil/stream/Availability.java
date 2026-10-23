@@ -23,7 +23,7 @@ final class Availability {
      */
     static Availability of(List<InstalledAddon> providers, List<MediaSource> found, Map<String, AddonException.Kind> failures, List<InstalledAddon> installed) {
         if (found.isEmpty() && providers.isEmpty()) return new Availability(NO_PROVIDER, NO_PROVIDER_DETAIL);
-        if (found.isEmpty() && !failures.isEmpty()) return new Availability("Source providers are unavailable", failures(failures, installed) + " Try again shortly.");
+        if (found.isEmpty() && !failures.isEmpty()) return new Availability("Source providers are unavailable", failures(failures, installed));
         if (!found.isEmpty()) {
             Map<String, Integer> reasons = new LinkedHashMap<>();
             for (MediaSource s : found) { String reason = SourcePolicy.assess(s).label; reasons.merge(reason, 1, Integer::sum); }
@@ -31,7 +31,7 @@ final class Availability {
             for (Map.Entry<String, Integer> e : reasons.entrySet()) parts.add(e.getKey() + (reasons.size() > 1 ? " (" + e.getValue() + ")" : ""));
             return new Availability("No playable sources", found.size() + " found · " + String.join(" · ", parts));
         }
-        return new Availability("No sources found", "Your source add-ons have nothing for this title yet. Try again later or choose another title.");
+        return new Availability("No sources found", "Nothing for this title yet.");
     }
 
     /** "Provider X didn't respond in time." for each failed provider, without addresses or response bodies. */

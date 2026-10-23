@@ -197,6 +197,26 @@ public final class Tv {
             return button;
         }
         /**
+         * The way out (Cancel, Close): set apart from the choices by a gap and a rule, outlined rather than filled, its
+         * label grey until focused. Add it last.
+         */
+        public View cancelButton(String key, String label, Runnable action) {
+            Context context = dialog.getContext();
+            View rule = new View(context); rule.setBackgroundColor(context.getColor(R.color.tv_hairline));
+            rule.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            LinearLayout.LayoutParams ruleParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(context, 1)));
+            int inset = dp(context, 24); ruleParams.leftMargin = ruleParams.rightMargin = inset; ruleParams.topMargin = dp(context, 16);
+            if (buttons.getChildCount() > 0) buttons.addView(rule, ruleParams);
+            TextView button = heading(context, label, 16, R.color.tv_on_glass_secondary);
+            button.setGravity(Gravity.CENTER); button.setContentDescription(label); button.setSingleLine(true);
+            button.setBackgroundResource(R.drawable.tv_dialog_cancel);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 46));
+            if (buttons.getChildCount() > 0) params.topMargin = dp(context, 16);
+            buttons.addView(button, params);
+            control(button, key, action, ignored -> {}, 1.03f, false);
+            return button;
+        }
+        /**
          * Shows the alert over a blurred copy of the screen behind it, on every Android version: one small screenshot,
          * blurred once off the main thread, rather than a live window blur (Android 12+ only, and often disabled).
          */
@@ -271,7 +291,7 @@ public final class Tv {
         return new Alert(dialog, surface, buttons);
     }
 
-    /** A tvOS action sheet: each option is a full-width button, then Cancel. Long lists scroll above Cancel. */
+    /** A tvOS action sheet: each option is a full-width button, then Cancel set apart. Long lists scroll above Cancel. */
     public static Alert choices(Context context, String title, String[] options, Consumer<Integer> accept, Runnable cancel) {
         Alert alert = alert(context, title, null);
         LinearLayout list = alert.buttons;
@@ -292,7 +312,7 @@ public final class Tv {
             final int index = i;
             rows.button("choice:" + i, options[i], () -> { alert.dialog.dismiss(); accept.accept(index); });
         }
-        alert.button("choice:cancel", "Cancel", alert.dialog::cancel);
+        alert.cancelButton("choice:cancel", "Cancel", alert.dialog::cancel);
         alert.dialog.setOnCancelListener(ignored -> { if (cancel != null) cancel.run(); });
         return rows;
     }

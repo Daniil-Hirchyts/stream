@@ -1,6 +1,6 @@
 # Current Daniil TV validation
 
-Status: work in progress. The latest startup-timeout change is built and has passed 21 JVM tests; all 16 final application/player/profile emulator tests passed, including timeout-to-failover coverage. The 127-endpoint live addon audit passed. Both live store-film tests and the public-torrent samples passed. The thirty-minute endurance check is running.
+Status: broad validation remains incomplete because the thirty-minute endurance check failed after about 26.9 minutes (`Timed out: soak seek 159`). That failure remains unresolved. A subsequent targeted playback/remote-control fix successfully played Hope (2026) through Meteor, TorrentsDB and combined automatic selection, including a seek to 30 minutes; see the [targeted reproduction report](streaming-hope-reproduction.md). The broad-run counts below are historical results, not a rerun of every suite after this fix.
 
 Target: `DaniilCast_Local_TV`, `emulator-5556`, Android TV 16/API 36. Physical TV maintenance is outside this run.
 
@@ -122,9 +122,9 @@ The user confirmed that no configured accounts are available. These requirements
 
 Forum discussion is observational, not a compatibility guarantee. The [Nuvio addon list](https://www.reddit.com/r/nuvioaddons/comments/1v9i6q2/the_ultimate_list_of_free_addons/) distinguishes P2P and HTTP sources. [TorBox's official free-plan limits](https://support.torbox.app/en/articles/9836418-account-restrictions) are one new download per 24 hours, ten per month, one active slot and 10 GB per torrent. Free app/addon installation therefore does not establish unlimited free TorBox access.
 
-## Outstanding verification
+## Unresolved failure
 
-- Thirty real minutes of playback/seek endurance, with bounded cache measurements.
+- The thirty-minute endurance test failed after 1,616.396 seconds at seek 159. The runner reports one failed test; the host stage exited 1. The cause has not been investigated. Earlier successful measurements do not establish a completed endurance pass.
 
 ## Coverage limits
 

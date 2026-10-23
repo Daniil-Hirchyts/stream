@@ -20,6 +20,11 @@ public final class PlayerInteractionTest extends AppHarness {
         waitUntil("Matroska renders", 30_000, () -> state() != null && state().playing && state().renderedFirstFrame);
         control(tv.daniil.playback.R.id.player_view, false); control(tv.daniil.playback.R.id.center_icon, true);
         waitUntil("pointer pauses", 5000, () -> !state().playWhenReady);
+        android.graphics.Bitmap image = instrumentation.getUiAutomation().takeScreenshot();
+        assertNotNull(image);
+        try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(context.getFilesDir(), "validation-player-paused.png"))) {
+            assertTrue(image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out));
+        } finally { image.recycle(); }
         String audio = state().audioTracks.get(1).label, subtitle = state().textTracks.get(0).label;
         control(tv.daniil.playback.R.id.control_options, false);
         tap("Audio", true); tap(audio, false);
@@ -63,8 +68,67 @@ public final class PlayerInteractionTest extends AppHarness {
         waitUntil("remote opens menu after touch", 5000, () -> shown(tv.daniil.playback.R.id.menu));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
         waitUntil("remote closes menu", 5000, () -> !shown(tv.daniil.playback.R.id.menu));
-        control(tv.daniil.playback.R.id.player_view, false); control(tv.daniil.playback.R.id.control_stop, true);
-        waitUntil("pointer closes playback", 10_000, () -> watch() == null);
+        WatchActivity playing = watch();
+        instrumentation.runOnMainSync(() -> assertFalse("Close is absent from the playback toolbar",
+                playing.findViewById(tv.daniil.playback.R.id.control_stop).isShown()));
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+        if (watch() != null) instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+        waitUntil("Back closes playback", 10_000, () -> watch() == null);
+    }
+
+    @Test public void arrowsReachOptionsAndSelectSubtitlesWithoutAMenuKey() throws Exception {
+        readyLibrary("http-mkv"); launch(); tap("Generated Film", false); tap("Play", true);
+        waitUntil("video renders", 30_000, () -> state() != null && state().playing && state().renderedFirstFrame);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
+        WatchActivity activity = watch();
+        instrumentation.runOnMainSync(() -> assertTrue("Up focuses Audio & subtitles",
+                activity.findViewById(tv.daniil.playback.R.id.control_options).hasFocus()));
+        SystemClock.sleep(4500);
+        assertTrue("Focused options stay visible", shown(tv.daniil.playback.R.id.controls));
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+        waitUntil("OK opens options", 5000, () -> shown(tv.daniil.playback.R.id.menu));
+        // Main menu: Choose source, Audio, Subtitles. Navigate using only real remote keys.
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+        waitUntil("subtitle choices", 5000, () -> visible("Off"));
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+        waitUntil("remote subtitle selected", 5000, () -> state().subtitles != null);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
+        waitUntil("menu dismissed", 5000, () -> !shown(tv.daniil.playback.R.id.menu));
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
+        instrumentation.runOnMainSync(() -> assertTrue("Down focuses centre transport",
+                activity.findViewById(tv.daniil.playback.R.id.center_icon).hasFocus()));
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+        waitUntil("remote pauses", 5000, () -> !state().playWhenReady);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
+        waitUntil("remote timeline seeks", 5000, () -> state().positionMs >= 9000);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+        waitUntil("remote resumes", 5000, () -> state().playing);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+        waitUntil("Back hides focused transport", 5000, () -> !shown(tv.daniil.playback.R.id.controls));
+        SystemClock.sleep(1200);
+        assertFalse("The focus keeper must not reopen dismissed controls", shown(tv.daniil.playback.R.id.controls));
+    }
+
+    @Test public void playGlyphHasTheSameOpticalCentreAsPause() {
+        for (int id : new int[]{R.drawable.ic_play, tv.daniil.playback.R.drawable.ic_pause}) {
+            android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(240, 240, android.graphics.Bitmap.Config.ARGB_8888);
+            android.graphics.drawable.Drawable icon = context.getDrawable(id);
+            assertNotNull(icon); icon.setBounds(0, 0, 240, 240); icon.draw(new android.graphics.Canvas(bitmap));
+            double weight = 0, xTotal = 0, yTotal = 0;
+            for (int y = 0; y < 240; y++) for (int x = 0; x < 240; x++) {
+                int alpha = android.graphics.Color.alpha(bitmap.getPixel(x, y));
+                weight += alpha; xTotal += (x + 0.5) * alpha; yTotal += (y + 0.5) * alpha;
+            }
+            bitmap.recycle();
+            assertEquals("Glyph horizontal optical centre", 120, xTotal / weight, 4);
+            assertEquals("Glyph vertical optical centre", 120, yTotal / weight, 2);
+        }
     }
 
     private boolean shown(int id) {

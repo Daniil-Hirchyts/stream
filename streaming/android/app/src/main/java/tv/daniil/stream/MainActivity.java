@@ -238,7 +238,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             case "Add-on": return setup.addon(route);
             case "Add-ons": return store.store(route, request);
             case "Add-on review": return store.review(route, request);
-            case "Catalogues": return browse.catalogues();
+            case "Catalogues": return browse.catalogues(request);
             case "Catalogue": return browse.catalogue(route, request);
             case "Details": return titles.details(route, request);
             case "Sources": return titles.sources(route, request);
@@ -419,14 +419,14 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             contentParams.topMargin = Tv.dp(this, 16);
             alert.surface.addView(Tv.clipped(content, 0), alert.surface.indexOfChild(alert.buttons), contentParams);
         }
-        alert.button("popup:close", "Close", alert.dialog::cancel);
+        alert.cancelButton("popup:close", "Close", alert.dialog::cancel);
         alert.dialog.setOnCancelListener(ignored -> { if (onClose != null) onClose.run(); });
         show(alert);
     }
     private void showGlassConfirmation(String title, CharSequence message, String action, Runnable onAccept, Runnable onCancel) {
         Tv.Alert alert = Tv.alert(this, title, message);
         alert.button("popup:confirm", action, () -> { alert.dialog.dismiss(); onAccept.run(); });
-        alert.button("popup:cancel", "Cancel", alert.dialog::cancel);
+        alert.cancelButton("popup:cancel", "Cancel", alert.dialog::cancel);
         alert.dialog.setOnCancelListener(ignored -> { if (onCancel != null) onCancel.run(); });
         show(alert);
     }
@@ -453,7 +453,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             if (text.isEmpty()) { error.setText("Enter a value"); error.setVisibility(View.VISIBLE); input.requestFocus(); return; }
             error.setVisibility(View.GONE); alert.dialog.dismiss(); accept.accept(text);
         });
-        alert.button("popup:cancel", "Cancel", alert.dialog::dismiss);
+        alert.cancelButton("popup:cancel", "Cancel", alert.dialog::dismiss);
         input.setOnEditorActionListener((v, action, event) -> {
             if (action != EditorInfo.IME_ACTION_DONE) return false;
             proceed.performClick(); return true;
@@ -519,8 +519,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);
         try { startActivityForResult(intent, PICK_TORRENT); }
         catch (android.content.ActivityNotFoundException unavailable) {
-            alert("Open a torrent file", "This TV has no system file picker. Open or share a .torrent file from a TV file manager and choose " + getString(R.string.app_name) + ". "
-                    + "You can also add a magnet link or torrent URL here.");
+            alert("Open a torrent file", "No file picker on this TV. Share a .torrent to " + getString(R.string.app_name) + " from a file manager, or add a magnet link.");
         }
     }
     private void importFile(Uri uri) {

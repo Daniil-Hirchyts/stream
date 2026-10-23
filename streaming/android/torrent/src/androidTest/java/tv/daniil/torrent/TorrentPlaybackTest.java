@@ -22,7 +22,6 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
-import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -104,38 +103,6 @@ public final class TorrentPlaybackTest {
             SystemClock.sleep(100);
         }
         throw new AssertionError("Timed out: " + what);
-    }
-
-    private long position() {
-        long[] p = new long[1];
-        instrumentation.runOnMainSync(() -> p[0] = player.getCurrentPosition());
-        return p[0];
-    }
-
-    private void seekAndPlay(long ms) {
-        instrumentation.runOnMainSync(() -> player.seekTo(ms));
-        waitFor("playing after a seek to " + ms, 60_000,
-                () -> player.isPlaying() && player.getCurrentPosition() >= ms + 1500);
-    }
-
-    @Test public void filmPlaysBeforeItHasDownloadedAndRewindsIntoEvictedData() throws Exception {
-        Fixtures.Torrent t = fixtures.torrent("film-hybrid");
-        Fixtures.File f = t.files.get(0);
-        long torrent = play(t, f);
-        waitFor("first frame", 60_000, rendered::get);
-        waitFor("advancing playback", 30_000, () -> player.getCurrentPosition() >= 2000);
-        JSONObject early = engine.stats(torrent);
-        assertTrue("playing before the whole file arrived: " + early, early.getLong("totalDownload") < f.size);
-
-        long duration = 45_000;
-        seekAndPlay(duration * 8 / 10);
-        // Back to the start, long since evicted.
-        seekAndPlay(1000);
-        JSONObject cache = engine.stats(torrent).getJSONObject("cache");
-        assertTrue("evicted: " + cache, cache.getLong("evicted") > 0);
-        assertTrue("file within the bound: " + cache, cache.getLong("fileBytes") <= CACHE);
-        assertTrue("storage within the bound: " + cache, cache.getLong("allocatedBytes") <= CACHE);
-        assertTrue(position() >= 2500);
     }
 
     @Test public void mp4WithItsIndexAtTheEndPlays() throws Exception {

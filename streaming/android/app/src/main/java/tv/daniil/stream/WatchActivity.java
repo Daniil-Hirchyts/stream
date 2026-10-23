@@ -51,6 +51,8 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private Title title;
     private String video, explicitKey;
     private List<MediaSource> candidates = Collections.emptyList();
+    /** How each candidate went before, read with them; this activity's own outcomes are added as they happen. */
+    private Map<String, TvStore.SourceMark> marks = new java.util.HashMap<>();
     private MediaSource selected;
     private int candidate, attempts;
     private long startMs, firstFrameMs, lastAdvanceMs, previousPosition, bufferingStarted, bufferingMs, seekStarted, seekRecoveryMs;
@@ -64,8 +66,13 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private boolean autoplay = true;
     /** Public torrents: trackers answer within seconds, a cold DHT lookup can take most of a minute. */
     private static final long METADATA_MS = 60_000;
-    private static final java.util.Set<String> HOST_ERRORS = new java.util.HashSet<>(java.util.Arrays.asList(
-            "unsupported", "opening", "buffering", "provider", "no-sources", "storage"));
+    private final java.util.Set<String> attemptedSources = new java.util.HashSet<>();
+    private final java.util.Set<String> attemptedProviders = new java.util.HashSet<>();
+    private final JSONArray sourceFailures = new JSONArray();
+    private PlaybackErrors.Description handledError;
+    private boolean keepPausedOnRecovery;
+    private Format observedVideo, observedAudio;
+
 
     private Dialog show(Tv.Alert alert) { alert.show(); return alert.dialog; }
 
@@ -110,7 +117,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 });
             } catch (Exception e) { main.post(() -> { if (current(mine)) {
                 Tv.Alert alert = Tv.alert(this, "Could not open this title", Failures.message(e));
-                alert.button("close", "Close", this::finish); alert.dialog.setOnCancelListener(d -> finish()); choiceDialog = show(alert);
+                alert.cancelButton("close", "Close", this::finish); alert.dialog.setOnCancelListener(d -> finish()); choiceDialog = show(alert);
             } }); }
         });
     }
@@ -123,7 +130,13 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         for (int id : new int[]{R.id.player_root, tv.daniil.playback.R.id.player_view, R.id.controls, R.id.center_icon,
                 R.id.control_options, R.id.control_stop, R.id.progress}) {
             findViewById(id).setOnTouchListener((view, event) -> {
-                if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) surface.requestFocus();
+                if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+                    // A pointer click must activate immediately, rather than only taking keyboard focus.
+                    if (view.getId() == R.id.control_options || view.getId() == R.id.center_icon)
+                        view.setFocusableInTouchMode(false);
+                    if (view.getId() == R.id.center_icon) keepPausedOnRecovery = false;
+                    surface.requestFocus();
+                }
                 return false;
             });
         }
@@ -146,10 +159,11 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private void resolve(boolean resetAttempts) {
         if (session == null || !visible) return;
         save(session.snapshot()); session.stop(); cancelPreparation();
-        if (resetAttempts) { attempts = 0; candidate = 0; }
+        if (resetAttempts) { keepPausedOnRecovery = false; attempts = 0; candidate = 0; attemptedSources.clear(); attemptedProviders.clear();
+            while (sourceFailures.length() > 0) sourceFailures.remove(0); }
         switching = true; lastAdvanceMs = SystemClock.elapsedRealtime(); scope = services.addons.newRequest();
         int mine = generation; Cancellation request = scope;
-        screen.setTitle(title.name); screen.setLoading(new PlayerScreen.Loading("sources", "Finding sources", "You can press Back to cancel.", false)); screen.render();
+        screen.setTitle(title.name); screen.setLoading(new PlayerScreen.Loading("sources", "Finding sources", null, false)); screen.render();
         preparation = loader.submit(() -> {
             try {
                 closeNative();
@@ -171,10 +185,11 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                     choices = SourcePolicy.ranked(available);
                     if (choices.isEmpty()) empty = Availability.of(providers, available, found == null ? Collections.emptyMap() : found.failures, services.store.addons());
                 }
+                Map<String, TvStore.SourceMark> history = services.store.sourceMarks(metadata.key(), video);
                 request.check(); Title resolved = metadata; List<MediaSource> sources = choices; Availability why = empty;
                 main.post(() -> {
                     if (!current(mine)) return;
-                    title = resolved; resumePosition = resume; candidates = sources;
+                    title = resolved; resumePosition = resume; candidates = sources; marks = history;
                     automatic = explicitKey == null || explicitKey.isEmpty();
                     if (title.provider.equals("local")) { open(null, -1); return; }
                     if (candidates.isEmpty()) { failure(why.heading, why.detail, "no-sources"); return; }
@@ -189,10 +204,14 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     }
     private void open(MediaSource source, int chosenIndex) {
         save(session.snapshot()); session.stop(); cancelPreparation();
+        findViewById(R.id.player_root).requestFocus();
         int mine = generation; scope = services.addons.newRequest(); Cancellation request = scope;
-        selected = source; if (chosenIndex < 0) attempts++; switching = true; failureQueued = false; preferencesInitialized = false; firstFrameMs = 0; droppedFrames = 0;
+        selected = source;
+        if (chosenIndex < 0) { attempts++; if (source != null) { attemptedSources.add(SourcePolicy.retryKey(source)); attemptedProviders.add(source.provider); } }
+        handledError = null; observedVideo = observedAudio = null;
+        switching = true; failureQueued = false; preferencesInitialized = false; firstFrameMs = 0; droppedFrames = 0;
         startMs = lastAdvanceMs = SystemClock.elapsedRealtime(); previousPosition = -1;
-        screen.setLoading(new PlayerScreen.Loading("preparing", "Opening " + (source == null ? "import" : source.name), "Preparing video. Press Back to cancel.", false)); screen.render();
+        screen.setLoading(new PlayerScreen.Loading("preparing", "Opening source", sourceLabel(source), false)); screen.render();
         preparation = loader.submit(() -> {
             try {
                 // A chosen file reuses the metadata session; a changed source closes the previous one first.
@@ -231,7 +250,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                         torrent = engine.add(torrentSource);
                         // Real swarms need time to answer through trackers and DHT; loopback fixtures answer at once.
                         main.post(() -> { if (current(mine) && switching) { screen.setLoading(new PlayerScreen.Loading("peers", "Finding peers",
-                                "Getting the file list from the torrent's peers. Press Back to cancel.", false)); screen.render(); } });
+                                sourceLabel(source), false)); screen.render(); } });
                     }
                     List<TorrentFile> files = engine.awaitMetadata(torrent, options.localOnly ? 20_000 : METADATA_MS);
                     int explicit = chosenIndex >= 0 ? chosenIndex : source == null ? services.store.importDescriptor(title.id).optInt("fileIdx", -1) : source.fileIndex;
@@ -247,7 +266,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                     uri = TorrentDataSource.uri(torrent, file); dataSource = new TorrentDataSource.Factory(engine);
                 }
                 PlaybackRequest playback = new PlaybackRequest.Builder(uri, title.name).id(video).detail(episodeLabel())
-                        .position(resumePosition).audioLanguage(audio.isEmpty() || audio.equals("off") ? null : audio)
+                        .position(resumePosition).continuing(automatic && attempts > 1).audioLanguage(audio.isEmpty() || audio.equals("off") ? null : audio)
                         .headers(source == null ? Collections.emptyMap() : source.requestHeaders).subtitleHeaders(Collections.emptyMap())
                         .subtitles(captions).subtitleRequest(new SubtitleTracks.Request(subtitles.equals("off") ? "off" : null, subtitles.equals("off") ? null : subtitles, null))
                         .dataSource(dataSource).build();
@@ -271,8 +290,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     /** Offers this app's own cleanup, or a smaller cache, then tries the same source again. */
     private void lowStorage(String size) {
         failure("Not enough storage", Failures.message(new TorrentException(TorrentException.LOW_STORAGE, "")), "storage");
-        Tv.Alert alert = Tv.alert(this, "Not enough storage", "Playback needs room for its cache plus 512 MiB kept free for the TV. Clearing removes only "
-                + "this app's temporary video, subtitle and catalogue files; your library, imports and history stay.");
+        Tv.Alert alert = Tv.alert(this, "Not enough storage", "Playback needs room for its cache plus 512 MiB free.\nClearing removes only temporary files; your library and history stay.");
         alert.button("clear", "Clear and retry", () -> { alert.dialog.dismiss(); loader.execute(() -> {
             closeNative(); SetupScreens.clearCaches(this, services);
             main.post(() -> { if (visible && !releasing) onRetry(); });
@@ -281,7 +299,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             services.store.setPreference("cacheMiB", "128");
             main.post(() -> { if (visible && !releasing) onRetry(); });
         }); });
-        alert.button("close", "Close", alert.dialog::dismiss);
+        alert.cancelButton("close", "Close", alert.dialog::dismiss);
         choiceDialog = show(alert);
     }
     private static boolean sameLanguage(String one, String two) {
@@ -297,25 +315,64 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private void chooseSources() {
         if (session == null) return;
         save(session.snapshot()); session.stop(); cancelPreparation(); loader.execute(this::closeNative);
-        if (candidates.isEmpty()) { failure("No sources available", "Return to the title and refresh its sources.", "no-sources"); return; }
-        String[] names = new String[candidates.size()]; for (int i = 0; i < names.length; i++) names[i] = candidates.get(i).name + " · " + SourcePolicy.assess(candidates.get(i)).label;
+        if (candidates.isEmpty()) { failure("No sources available", "Refresh sources on the title page.", "no-sources"); return; }
+        String[] names = new String[candidates.size()];
+        for (int i = 0; i < names.length; i++) {
+            MediaSource c = candidates.get(i); TvStore.SourceMark mark = marks.get(SourcePolicy.key(c));
+            String state = mark == null ? "" : mark.state.equals(TvStore.SourceMark.PLAYED) ? "✓ Played  ·  " : "✕ Didn't play  ·  ";
+            names[i] = state + c.name.replace('\n', ' ') + "  ·  " + SourcePolicy.assess(c).label;
+        }
         choiceDialog = show(Tv.choices(this, "Choose source", names, which -> {
             automatic = false; explicitKey = SourcePolicy.key(candidates.get(which)); candidate = which; attempts = 0; open(candidates.get(which), -1);
         }, this::finish));
     }
     private void attemptFailed(String message, String code) {
         if (!visible || releasing) return;
-        boolean rendered = session != null && session.renderedFirstFrame();
-        if (automatic && !rendered && attempts < 3 && candidate + 1 < candidates.size()) {
-            candidate++; int mine = generation, next = candidate;
-            main.post(() -> { if (current(mine)) open(candidates.get(next), -1); }); return;
+        PlaybackSnapshot state = session == null ? null : session.snapshot();
+        try {
+            JSONObject failed = new JSONObject().put("attempt", attempts).put("code", code)
+                    .put("renderedFirstFrame", state != null && state.renderedFirstFrame)
+                    .put("positionMs", state == null ? 0 : state.positionMs);
+            if (observedVideo != null) failed.put("videoMime", observedVideo.sampleMimeType)
+                    .put("width", observedVideo.width).put("height", observedVideo.height).put("codecs", observedVideo.codecs);
+            if (observedAudio != null) failed.put("audioMime", observedAudio.sampleMimeType);
+            if (state != null && state.error != null) failed.put("playerCode", state.error.code).put("detail", state.error.detail);
+            sourceFailures.put(failed);
+        } catch (Exception ignored) { /* diagnostic fields never prevent recovery */ }
+        if (state == null || !state.renderedFirstFrame) markSource(TvStore.SourceMark.FAILED);
+        if (automatic && attempts < 3) {
+            int next = SourcePolicy.nextCandidate(candidates, attemptedSources, attemptedProviders);
+            if (next >= 0) {
+                if (state != null && state.positionMs > 0) resumePosition = state.positionMs;
+                keepPausedOnRecovery = state != null && state.loaded && !state.playWhenReady;
+                candidate = next; int mine = generation, chosen = next;
+                // Claim recovery before another player callback can queue a second attempt.
+                switching = true;
+                session.stop();
+                findViewById(R.id.player_root).requestFocus();
+                screen.setLoading(new PlayerScreen.Loading("sources", "Trying another source",
+                        sourceLabel(candidates.get(next)), false));
+                screen.render();
+                main.post(() -> { if (current(mine)) open(candidates.get(chosen), -1); }); return;
+            }
         }
-        failure("Playback could not continue", message, code);
+        failure(automatic ? "No playable source found" : "Could not play this source", message, code);
     }
+    /** Remembers how the current source went, for the marks on Sources. Imports have no source list. */
+    private void markSource(String state) {
+        if (selected == null || title == null || services == null) return;
+        String titleKey = title.key(), key = SourcePolicy.key(selected), forVideo = video;
+        TvStore.SourceMark before = marks.get(key);
+        if (before == null || !before.state.equals(TvStore.SourceMark.PLAYED)) marks.put(key, new TvStore.SourceMark(state, System.currentTimeMillis()));
+        app.persistence.execute(() -> services.store.markSource(titleKey, forVideo, key, state));
+    }
+    /** A source's own name, on one line, under the title while it opens. */
+    private static String sourceLabel(MediaSource source) { return source == null ? "Import" : source.name.replace('\n', ' ').trim(); }
     private void failure(String heading, String message, String code) {
         switching = false;
         if (screen == null || session == null) return;
-        session.fail(new PlaybackErrors.Description(code, heading, message, "", 0, true));
+        handledError = new PlaybackErrors.Description(code, heading, message, "", 0, true);
+        session.fail(handledError);
         cancelPreparation(); loader.execute(this::closeNative);
         screen.setLoading(null); screen.render();
     }
@@ -324,13 +381,19 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         failureQueued = true; int mine = generation;
         main.post(() -> { if (current(mine)) attemptFailed(message, code); });
     }
-    @Override public void onUnsupportedFormat(String format) { queueFailure("This device cannot decode " + format + ". Choose another source.", "unsupported"); }
+    @Override public void onUnsupportedFormat(String format) { queueFailure("This TV can't decode " + format + ".", "unsupported"); }
     @Override public void onPlaybackChanged(PlaybackSnapshot snapshot) {
         if (releasing || session == null || switching) return;
-        if (snapshot.renderedFirstFrame && firstFrameMs == 0) firstFrameMs = SystemClock.elapsedRealtime() - startMs;
+        if (keepPausedOnRecovery && snapshot.error == null) {
+            if (snapshot.playWhenReady) { session.pause(); return; }
+            if (snapshot.started) keepPausedOnRecovery = false;
+        }
+        if (snapshot.videoFormat != null) observedVideo = snapshot.videoFormat;
+        if (snapshot.audioFormat != null) observedAudio = snapshot.audioFormat;
+        if (snapshot.renderedFirstFrame && firstFrameMs == 0) { firstFrameMs = SystemClock.elapsedRealtime() - startMs; markSource(TvStore.SourceMark.PLAYED); }
         if (snapshot.error != null) {
-            // Host-originated errors have already gone through bounded failover.
-            if (!HOST_ERRORS.contains(snapshot.error.code)) queueFailure(playbackFailure(snapshot.error), "opening");
+            // Compare the actual host-owned description, not strings shared with Media3's error vocabulary.
+            if (snapshot.error != handledError) queueFailure(playbackFailure(snapshot.error), "opening");
             return;
         }
         if (!SourcePolicy.actualSupported(this, snapshot.videoFormat) || !SourcePolicy.actualSupported(this, snapshot.audioFormat)) {
@@ -350,6 +413,8 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         Throwable cause = session.player().getPlayerError();
         for (int depth = 0; cause != null && depth < 12; depth++, cause = cause.getCause())
             if (cause instanceof TorrentException) return Failures.message(cause);
+        if (error.code.equals("decoder")) return "This TV can't decode this source's format.";
+        if (error.code.equals("format")) return "No readable video in this source.";
         return error.message;
     }
     @Override public void onProgress(PlaybackSnapshot snapshot) { if (!releasing) save(snapshot); }
@@ -384,18 +449,39 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     @Override public void onChooseSource() { chooseSources(); }
     @Override public void onExit() { finish(); }
     private static final int[] ERROR_BUTTONS = {R.id.error_retry, R.id.error_sources, R.id.error_close};
-    /** The error alert's buttons stack; OK presses the focused one (the shared player would retry whatever is focused). */
+    /** Route the app's remote focus graph before shared transport shortcuts, including error alert actions. */
     @Override public boolean onKey(int code) {
         boolean ok = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
         View focused = getCurrentFocus();
-        if (!ok || session == null || session.error() == null || focused == null) return false;
-        for (int id : ERROR_BUTTONS) if (focused.getId() == id) { focused.performClick(); return true; }
+        if (session == null) return false;
+        if (session.error() != null) {
+            if (ok && focused != null) for (int id : ERROR_BUTTONS)
+                if (focused.getId() == id) { focused.performClick(); return true; }
+            return false;
+        }
+        if (switching || !session.started() || screen.isMenuOpen()) return false;
+        int focus = focused == null ? View.NO_ID : focused.getId();
+        if (code == KeyEvent.KEYCODE_BACK && (focus == R.id.control_options || focus == R.id.center_icon || focus == R.id.progress))
+            findViewById(R.id.player_root).requestFocus();
+        if ((ok && focus != R.id.control_options) || code == KeyEvent.KEYCODE_MEDIA_PLAY
+                || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) keepPausedOnRecovery = false;
+        if (ok && focus == R.id.control_options) { focused.performClick(); return true; }
+        if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) {
+            screen.showControls();
+            int target = code == KeyEvent.KEYCODE_DPAD_UP
+                    ? (focus == R.id.progress ? R.id.center_icon : R.id.control_options)
+                    : (focus == R.id.control_options ? R.id.center_icon : R.id.progress);
+            View destination = findViewById(target);
+            destination.setFocusableInTouchMode(true);
+            destination.requestFocus();
+            return true;
+        }
         return false;
     }
     /** An error alert opens with its first button focused, so the remote is on it at once. */
     @Override public void onScreenChanged() {
         View error = findViewById(R.id.error), focused = getCurrentFocus();
-        if (error == null || error.getVisibility() != View.VISIBLE) return;
+        if (session == null || session.error() == null || error == null || error.getVisibility() != View.VISIBLE) return;
         for (View v = focused; v != null; v = v.getParent() instanceof View ? (View) v.getParent() : null) if (v == error) return;
         for (int id : ERROR_BUTTONS) { View button = findViewById(id); if (button.getVisibility() == View.VISIBLE) { button.requestFocus(); return; } }
     }
@@ -412,6 +498,10 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         @Override public void run() {
             if (!visible || releasing || session == null) return;
             PlaybackSnapshot state = session.snapshot(); long now = SystemClock.elapsedRealtime();
+            View focused = getCurrentFocus();
+            if (!switching && state.error == null && !screen.isMenuOpen() && focused != null
+                    && (focused.getId() == R.id.control_options || focused.getId() == R.id.center_icon
+                    || focused.getId() == R.id.progress)) screen.showControls();
             if (state.positionMs > previousPosition + 50 && state.playing) { lastAdvanceMs = now; previousPosition = state.positionMs; if (seekStarted > 0) { seekRecoveryMs = now - seekStarted; seekStarted = 0; } }
             if (!state.buffering && !switching && !state.playWhenReady) lastAdvanceMs = now;
             boolean torrentStartup = engine != null && !switching && !state.renderedFirstFrame;
@@ -422,10 +512,10 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             boolean expired = torrentStartup ? startupWatchdog.expired(now) : now - lastAdvanceMs > (switching ? METADATA_MS + 30_000 : 30_000);
             if ((choiceDialog == null || !choiceDialog.isShowing()) && expired
                     && (torrentStartup || state.buffering || switching || !state.started) && state.error == null) {
-                String message = engine == null ? "The source stopped responding. Retry or choose another source."
-                        : nativeStats.optLong("hashFailures") > 0 ? "Downloaded pieces failed integrity checks. Retry with a different peer or choose another source."
-                        : nativeStats.optInt("peers") == 0 ? "No peers are supplying this video. Retry later or choose another source."
-                        : "No verified video data arrived in time. Check peers, retry or choose another source.";
+                String message = engine == null ? "The source stopped responding."
+                        : nativeStats.optLong("hashFailures") > 0 ? "Downloaded data failed its checks."
+                        : nativeStats.optInt("peers") == 0 ? "No peers are sharing this video."
+                        : "Video data is arriving too slowly.";
                 attemptFailed(message, "buffering");
             }
             if (!polling && engine != null && !switching) {
@@ -442,7 +532,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     JSONObject diagnosticSnapshot() {
         JSONObject result = new JSONObject();
         try {
-            result.put("firstFrameMs", firstFrameMs).put("seekRecoveryMs", seekRecoveryMs).put("droppedFrames", droppedFrames)
+            result.put("sourceAttempts", attempts).put("sourceFailures", new JSONArray(sourceFailures.toString())).put("firstFrameMs", firstFrameMs).put("seekRecoveryMs", seekRecoveryMs).put("droppedFrames", droppedFrames)
                     .put("bufferingMs", bufferingMs).put("nativeHeapBytes", android.os.Debug.getNativeHeapAllocatedSize())
                     .put("javaHeapBytes", Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory());
             if (session != null) { PlaybackSnapshot s = session.snapshot(); result.put("positionMs", s.positionMs).put("durationMs", s.durationMs).put("renderedFirstFrame", s.renderedFirstFrame).put("playing", s.playing); }
@@ -453,7 +543,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     PlaybackSnapshot playbackSnapshot() { return session == null ? null : session.snapshot(); }
     private void diagnostics() {
         Tv.Alert alert = Tv.alert(this, "Playback diagnostics", diagnosticSnapshot().toString().replace(",\"", ", \""));
-        alert.button("close", "Close", alert.dialog::dismiss); choiceDialog = show(alert);
+        alert.cancelButton("close", "Close", alert.dialog::dismiss); choiceDialog = show(alert);
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event) { return screen != null && screen.dispatchKeyEvent(event) || super.dispatchKeyEvent(event); }
     @Override public void onBackPressed() { if (screen != null && screen.onRemoteKey(KeyEvent.KEYCODE_BACK)) return; finish(); }

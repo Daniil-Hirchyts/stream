@@ -3,6 +3,8 @@ package tv.daniil.stream;
 import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import tv.daniil.stream.addon.AddonRepository;
@@ -30,7 +32,7 @@ final class TitleScreens {
         if (!local) {
             AddonRepository.Result<Title> found = services.addons.metadata(original.provider, original.type, original.id, scope);
             if (!found.items.isEmpty()) title = found.items.get(0);
-            if (!found.failures.isEmpty()) note = "Some details are unavailable right now; saved information is shown.";
+            if (!found.failures.isEmpty()) note = "Showing saved details.";
         }
         route.title = title;
         Title chosen = title;
@@ -87,7 +89,7 @@ final class TitleScreens {
 
     private void episodes(Page page, Route route, Title title) {
         if (title.episodes.isEmpty()) {
-            page.add(Item.notice(R.drawable.ic_tv_info, "No episodes supplied", "Refresh details or choose another provider."));
+            page.add(Item.notice(R.drawable.ic_tv_info, "No episodes listed", "Try Refresh details."));
             return;
         }
         SortedSet<Integer> seasons = new TreeSet<>();
@@ -131,23 +133,71 @@ final class TitleScreens {
         return true;
     }
 
+    /** What the providers answered for one video; reused for ten minutes while the viewer re-sorts. */
+    private static final class Fetched {
+        final List<InstalledAddon> providers; @androidx.annotation.Nullable final AddonRepository.Result<MediaSource> found;
+        Fetched(List<InstalledAddon> providers, @androidx.annotation.Nullable AddonRepository.Result<MediaSource> found) { this.providers = providers; this.found = found; }
+    }
+    private static final long SOURCES_FRESH_MS = 10 * 60_000;
+
     Page sources(Route route, Cancellation scope) throws Exception {
         Title title = route.title;
         Page page = new Page().title("Sources").narrow(); page.backdrop = title; page.blurBackdrop = true;
         page.add(Item.header(title.name, title.type.equals("series") ? episodeName(title, route.video) : ""));
-        List<InstalledAddon> providers = services.addons.providers("stream", title.type, route.video);
-        AddonRepository.Result<MediaSource> found = providers.isEmpty() ? null : services.addons.streams(title.type, route.video, scope);
+        Fetched fetched = route.cache instanceof Fetched && android.os.SystemClock.elapsedRealtime() - route.cachedAt < SOURCES_FRESH_MS ? (Fetched) route.cache : null;
+        if (fetched == null) {
+            List<InstalledAddon> providers = services.addons.providers("stream", title.type, route.video);
+            fetched = new Fetched(providers, providers.isEmpty() ? null : services.addons.streams(title.type, route.video, scope));
+            route.cache = fetched; route.cachedAt = android.os.SystemClock.elapsedRealtime();
+        }
+        List<InstalledAddon> providers = fetched.providers;
+        AddonRepository.Result<MediaSource> found = fetched.found;
         List<MediaSource> sources = new ArrayList<>(found == null ? new ArrayList<>() : found.items);
         for (Title.Episode e : title.episodes) if (e.id.equals(route.video)) sources.addAll(e.streams);
         List<InstalledAddon> installed = services.store.addons();
-        // Only what this TV can play, best first. The rest is counted, not listed.
+        // Only what this TV can play. The rest is counted, not listed.
         List<MediaSource> playable = SourcePolicy.ranked(sources);
-        for (MediaSource source : playable) {
-            String provider = "Provider";
-            for (InstalledAddon a : installed) if (a.id.equals(source.provider)) provider = a.manifest.name;
-            String meta = provider + "  ·  " + kind(source) + (source.videoSize > 0 ? "  ·  " + size(source.videoSize) : "");
-            page.add(Item.source("source:" + SourcePolicy.key(source), source.name.replace('\n', ' '), meta, "", "", true,
-                    () -> nav.play(title, route.video, SourcePolicy.key(source))).status(-1));
+        if (!playable.isEmpty()) {
+            Map<String, TvStore.SourceMark> marks = services.store.sourceMarks(title.key(), route.video);
+            // "SIZE" or "SIZE:reverse". Choosing the current order again turns it around.
+            String saved = services.store.preference("sourceSort", SourceSort.Order.BEST.name());
+            SourceSort.Order order = SourceSort.Order.of(saved.replace(":reverse", ""));
+            boolean reverse = saved.endsWith(":reverse");
+            List<Action> sorts = new ArrayList<>();
+            for (SourceSort.Order o : SourceSort.Order.values()) {
+                boolean current = o == order;
+                String next = o.name() + (current && !reverse ? ":reverse" : "");
+                sorts.add(new Action("sort:" + o.name(), Action.Style.CHIP, o.label, () -> {
+                    route.scroll = null;
+                    nav.mutate(() -> { services.store.setPreference("sourceSort", next); return null; });
+                }).text(current ? o.label + (reverse ? "  ↑" : "  ↓") : o.label).selected(current));
+            }
+            page.add(Item.chips("source-sort", "Sort by", sorts));
+            String last = ""; long lastAt = 0; int played = 0;
+            for (MediaSource source : playable) {
+                TvStore.SourceMark mark = marks.get(SourcePolicy.key(source));
+                if (mark == null || !mark.state.equals(TvStore.SourceMark.PLAYED)) continue;
+                played++;
+                if (mark.updatedMs > lastAt) { lastAt = mark.updatedMs; last = SourcePolicy.key(source); }
+            }
+            page.add(Item.header(playable.size() == 1 ? "1 source" : playable.size() + " sources",
+                    (played > 0 ? played + " played  ·  " : "") + "by " + order.label.toLowerCase(Locale.ROOT) + (reverse ? ", reversed" : "")));
+            for (MediaSource source : SourceSort.sort(playable, order, reverse, marks)) {
+                String key = SourcePolicy.key(source);
+                String provider = "Provider";
+                for (InstalledAddon a : installed) if (a.id.equals(source.provider)) provider = a.manifest.name;
+                SourceSort.Facts facts = SourceSort.facts(source);
+                StringBuilder meta = new StringBuilder(provider).append(DOT).append(kind(source));
+                if (!facts.quality().isEmpty()) meta.append(DOT).append(facts.quality());
+                if (facts.bytes > 0) meta.append(DOT).append(size(facts.bytes));
+                if (facts.seeds >= 0) meta.append(DOT).append(facts.seeds == 1 ? "1 seed" : facts.seeds + " seeds");
+                TvStore.SourceMark mark = marks.get(key);
+                boolean failed = mark != null && mark.state.equals(TvStore.SourceMark.FAILED);
+                String status = mark == null ? "" : failed ? "Didn't play" : key.equals(last) ? "Last played" : "Played";
+                Item row = Item.source("source:" + key, source.name.replace('\n', ' '), meta.toString(), detail(source), status, !failed,
+                        () -> nav.play(title, route.video, key));
+                page.add(row.status(mark == null ? -1 : failed ? R.drawable.ic_tv_close : R.drawable.ic_tv_check));
+            }
         }
         if (playable.isEmpty() && !sources.isEmpty()) {
             Availability why = Availability.of(providers, sources, found == null ? new java.util.HashMap<>() : found.failures, installed);
@@ -161,8 +211,18 @@ final class TitleScreens {
         } else if (found != null && !found.failures.isEmpty()) {
             page.add(Item.notice(R.drawable.ic_tv_offline, "Some providers are unavailable", Availability.failures(found.failures, installed)));
         }
-        page.add(Item.actions("source-actions", new Action("refresh-sources", Action.Style.SECONDARY, "Refresh sources", nav::refresh).icon(R.drawable.ic_tv_refresh)));
+        page.add(Item.actions("source-actions", new Action("refresh-sources", Action.Style.SECONDARY, "Refresh sources", () -> {
+            route.cache = null; nav.refresh();
+        }).icon(R.drawable.ic_tv_refresh)));
         return page;
+    }
+    private static final String DOT = "  ·  ";
+    /** The release name some add-ons put in the description's first line (Torrentio's file name); figures are in meta. */
+    private static String detail(MediaSource source) {
+        String text = source.description.trim(); int end = text.indexOf('\n'); if (end >= 0) text = text.substring(0, end).trim();
+        if (text.isEmpty() && source.filename != null) text = source.filename;
+        boolean figures = text.matches("(?s).*(👤|👥|🌱|💾|📦).*");
+        return figures || text.equalsIgnoreCase(source.name.replace('\n', ' ').trim()) ? "" : text;
     }
 
     static String kind(MediaSource source) {

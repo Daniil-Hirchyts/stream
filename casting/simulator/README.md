@@ -67,6 +67,13 @@ and creates the AVD without replacing userdata. It enables `hw.screen=touch` so
 clicks reach the Android UI; cold restart is needed after a hardware change. SDK licenses must
 already be accepted, as on this Mac.
 
+Local startup uses the host GPU for graphics, with Vulkan disabled for GLES
+compatibility on macOS. The default AVD has 4 GB RAM; software rendering can
+cause sluggish navigation even when Android has plenty of free memory. If host
+graphics cause rendering problems, start with `DANIIL_CAST_GPU=swiftshader`.
+Changing the renderer requires stopping and starting the emulator. Headless CI
+continues to use software rendering.
+
 Every ADB device operation checks the emulator identity. Ports 8765 (Mac to
 receiver) and 58132 (receiver to local test media) are bridged automatically.
 The debug receiver's “display over other apps” permission is granted **inside

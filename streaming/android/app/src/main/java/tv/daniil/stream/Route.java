@@ -22,6 +22,9 @@ final class Route {
     int season = -1, page;
     @Nullable Parcelable scroll;
     final Map<String, String> extras = new LinkedHashMap<>();
+    /** A screen's fetched data, kept in memory only so re-sorting or returning does not ask providers again. */
+    @Nullable Object cache;
+    long cachedAt;
 
     Route(String screen) { this.screen = screen; }
     static Route of(String screen, @Nullable Title title, String video) {

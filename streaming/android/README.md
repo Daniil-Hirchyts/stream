@@ -53,8 +53,19 @@ Shelves scroll horizontally. Page titles scroll with their page.
     centred column; shelves and grids use the full width.
 - **Details:** every button is labelled: Play or Resume (with the episode),
   Sources, Favourite, Mark watched, and More for refresh and removal.
-- **Sources:** only sources this TV can play, best first. When none can, the
-  page says how many were found and why.
+- **Sources:** only sources this TV can play. Sort chips order them by Best,
+  Quality, Size, Seeds or Played; choosing the lit chip again reverses it
+  (the arrow shows which way), and sources that don't advertise a value stay
+  at the end either way. Each row shows provider, kind, quality, size and seeds
+  read from the add-on's text, and marks sources that played (the most recent
+  as "Last played") or didn't play on this TV. The marks hold only hashed source
+  keys, never addresses. When none can play, the page says how many were found
+  and why.
+- **Browse:** catalogue cards grouped by kind (Films, Series, …), each showing
+  its first title's artwork from the same cached answers Home uses, its add-on
+  and whether it needs a filter first.
+- **Alerts:** choices are filled platters; Cancel or Close sits apart under a
+  rule, outlined and grey until focused.
 - **Search keyboard:** a six-column grid with no gaps, on three pages
   (letters, digits and punctuation, accented letters); Space, Delete, the page
   switches and Clear each span exactly two keys. Results update as you type,
@@ -77,7 +88,11 @@ Shelves scroll horizontally. Page titles scroll with their page.
   header and the Settings split view, at the same sizes and spacing. Each
   line of text is a bar inside an empty text view of that line's size, so the
   page replaces it without anything moving. Search shows the results grid's
-  own columns.
+  own columns. The activity indicator is an eight-spoke wheel after Apple's,
+  an animated vector turning at a constant speed on the render thread, so it
+  keeps moving while the main thread is busy.
+- **Text:** short. Player steps name the step and the source; errors say what
+  happened in one sentence and leave the next step to their buttons.
 - **Contrast:** small text is at least 4.5:1 on the canvas; tertiary grey is
   60% white. Facts over artwork use a brighter grey, and all text that can sit
   over artwork carries a soft shadow.
@@ -298,14 +313,14 @@ separate and is never an import descriptor or library asset.
 ## Verification
 
 ```sh
-./streaming/simulator.sh engine-test   # 12 JNI/Media3 tests, real BitTorrent
+./streaming/simulator.sh engine-test   # 10 JNI/Media3 tests, real BitTorrent
 ./streaming/simulator.sh data-test     # add-ons, encryption, persistence, imports
 ./streaming/simulator.sh test          # engine, data and app suites on the verified AVD
 ./streaming/simulator.sh smoke         # visible real-app catalogue → torrent playback
 ./streaming/simulator.sh soak          # 30 real minutes of playback/seek cycles
 ./streaming/simulator.sh site          # real screen and bounded input, port 58133
 ./streaming/simulator.sh profile       # dumpsys memory/graphics and screenshot
-./streaming/simulator.sh acceptance    # extended UI, HTTP formats, tracks, failover and measurements
+./streaming/simulator.sh acceptance    # extended UI, HTTP formats, tracks and failover
 ./streaming/simulator.sh process-death # real process termination and resumed playback
 ./streaming/simulator.sh release-test  # shrunk release JNI probe; restores debug app/test APKs
 ./streaming/simulator.sh live-film     # optional: real public-domain films through the store (internet)
@@ -339,7 +354,17 @@ with the wordmark in Inter Display SemiBold. `branding/make_fonts.sh`
 regenerates the bundled Inter subsets.
 
 `:app:testDebugUnitTest` runs JVM tests of the store protocol, listing rules,
-built-in add-on and torrent discovery without a device or network. With
+built-in add-on, torrent discovery and source sorting without a device or network.
+
+The suites keep one test per behaviour. Rewinding into evicted data is proved
+end to end by `AppFlowTest` (the engine suite keeps one whole-file read through
+a turning-over cache; metadata is checked for each hash version), and playback
+measurements run only under `profile`, not `test` or `acceptance`. Source
+ranking, retry identity and the startup deadline are unit-tested
+(`TorrentSourcesTest`, `SourcePolicyTest`, `StartupWatchdogTest`), so the
+acceptance suite keeps only the failover paths that need a real player: bounded
+automatic failover with manual choices left alone, and recovery after frames
+(position and speed kept). With
 `-PliveAddons=true` it also runs `RealFilmsLiveTest` against Stremio's
 directory, Cinemeta, Public Domain Movies, OpenSubtitles v3, archive.org and
 Wikidata with eight public-domain films; FFmpeg (when installed) checks codec,
@@ -369,6 +394,21 @@ the public-domain directory's known copy when an index offers it, handles an
 explicit video-file choice, and records rendered playback, provider errors and
 setup requirements in `streaming/simulator/.cache/evidence/live-torrents.json`.
 One sampled torrent does not establish availability of every result from an index.
+
+For an explicitly requested title, `./streaming/simulator.sh requested-title tt1234567`
+copies only the currently accepted, enabled provider descriptors into an isolated
+test database. It samples each provider and combined automatic playback; combined
+playback also checks Up/OK options access and a seek to 30 minutes. It does not
+install new providers into owner data. Internet access is opt-in; select only a
+title authorized for this reproduction. Outcomes are in
+`streaming/simulator/.cache/evidence/requested-title.json`; runner completion alone
+does not mean every provider played. The normal fixture suites never run this probe.
+
+If public IPs work but DNS lookups fail inside the emulator, restart that verified
+AVD with an explicit resolver, for example
+`DANIIL_CAST_DNS_SERVERS=1.1.1.1,8.8.8.8 ./streaming/simulator.sh start`.
+The option applies when starting a stopped emulator; it does not reconfigure a
+running instance, disable TLS verification or change the host/physical TV DNS.
 Startup allows continued payload progress for up to three minutes after video
 preparation begins, with a one-minute transfer-stall deadline. Playback stalls
 after the first frame retain the existing deadline. Pausing before the first

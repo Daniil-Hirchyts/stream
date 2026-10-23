@@ -24,6 +24,8 @@ public final class Item {
         /** 0–1 playback progress, or below zero for none. */
         public float progress = -1;
         @DrawableRes public int badge;
+        /** The accessible label when it should differ from "title. subtitle" (a catalogue card is named by its catalogue). */
+        @Nullable public String description;
 
         public Tile(String key, Style style, String title, String subtitle, @Nullable String image, @Nullable Title media, Runnable action) {
             this.key = key; this.style = style; this.title = title; this.subtitle = subtitle;
@@ -31,6 +33,7 @@ public final class Item {
         }
         public Tile progress(float value) { progress = value; return this; }
         public Tile badge(@DrawableRes int icon) { badge = icon; return this; }
+        public Tile description(String value) { description = value; return this; }
     }
 
     /** A focusable button. Icon-only buttons are described by their label. */

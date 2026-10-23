@@ -448,14 +448,15 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                 root.addView(skeletonActions(false, 148)); root.addView(skeletonText(false, 0, 330)); break;
             case "Catalogues":
                 root.addView(skeletonTitle(110));
-                for (int width : new int[]{140, 120, 156, 104, 132, 118}) root.addView(skeletonRow(true, width, 0));
-                break;
+                root.addView(skeletonHeading(17, 20, 0, 70)); root.addView(skeletonGrid(Item.Tile.Style.LANDSCAPE, 4));
+                root.addView(skeletonHeading(17, 20, 0, 70)); root.addView(skeletonGrid(Item.Tile.Style.LANDSCAPE, 4)); break;
             case "Catalogue":
                 root.addView(skeletonTitle(170)); root.addView(skeletonGrid(poster, 6)); root.addView(skeletonGrid(poster, 6)); break;
             case "Details":
                 root.addView(skeletonDetails()); root.addView(skeletonActions(false, 156, 126, 134, 168, -1)); root.addView(skeletonText(false, 64, 280)); break;
             case "Sources":
-                root.addView(skeletonTitle(120)); root.addView(skeletonHeading(14, 22, ROW_INSET, 150));
+                root.addView(skeletonTitle(120)); root.addView(skeletonActions(false, 72, 96, 70, 82, 88));
+                root.addView(skeletonHeading(14, 22, ROW_INSET, 150));
                 for (int i = 0; i < 4; i++) root.addView(skeletonSource(new int[]{170, 150, 190, 140}[i], new int[]{150, 170, 130, 160}[i], 0));
                 root.addView(skeletonActions(false, 170)); break;
             case "Developer":
@@ -664,7 +665,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     private View tile(Item.Tile tile, Item.Tile.Style style, int width) {
         LinearLayout root = new LinearLayout(context); root.setOrientation(LinearLayout.VERTICAL);
         root.setClipChildren(false); root.setClipToPadding(false);
-        root.setContentDescription(tile.subtitle.isEmpty() ? tile.title : tile.title + ". " + tile.subtitle);
+        root.setContentDescription(tile.description != null ? tile.description : tile.subtitle.isEmpty() ? tile.title : tile.title + ". " + tile.subtitle);
         FrameLayout frame = new AspectFrame(context, style == Item.Tile.Style.POSTER ? 1.5f : 0.5625f);
         frame.setBackgroundResource(R.drawable.tv_artwork); frame.setClipToOutline(true);
         frame.setOutlineProvider(new ViewOutlineProvider() {
