@@ -171,14 +171,19 @@ Cast keeps its own look:
 - **Palette:** `res/values/colors.xml`, `bg_panel`, `pill` and `bg_card_soft`.
 - **Overlay:** `layout/playback_layers.xml`, with the same IDs and the view
   types the library reads:
-  - The title and track details sit at the top, with the clock and round
-    Audio & subtitles and Close buttons beside them; there is no "Now
-    playing" label.
+  - The title and track details sit at the top, with the clock and two round
+    buttons beside them: Audio and subtitles (the subtitle list, then Audio)
+    and Player settings (quality, speed, subtitle style). Menu on the remote
+    still opens everything. There is no "Now playing" label.
+  - Skip back and forward discs flank the centre glyph for a pointer; a skip
+    shows its total (+30 s) in a pill between the times. The player's buttons
+    grow while focused or under the pointer.
   - Subtitles are chosen in the player. With subtitles off, nothing downloads
-    before the video starts; the add-ons' subtitles are then fetched and the
-    options menu lists them under Subtitles. Once tracks are loaded, More
-    subtitles lists the rest. A choice reloads the video where it was, keeps
-    the loaded tracks, shows the new one and remembers its language.
+    before the video starts; the add-ons' subtitles are then fetched. The
+    Subtitles list always shows Off, the loaded tracks and every add-on file
+    not yet loaded (marked Download), so other choices stay in reach while a
+    track shows. A download reloads the video where it was, keeps the loaded
+    tracks, shows the new one and remembers its language.
   - The timeline sits low, with the elapsed and remaining times under its
     ends. There are no transport buttons: OK plays and pauses, left and right
     skip, Menu opens the options; a pointer clicks the centre glyph or drags

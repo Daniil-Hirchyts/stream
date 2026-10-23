@@ -36,6 +36,7 @@
     <string name="subtitle_position">Position</string>
     <string name="track_off">Off</string>
     <string name="track_numbered">Subtitles %1$d</string>
+    <string name="menu_tracks">Audio &amp; subtitles</string>
     <string name="track_from_page">%1$s (external)</string>
     <string name="closed_captions">Closed captions</string>
     <string name="size_small">Small</string>

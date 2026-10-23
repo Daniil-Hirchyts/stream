@@ -144,13 +144,26 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private void bindRemoteFocus() {
         View surface = findViewById(R.id.player_root);
         surface.requestFocus();
+        // Two buttons replace the shared single Options button: audio and subtitles, and the player's settings.
+        tv.daniil.playback.Ui.action(findViewById(R.id.control_options), screen::openTracksMenu);
+        tv.daniil.playback.Ui.action(findViewById(R.id.control_settings), screen::openSettingsMenu);
+        for (int id : LIFTED) {
+            View button = findViewById(id);
+            button.setOnFocusChangeListener((view, has) -> lift(view, has || view.isHovered()));
+            button.setOnHoverListener((view, event) -> {
+                int action = event.getActionMasked();
+                if (action == android.view.MotionEvent.ACTION_HOVER_ENTER) lift(view, true);
+                else if (action == android.view.MotionEvent.ACTION_HOVER_EXIT) lift(view, view.isFocused());
+                return false;
+            });
+        }
         for (int id : new int[]{R.id.player_root, tv.daniil.playback.R.id.player_view, R.id.controls, R.id.center_icon,
-                R.id.control_options, R.id.control_stop, R.id.progress}) {
+                R.id.control_options, R.id.control_settings, R.id.control_stop, R.id.control_rewind, R.id.control_forward, R.id.progress}) {
             findViewById(id).setOnTouchListener((view, event) -> {
                 if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
                     // A pointer click must activate immediately, rather than only taking keyboard focus.
-                    if (view.getId() == R.id.control_options || view.getId() == R.id.control_stop || view.getId() == R.id.center_icon)
-                        view.setFocusableInTouchMode(false);
+                    if (view != surface && view.getId() != R.id.progress && view.getId() != R.id.controls
+                            && view.getId() != tv.daniil.playback.R.id.player_view) view.setFocusableInTouchMode(false);
                     if (view.getId() == R.id.center_icon) keepPausedOnRecovery = false;
                     surface.requestFocus();
                 }
@@ -165,6 +178,23 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             });
         }
     }
+    /** The player's buttons, which grow while focused or under the pointer, like the app's own controls. */
+    private static final int[] LIFTED = {R.id.control_stop, R.id.control_options, R.id.control_settings,
+            R.id.center_icon, R.id.control_rewind, R.id.control_forward};
+    /** Left and right move along the top row in this order. */
+    private static final int[] HEADER = {R.id.control_stop, R.id.control_options, R.id.control_settings};
+    private final Map<View, android.animation.Animator> lifts = new java.util.HashMap<>();
+    /** Scales with its own animator: the overlay's fades cancel a view's property animation on every tick. */
+    private void lift(View view, boolean on) {
+        android.animation.Animator running = lifts.remove(view);
+        if (running != null) running.cancel();
+        float scale = on ? Tv.LIFT_ICON : 1f;
+        android.animation.Animator animator = android.animation.ObjectAnimator.ofPropertyValuesHolder(view,
+                android.animation.PropertyValuesHolder.ofFloat(View.SCALE_X, scale), android.animation.PropertyValuesHolder.ofFloat(View.SCALE_Y, scale));
+        animator.setDuration(on ? 200 : 160);
+        lifts.put(view, animator); animator.start();
+    }
+    private static int headerIndex(int id) { for (int i = 0; i < HEADER.length; i++) if (HEADER[i] == id) return i; return -1; }
     private void cancelPreparation() {
         generation++; if (scope != null) scope.close(); if (preparation != null) preparation.cancel(true);
         if (choiceDialog != null) { choiceDialog.dismiss(); choiceDialog = null; }
@@ -364,20 +394,21 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         for (SubtitleSource s : subtitleOffers) if (!loaded.contains(s.url)) result.add(s);
         return result;
     }
-    /** The add-ons' subtitles, chosen inside the player: the first pick turns subtitles on, later ones add a track. */
-    private MenuPanel.Page subtitleOffersPage(String heading) {
-        return MenuPanel.Page.of(heading, false, () -> {
-            List<MenuPanel.Item> items = new ArrayList<>();
-            if (session.textTracks().isEmpty()) items.add(MenuPanel.Item.choice("Off", null, true, () -> screen.menu().pop()));
-            // Numbered after the tracks already loaded, as they will be named once added.
-            Map<String, Integer> seen = new java.util.HashMap<>();
-            if (playing != null) for (SubtitleDownloader.Source s : playing.subtitles) numbered(languageName(s.language), seen);
-            for (SubtitleSource offer : unloadedOffers()) {
-                String name = languageName(offer.language);
-                items.add(MenuPanel.Item.choice(numbered(name, seen), null, false, () -> addSubtitles(offer, name)));
-            }
-            return items;
-        });
+    /**
+     * The add-ons' subtitles not loaded yet, listed on the player's Subtitles page after the loaded tracks, so every
+     * choice stays in one list whether or not a track is showing. Picking one adds it as a track and shows it.
+     */
+    @Override public List<MenuPanel.Item> subtitleItems() {
+        List<MenuPanel.Item> items = new ArrayList<>();
+        if (session == null || !session.isLoaded()) return items;
+        // Numbered after the tracks already loaded, as they will be named once added.
+        Map<String, Integer> seen = new java.util.HashMap<>();
+        if (playing != null) for (SubtitleDownloader.Source s : playing.subtitles) numbered(languageName(s.language), seen);
+        for (SubtitleSource offer : unloadedOffers()) {
+            String name = languageName(offer.language);
+            items.add(MenuPanel.Item.choice(numbered(name, seen), "Download", false, () -> addSubtitles(offer, name)));
+        }
+        return items;
     }
     /** Reloads the current media where it is, adding the chosen file and showing it, keeping the tracks it had. */
     private void addSubtitles(SubtitleSource chosen, String name) {
@@ -587,7 +618,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         }
         if (switching || !session.started() || screen.isMenuOpen()) return false;
         int focus = focused == null ? View.NO_ID : focused.getId();
-        boolean header = focus == R.id.control_options || focus == R.id.control_stop;
+        boolean header = headerIndex(focus) >= 0;
         if (code == KeyEvent.KEYCODE_BACK && (header || focus == R.id.center_icon || focus == R.id.progress))
             findViewById(R.id.player_root).requestFocus();
         if ((ok && !header) || code == KeyEvent.KEYCODE_MEDIA_PLAY
@@ -595,7 +626,8 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         if (ok && header) { focused.performClick(); return true; }
         if (header && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
             screen.showControls();
-            View destination = findViewById(code == KeyEvent.KEYCODE_DPAD_LEFT ? R.id.control_stop : R.id.control_options);
+            int next = Math.max(0, Math.min(HEADER.length - 1, headerIndex(focus) + (code == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1)));
+            View destination = findViewById(HEADER[next]);
             destination.setFocusableInTouchMode(true); destination.requestFocus();
             return true;
         }
@@ -626,15 +658,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             if (canChooseSource()) result.add(MenuPanel.Item.action("Choose source", null, this::chooseSources));
             if (neighbour(-1) != null) result.add(MenuPanel.Item.action("Previous episode", null, () -> onPreviousEpisode()));
             if (neighbour(1) != null) result.add(MenuPanel.Item.action("Next episode", null, () -> onNextEpisode()));
-            // Before any track is loaded, the add-ons' subtitles stand in for the player's own Subtitles row.
-            if (session != null && session.isLoaded() && session.textTracks().isEmpty() && !unloadedOffers().isEmpty())
-                result.add(MenuPanel.Item.page("Subtitles", "Off", false, () -> screen.menu().push(subtitleOffersPage("Subtitles"))));
-        } else {
-            int more = session == null || session.textTracks().isEmpty() ? 0 : unloadedOffers().size();
-            if (more > 0) result.add(MenuPanel.Item.page("More subtitles", Integer.toString(more), false,
-                    () -> screen.menu().push(subtitleOffersPage("More subtitles"))));
-            if (developerMode) result.add(MenuPanel.Item.action("Developer", "Playback diagnostics", this::diagnostics));
-        }
+        } else if (developerMode) result.add(MenuPanel.Item.action("Developer", "Playback diagnostics", this::diagnostics));
         return result;
     }
     private final Runnable tick = new Runnable() {
@@ -699,6 +723,8 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         visible = false; releasing = true;
         if (session != null) { PlaybackSnapshot state = session.snapshot(); resumePosition = state.positionMs; save(state); }
         cancelPreparation(); main.removeCallbacksAndMessages(null);
+        for (android.animation.Animator animator : lifts.values()) animator.cancel();
+        lifts.clear();
         if (screen != null) screen.release();
         if (session != null) session.release();
         screen = null; session = null;

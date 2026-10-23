@@ -164,6 +164,16 @@ public final class PlayerScreen implements PlaybackSession.Listener, MenuPanel.L
         menu.open(rootPage());
     }
 
+    /** Audio and subtitle choices alone, for an app's own Audio & subtitles button. */
+    public void openTracksMenu() {
+        menu.open(tracksPage());
+    }
+
+    /** Everything but the audio and subtitle choices, for an app's own Settings button. */
+    public void openSettingsMenu() {
+        menu.open(settingsPage());
+    }
+
     public void refreshMenu() {
         menu.refresh();
     }
@@ -330,7 +340,25 @@ public final class PlayerScreen implements PlaybackSession.Listener, MenuPanel.L
     private void showCues() {
         List<Cue> cues = session.cues();
         boolean preview = menu.previewsSubtitles() || SystemClock.uptimeMillis() < previewUntil;
-        subtitles.setCues(cues.isEmpty() && preview ? sample : cues);
+        subtitles.setCues(cues.isEmpty() && preview ? sample : bottomAligned(cues));
+    }
+
+    /**
+     * SubRip and similar parsers place an ordinary bottom cue at a fraction of the height (0.92) rather than leaving
+     * it unset. A fraction is measured inside the view's bottom padding, so the cue would float well above the
+     * chosen gap and the overlay. Such cues sit on the padding instead; cues placed elsewhere keep their place.
+     */
+    private static List<Cue> bottomAligned(List<Cue> cues) {
+        List<Cue> result = null;
+        for (int i = 0; i < cues.size(); i++) {
+            Cue cue = cues.get(i);
+            boolean low = cue.lineType == Cue.LINE_TYPE_FRACTION && cue.line != Cue.DIMEN_UNSET && cue.line >= 0.75f
+                    && cue.lineAnchor != Cue.ANCHOR_TYPE_START && cue.verticalType == Cue.TYPE_UNSET;
+            if (!low) continue;
+            if (result == null) result = new ArrayList<>(cues);
+            result.set(i, cue.buildUpon().setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET).setLineAnchor(Cue.TYPE_UNSET).build());
+        }
+        return result == null ? cues : result;
     }
 
     /** Places subtitles at the chosen height, clear of the menu and the overlay's timeline and buttons. */
@@ -382,20 +410,52 @@ public final class PlayerScreen implements PlaybackSession.Listener, MenuPanel.L
                 items.add(MenuPanel.Item.page(activity.getString(R.string.menu_audio),
                         playing == null ? null : playing.label, false, () -> menu.push(audioPage())));
             }
-            if (!session.textTracks().isEmpty()) {
+            if (hasSubtitles()) {
                 items.add(MenuPanel.Item.page(activity.getString(R.string.menu_subtitles), subtitleSummary(), false,
                         () -> menu.push(subtitlesPage())));
             }
-            if (!session.qualities().isEmpty()) {
-                items.add(MenuPanel.Item.page(activity.getString(R.string.menu_quality), qualitySummary(), false,
-                        () -> menu.push(qualityPage())));
+            addSettings(items, loaded);
+            items.addAll(host.menuItems(false));
+            return items;
+        });
+    }
+
+    private boolean hasSubtitles() {
+        return !session.textTracks().isEmpty() || !host.subtitleItems().isEmpty();
+    }
+
+    private void addSettings(List<MenuPanel.Item> items, boolean loaded) {
+        if (!session.qualities().isEmpty()) {
+            items.add(MenuPanel.Item.page(activity.getString(R.string.menu_quality), qualitySummary(), false,
+                    () -> menu.push(qualityPage())));
+        }
+        if (loaded) {
+            items.add(MenuPanel.Item.page(activity.getString(R.string.menu_speed), speedLabel(session.speed()), false,
+                    () -> menu.push(speedPage())));
+        }
+        items.add(MenuPanel.Item.page(activity.getString(R.string.menu_style), styleSummary(), false,
+                () -> menu.push(stylePage())));
+    }
+
+    /** Subtitle choices first, then the audio row: what an Audio & subtitles button is pressed for. */
+    private MenuPanel.Page tracksPage() {
+        return MenuPanel.Page.of(activity.getString(R.string.menu_tracks), false, () -> {
+            List<MenuPanel.Item> items = new ArrayList<>(subtitleChoices());
+            List<AudioTracks.Track> audio = session.audioTracks();
+            if (audio.size() > 1) {
+                AudioTracks.Track playing = AudioTracks.selected(audio);
+                items.add(MenuPanel.Item.page(activity.getString(R.string.menu_audio),
+                        playing == null ? null : playing.label, false, () -> menu.push(audioPage())));
             }
-            if (loaded) {
-                items.add(MenuPanel.Item.page(activity.getString(R.string.menu_speed), speedLabel(session.speed()), false,
-                        () -> menu.push(speedPage())));
-            }
-            items.add(MenuPanel.Item.page(activity.getString(R.string.menu_style), styleSummary(), false,
-                    () -> menu.push(stylePage())));
+            return items;
+        });
+    }
+
+    private MenuPanel.Page settingsPage() {
+        boolean loaded = session.isLoaded();
+        return MenuPanel.Page.of(activity.getString(R.string.menu_settings), false, () -> {
+            List<MenuPanel.Item> items = new ArrayList<>(host.menuItems(true));
+            addSettings(items, loaded);
             items.addAll(host.menuItems(false));
             return items;
         });
@@ -415,22 +475,26 @@ public final class PlayerScreen implements PlaybackSession.Listener, MenuPanel.L
     }
 
     private MenuPanel.Page subtitlesPage() {
-        return MenuPanel.Page.of(activity.getString(R.string.menu_subtitles), false, () -> {
-            List<MenuPanel.Item> items = new ArrayList<>();
-            List<SubtitleTracks.Track> tracks = session.textTracks();
-            SubtitleTracks.Track shown = SubtitleTracks.selected(tracks);
-            items.add(MenuPanel.Item.choice(activity.getString(R.string.track_off), null, shown == null, () -> {
-                session.selectSubtitles(null);
+        return MenuPanel.Page.of(activity.getString(R.string.menu_subtitles), false, this::subtitleChoices);
+    }
+
+    /** Off, the loaded tracks, then whatever more the app can add. */
+    private List<MenuPanel.Item> subtitleChoices() {
+        List<MenuPanel.Item> items = new ArrayList<>();
+        List<SubtitleTracks.Track> tracks = session.textTracks();
+        SubtitleTracks.Track shown = SubtitleTracks.selected(tracks);
+        items.add(MenuPanel.Item.choice(activity.getString(R.string.track_off), null, shown == null, () -> {
+            if (!tracks.isEmpty()) session.selectSubtitles(null);
+            menu.pop();
+        }));
+        for (SubtitleTracks.Track track : tracks) {
+            items.add(MenuPanel.Item.choice(track.label, null, track == shown, () -> {
+                session.selectSubtitles(track);
                 menu.pop();
             }));
-            for (SubtitleTracks.Track track : tracks) {
-                items.add(MenuPanel.Item.choice(track.label, null, track == shown, () -> {
-                    session.selectSubtitles(track);
-                    menu.pop();
-                }));
-            }
-            return items;
-        });
+        }
+        items.addAll(host.subtitleItems());
+        return items;
     }
 
     private MenuPanel.Page qualityPage() {

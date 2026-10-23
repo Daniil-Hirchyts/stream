@@ -78,6 +78,8 @@
             android:layout_marginStart="@dimen/safe_horizontal"
             android:layout_marginTop="@dimen/safe_vertical"
             android:layout_marginEnd="@dimen/safe_horizontal"
+            android:clipChildren="false"
+            android:clipToPadding="false"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
@@ -161,6 +163,18 @@
                 android:src="@drawable/ic_tv_subtitles"
                 android:tint="@color/tv_on_glass" />
 
+            <!-- Quality, speed and subtitle style; the button beside it holds the audio and subtitle choices. -->
+            <ImageView
+                android:id="@+id/control_settings"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="12dp"
+                android:background="@drawable/tv_button_round"
+                android:contentDescription="@string/player_settings"
+                android:padding="13dp"
+                android:src="@drawable/ic_tv_settings"
+                android:tint="@color/tv_on_glass" />
+
         </LinearLayout>
 
         <ImageView
@@ -173,6 +187,31 @@
             android:padding="22dp"
             android:src="@drawable/ic_play"
             android:visibility="gone" />
+
+        <!-- Skip back and forward beside play, for a pointer; the remote skips with left and right. -->
+        <ImageView
+            android:id="@+id/control_rewind"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_gravity="center"
+            android:translationX="-112dp"
+            android:background="@drawable/tv_player_disc"
+            android:contentDescription="@string/control_rewind"
+            android:padding="17dp"
+            android:src="@drawable/ic_rewind"
+            android:tint="@color/tv_text" />
+
+        <ImageView
+            android:id="@+id/control_forward"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_gravity="center"
+            android:translationX="112dp"
+            android:background="@drawable/tv_player_disc"
+            android:contentDescription="@string/control_forward"
+            android:padding="17dp"
+            android:src="@drawable/ic_forward"
+            android:tint="@color/tv_text" />
 
 
         <!-- The timeline, low on the screen, with the times under its ends. The remote plays and pauses (OK), skips
@@ -210,24 +249,28 @@
                 <LinearLayout
                     android:id="@+id/seek_bubble"
                     android:layout_width="wrap_content"
-                    android:layout_height="28dp"
+                    android:layout_height="36dp"
                     android:layout_gravity="center"
+                    android:background="@drawable/pill"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="18dp"
                     android:accessibilityLiveRegion="polite"
                     android:visibility="gone">
 
                     <ImageView
                         android:id="@+id/seek_icon"
-                        android:layout_width="16dp"
-                        android:layout_height="16dp"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
                         android:importantForAccessibility="no"
                         android:tint="@color/tv_text" />
 
                     <TextView
                         android:id="@+id/seek_label"
-                        style="@style/Text.Caption"
-                        android:layout_marginStart="6dp"
+                        style="@style/Text.Time"
+                        android:layout_marginStart="8dp"
+                        android:textSize="18sp"
                         android:shadowColor="#B3000000"
                         android:shadowDy="1"
                         android:shadowRadius="6" />
@@ -250,24 +293,10 @@
                     android:shadowRadius="6"
                     android:textColor="@color/tv_text_on_artwork" />
 
-                <ImageView
-                    android:id="@+id/control_rewind"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:contentDescription="@string/control_rewind"
-                    android:visibility="gone" />
-
                 <TextView
                     android:id="@+id/control_play"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:visibility="gone" />
-
-                <ImageView
-                    android:id="@+id/control_forward"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:contentDescription="@string/control_forward"
                     android:visibility="gone" />
             </FrameLayout>
         </LinearLayout>

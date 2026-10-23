@@ -1390,6 +1390,9 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                     return true;
                 }
             }
+            // A pointer that lands on a tile already in full view (often the first) must not slide the whole shelf.
+            if (getOrientation() == HORIZONTAL && parent.isInTouchMode() && child.getLeft() + rect.left >= getPaddingLeft()
+                    && child.getLeft() + rect.right <= getWidth() - getPaddingRight()) return false;
             Rect grown = new Rect(rect);
             if (getOrientation() == VERTICAL) { grown.top -= margin; grown.bottom += margin; } else { grown.left -= margin; grown.right += margin; }
             return super.requestChildRectangleOnScreen(parent, child, grown, immediate, focusedChildVisible);

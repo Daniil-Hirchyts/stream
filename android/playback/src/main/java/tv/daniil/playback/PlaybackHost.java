@@ -58,6 +58,14 @@ public interface PlaybackHost {
         return Collections.emptyList();
     }
 
+    /**
+     * More subtitles the app can add, such as files its providers offer, listed after the loaded tracks on the
+     * Subtitles page; choosing one is the app's to handle.
+     */
+    default List<MenuPanel.Item> subtitleItems() {
+        return Collections.emptyList();
+    }
+
     /** Handles a remote key before the player does, after the open menu and the up-next card. */
     default boolean onKey(int keyCode) {
         return false;
