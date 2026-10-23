@@ -35,6 +35,8 @@ public final class Tv {
      * scale visibly shifts their text sideways. They show focus by turning white instead.
      */
     public static final float LIFT_TILE = 1.1f, LIFT_BUTTON = 1.05f, LIFT_ROW = 1f;
+    /** Small round controls (back, search, page tools and arrows) grow more, so the change reads at their size. */
+    public static final float LIFT_ICON = 1.12f;
 
     public static int dp(Context context, float value) { return Math.round(value * context.getResources().getDisplayMetrics().density); }
 

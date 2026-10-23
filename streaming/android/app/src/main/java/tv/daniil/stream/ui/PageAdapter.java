@@ -875,7 +875,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         button.addView(chevron, new FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER));
         if (action == null) { button.setAlpha(0.5f); button.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO); return button; }
         button.setContentDescription(action.label); button.setTooltipText(action.label);
-        Tv.control(button, action.key, action.action, this::focused, 1f, false);
+        Tv.control(button, action.key, action.action, this::focused, Tv.LIFT_ICON, false);
         return button;
     }
 

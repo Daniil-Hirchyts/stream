@@ -131,7 +131,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         pageTools = findViewById(R.id.home_tools);
         clock = findViewById(R.id.clock);
         pageBack.setTooltipText("Back");
-        Tv.control(pageBack, "nav:back", this::back, key -> {}, 1f, false);
+        Tv.control(pageBack, "nav:back", this::back, key -> {}, Tv.LIFT_ICON, false);
         pageBack.setNextFocusLeftId(R.id.page_back); pageBack.setNextFocusUpId(R.id.page_back);
         pageBack.setOnKeyListener((view, code, event) -> {
             if (code != KeyEvent.KEYCODE_DPAD_DOWN) return false;
@@ -153,8 +153,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             @Override public void onScrolled(RecyclerView view, int dx, int dy) { updateTopBar(); }
         });
         list.getViewTreeObserver().addOnGlobalFocusChangeListener((old, now) -> updateTopBar());
-        Tv.control(searchButton, "nav:search", this::search, key -> {}, Tv.LIFT_ROW, false);
-        Tv.control(searchClose, "search:close", this::closeSearch, key -> {}, 1.04f, false);
+        Tv.control(searchButton, "nav:search", this::search, key -> {}, Tv.LIFT_ICON, false);
+        Tv.control(searchClose, "search:close", this::closeSearch, key -> {}, Tv.LIFT_ICON, false);
         if (android.os.Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackPressed);
         if (saved != null) {
@@ -175,7 +175,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, Tv.dp(this, 38));
         params.setMarginStart(Tv.dp(this, 2)); params.setMarginEnd(Tv.dp(this, 2));
         tab.setLayoutParams(params);
-        Tv.control(tab, "nav:" + screen, () -> { Sounds.play(Sounds.Sound.TAB); stayOnTabs = true; root(screen); }, key -> {}, Tv.LIFT_ROW, false);
+        Tv.control(tab, "nav:" + screen, () -> { Sounds.play(Sounds.Sound.TAB); stayOnTabs = true; root(screen); }, key -> {}, Tv.LIFT_BUTTON, false);
         return tab;
     }
     private void initialize() {
@@ -425,7 +425,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             tool.setVisibility(action == null ? View.GONE : View.VISIBLE);
             if (action == null) { tool.setTag(null); continue; }
             tool.setContentDescription(action.label); tool.setTooltipText(action.label);
-            Tv.control(tool, action.key, action.action, key -> {}, 1f, false);
+            Tv.control(tool, action.key, action.action, key -> {}, Tv.LIFT_ICON, false);
             tool.setOnKeyListener((view, code, event) -> {
                 if (code != KeyEvent.KEYCODE_DPAD_DOWN) return false;
                 if (event.getAction() == KeyEvent.ACTION_DOWN) {
