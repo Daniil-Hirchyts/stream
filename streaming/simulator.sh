@@ -241,6 +241,7 @@ case "${1:-up}" in
   engine-test) run_tests ;;
   data-test) run_data_tests ;;
   smoke) run_data_tests tv.daniil.stream.AppFlowTest#catalogueFavouritesPlaybackControlsAndEvictedRewindWork ;;
+  decoder-test) sh "$SIM_DIR/decoder-fixtures.sh" && run_data_tests tv.daniil.stream.DecoderPlaybackTest ;;
   # Not a required suite: public services and swarms change. Uses the internet, never the LAN or a physical TV.
   live-film) run_data_tests tv.daniil.stream.LiveFilmTest ;;
   live-addons)

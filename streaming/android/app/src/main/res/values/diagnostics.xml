@@ -1,0 +1,4 @@
+<resources>
+    <item name="error_qr_previous" type="id" />
+    <item name="error_qr_next" type="id" />
+</resources>

@@ -29,6 +29,35 @@ background, position), cache size (128/256/512 MiB),
 autoplay and app-cache cleanup. Versions, statistics and license texts live in
 Developer views.
 
+### Error QR reports
+
+Turn on **Settings → About → Developer mode** before reproducing a problem.
+Playback errors then show a QR panel beside Retry/Sources/Close. Browse and
+settings failures offer **Error report**. **Settings → Developer → Last error
+report** reopens the most recent report while this app process is alive.
+Turning Developer mode off clears it and hides report controls.
+
+Scan with a phone QR reader that supports plain text. The code contains a frozen
+JSON report, not a web link: no server or upload is needed. Longer reports use
+**Previous QR / Next QR**; scan each numbered part and join their payloads in
+order (remove the two-line part headers). They share one report ID and UTC time.
+Reports include app/device versions, the failed operation, original exception
+types/messages and codes, up to eight stack frames per cause (omissions are
+marked), source attempts, playback position/format and available torrent counters.
+Addresses, credentials and private paths are redacted before encoding. Reports
+are held only in memory; stream addresses are never saved for this feature.
+
+Focused verification, without emulator or public providers:
+
+```sh
+cd streaming/android
+./gradlew :app:testDebugUnitTest --tests tv.daniil.stream.DiagnosticReportTest --tests tv.daniil.stream.ErrorQrPanelTest
+```
+
+The tests decode every QR part, reconstruct Unicode reports, check redaction
+and the Developer-mode gate, and render the TV error surface. Snapshots are
+written to the ignored `app/build/error-report-snapshots/` directory.
+
 ### Design
 
 The browse UI follows tvOS. Artwork fills the screen behind a dark scrim. On
@@ -224,6 +253,9 @@ results, or no results. Nothing is installed without the user's review.
 
 `WatchActivity` re-resolves sources and uses the shared player. `SourcePolicy`
 checks advertised hints and actual Media3 formats against the 1080p profile.
+Bundled FFmpeg audio/video decoders cover missing TV codecs, including E-AC-3,
+DTS, TrueHD and common 10-bit video. See [DECODERS.md](DECODERS.md) for decoder
+selection, recovery, limits, licensing and the focused `decoder-test` command.
 Automatic failover is limited to three candidates before first frame; explicit
 choices are preserved. Ambiguous multi-file torrents require a file choice.
 Leaving/backgrounding playback saves progress and releases Media3, native
@@ -401,9 +433,21 @@ Internet Archive data.
 
 `branding/make_brand.py` regenerates the launcher icon and the TV banner from
 one geometry: a graphite field and a frosted-glass play mark. The icon is an
-adaptive vector with a monochrome layer; the banner is PNGs at five densities
-with the wordmark in Inter Display SemiBold. `branding/make_fonts.sh`
+adaptive vector with a monochrome layer, plus transparent square PNGs for Fire TV;
+the separate 16:9 banner is PNGs at five densities with the wordmark in Inter
+Display SemiBold. Application, activity and round-icon slots use the square PNGs:
+putting a banner in these slots lets Fire TV squeeze the artwork into a square.
+The square PNGs fit the original horizontal banner inside transparent padding,
+preserving its glass mark, wordmark, background and aspect ratio exactly.
+`branding/make_fonts.sh`
 regenerates the bundled Inter subsets.
+
+For a separate installation alongside Stream, build with
+`./gradlew :app:assembleDebug -PseparateTvApp=true` from `streaming/android`.
+This uses package `tv.daniil.stream.tvapp` and the launcher label **Stream TV**;
+it has its own data and does not replace `tv.daniil.stream`.
+Fire TV supplies Appstore tiles separately from APK icons, so a sideloaded
+app's tile framing is controlled by its launcher even with a 16:9 banner.
 
 `:app:testDebugUnitTest` runs JVM tests of the store protocol, listing rules,
 built-in add-on, torrent discovery and source sorting without a device or network.

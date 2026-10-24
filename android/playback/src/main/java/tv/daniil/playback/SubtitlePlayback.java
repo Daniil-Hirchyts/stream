@@ -33,14 +33,19 @@ import java.util.List;
  */
 @OptIn(markerClass = UnstableApi.class)
 @SuppressWarnings("deprecation")
-final class SubtitlePlayback extends DefaultRenderersFactory {
+public final class SubtitlePlayback extends DefaultRenderersFactory {
     SubtitlePlayback(Context context) { super(context); }
 
     @Override protected void buildTextRenderers(Context context, TextOutput output,
             Looper outputLooper, int extensionRendererMode, ArrayList<Renderer> out) {
+        out.add(textRenderer(output, outputLooper));
+    }
+
+    /** App decoder factories use the same seek/late-selection compatibility as the default factory. */
+    public static TextRenderer textRenderer(TextOutput output, Looper outputLooper) {
         TextRenderer renderer = new TextRenderer(output, outputLooper);
         renderer.experimentalSetLegacyDecodingEnabled(true);
-        out.add(renderer);
+        return renderer;
     }
 
     static MediaSource create(DefaultMediaSourceFactory sources, DataSource.Factory data, MediaItem media) {

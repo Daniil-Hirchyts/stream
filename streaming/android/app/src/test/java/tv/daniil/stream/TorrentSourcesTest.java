@@ -15,6 +15,8 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
+import org.robolectric.annotation.Implementation;
+import org.robolectric.annotation.Implements;
 import org.robolectric.shadows.MediaCodecInfoBuilder;
 import org.robolectric.shadows.ShadowMediaCodecList;
 import tv.daniil.stream.addon.MediaSource;
@@ -25,9 +27,18 @@ import tv.daniil.torrent.TorrentEngine;
  * source policy on a TV with an H.264 hardware decoder and no HEVC decoder. Made-up hashes and trackers; no network.
  */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 36)
+@Config(sdk = 36, shadows = TorrentSourcesTest.SoftwareDecoders.class)
 public final class TorrentSourcesTest {
+    @Implements(value = io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegLibrary.class, isInAndroidSdk = false)
+    public static class SoftwareDecoders {
+        static boolean available;
+        @Implementation public static boolean supportsFormat(String mime) {
+            return available && Arrays.asList("video/avc", "video/hevc", "video/av01", "video/x-vnd.on2.vp9",
+                    "audio/eac3", "audio/ac3", "audio/true-hd", "audio/vnd.dts").contains(mime);
+        }
+    }
     @Before public void avcOnlyTv() {
+        SoftwareDecoders.available = false;
         ShadowMediaCodecList.reset();
         ShadowMediaCodecList.addCodec(MediaCodecInfoBuilder.newBuilder().setName("c2.test.avc.decoder").setIsEncoder(false)
                 .setIsHardwareAccelerated(true).setIsVendor(true)
@@ -83,6 +94,29 @@ public final class TorrentSourcesTest {
         assertEquals(Arrays.asList("b", "c", "e"), shown);
         assertEquals("Above the 1080p device profile", SourcePolicy.assess(sources.get(0)).label);
         assertEquals("Video decoder unavailable", SourcePolicy.assess(sources.get(3)).label);
+    }
+
+    @Test public void bundledDecodersKeepTenBitHevcAndSurroundReleasesEligible() throws Exception {
+        SoftwareDecoders.available = true;
+        List<String> shown = new ArrayList<>();
+        for (MediaSource s : SourcePolicy.ranked(answer())) shown.add(s.infoHash.substring(0, 1));
+        assertEquals(Arrays.asList("b", "c", "d", "e"), shown);
+        for (String audio : new String[]{"DDP5.1", "DD+5.1", "E-AC-3", "AC3", "DTS-HD.MA", "TrueHD"}) {
+            MediaSource release = MediaSource.list("fixture", new JSONObject().put("streams", new JSONArray()
+                    .put(stream("1080p x264 " + audio, "Film", 'f', 0, null)))).get(0);
+            assertTrue(audio, SourcePolicy.assess(release).usable);
+        }
+        // Software decoders don't remove the resolution budget or create Dolby Vision display support.
+        assertFalse(SourcePolicy.assess(answer().get(0)).usable);
+        MediaSource dolby = MediaSource.list("fixture", new JSONObject().put("streams", new JSONArray()
+                .put(stream("1080p x265 10bit DV", "Film", 'f', 0, null)))).get(0);
+        assertFalse(SourcePolicy.assess(dolby).usable);
+    }
+
+    @Test public void selectedSoftwareAudioIsNotRejectedByASecondPlatformDecoderCheck() {
+        assertTrue(SourcePolicy.withinDeviceProfile(new androidx.media3.common.Format.Builder().setSampleMimeType("audio/eac3").build()));
+        assertTrue(SourcePolicy.withinDeviceProfile(new androidx.media3.common.Format.Builder().setSampleMimeType("video/hevc").setWidth(1920).setHeight(1080).build()));
+        assertFalse(SourcePolicy.withinDeviceProfile(new androidx.media3.common.Format.Builder().setSampleMimeType("video/hevc").setWidth(3840).setHeight(2160).build()));
     }
 
     @Ignore("One wall-clock sample under Robolectric is not a representative TV performance check; ranking correctness stays covered.")

@@ -100,6 +100,8 @@ make late-index "$late" 262144 v1
 make matroska "$mkv" 524288 hybrid
 make series "$series" 262144 hybrid
 make unicode "$unicode" 65536 v1
+DANIILTV_FFMPEG="$ffmpeg_bin" sh "$here/decoder-fixtures.sh" eac3
+make codec-eac3 "$media/codecs/eac3.mkv" 65536 v1
 
 # Independent direct HTTP adaptive fixtures, generated from our own local film (no desktop helper required).
 mkdir -p "$media/hls" "$media/dash"

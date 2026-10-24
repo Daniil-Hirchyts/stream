@@ -15,6 +15,8 @@ public final class TvApplication extends Application {
     /** Native close from an outgoing activity must finish before a new activity can create its session. */
     public final ExecutorService playbackLoader = Executors.newSingleThreadExecutor();
     private Services services;
+    /** Last developer report is process-local: no history, saved stream URLs or files to clean up. */
+    volatile DiagnosticReport lastErrorReport;
     public synchronized Services services() {
         String database = RuntimeOptions.databaseName(this);
         if (services != null && !services.store.getDatabaseName().equals(database)) resetServices();

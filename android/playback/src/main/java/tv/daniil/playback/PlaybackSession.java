@@ -67,6 +67,7 @@ public final class PlaybackSession {
     private final String userAgent;
     private final PlaybackHost host;
     private final ExoPlayer player;
+    @Nullable private final PlaybackDecoders decoders;
     private final MediaSession mediaSession;
     private final File subtitleRoot;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -122,19 +123,27 @@ public final class PlaybackSession {
 
     /** Hosts with a constrained streaming budget may cap compressed Media3 buffers; zero keeps defaults. */
     public PlaybackSession(Context context, SharedPreferences prefs, String name, String userAgent, PlaybackHost host, int bufferBytes) {
+        this(context, prefs, name, userAgent, host, bufferBytes, null);
+    }
+
+    /** Apps may bundle additional decoders without changing the default platform-only player. */
+    public PlaybackSession(Context context, SharedPreferences prefs, String name, String userAgent, PlaybackHost host,
+            int bufferBytes, @Nullable PlaybackDecoders decoders) {
         this.context = context;
         this.prefs = prefs;
         this.userAgent = userAgent;
         this.host = host;
+        this.decoders = decoders;
         subtitleRoot = new File(new File(context.getCacheDir(), "subtitles"), java.util.UUID.randomUUID().toString());
         Capabilities.load(context);
         // Decoders hidden for testing stay hidden from playback too.
-        ExoPlayer.Builder builder = new ExoPlayer.Builder(context, new SubtitlePlayback(context)
+        ExoPlayer.Builder builder = new ExoPlayer.Builder(context, (decoders == null ? new SubtitlePlayback(context) : decoders.renderers(context))
                 .setMediaCodecSelector(Capabilities.selector()).setEnableDecoderFallback(true));
         if (bufferBytes > 0) builder.setLoadControl(new androidx.media3.exoplayer.DefaultLoadControl.Builder()
                 .setTargetBufferBytes(bufferBytes).setPrioritizeTimeOverSizeThresholds(false)
                 .setBufferDurationsMs(3000, 15_000, 1000, 1000).build());
         player = builder.build();
+        if (decoders != null) decoders.attach(player);
         player.setAudioAttributes(new AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true);
         player.addListener(new Player.Listener() {
@@ -166,6 +175,7 @@ public final class PlaybackSession {
                     player.prepare();
                     return;
                 }
+                if (decoders != null && decoders.recover(exception)) return;
                 fail(PlaybackErrors.describe(context, exception));
             }
             @Override public void onRenderedFirstFrame() {
@@ -219,6 +229,7 @@ public final class PlaybackSession {
         cancelSeek();
         player.stop();
         player.clearMediaItems();
+        if (decoders != null) decoders.reset();
         SubtitleTracks.reset(player);
         AudioTracks.reset(player);
         VideoQualities.reset(player);
@@ -322,6 +333,7 @@ public final class PlaybackSession {
         cleanup.setDaemon(true); cleanup.start();
         listeners.clear();
         player.stop();
+        if (decoders != null) decoders.release();
         player.release();
         mediaSession.release();
     }

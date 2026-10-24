@@ -1,0 +1,6 @@
+ZXing core 3.5.3
+Copyright 2007 ZXing authors.
+Licensed under the Apache License, Version 2.0. The complete license is
+included in openssl.txt in this directory, under "Apache License".
+
+https://github.com/zxing/zxing/tree/zxing-3.5.3

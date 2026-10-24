@@ -83,6 +83,11 @@ export function addonFixtures(index, origin) {
       json(res, { metas: [null, 5, { wrong: true }, meta], request: { id, extras: Object.fromEntries(extras), rawPath: url.pathname } });
     } else if (resource === 'meta') json(res, { meta: id === series.id ? series : title });
     else if (resource === 'stream') {
+      if (configuration === 'codec-eac3') {
+        const codec = index.find(t => t.name === 'codec-eac3');
+        json(res, { streams: [{ name: 'Local 1080p H.264 DDP5.1', infoHash: codec.v1, fileIdx: 0,
+          sources: ['tracker:udp://127.0.0.1:1'] }] }); return true;
+      }
       if (configuration.startsWith('http-') || configuration === 'failover' || configuration === 'failover-all' || configuration === 'recover-after-frame') {
         const format = configuration.slice(5), mkv = index.find(t => t.name === 'matroska');
         const file = format === 'mkv' ? mkv.files[0].path : film.files[0].path;

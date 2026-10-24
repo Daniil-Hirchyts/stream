@@ -350,6 +350,12 @@
         android:visibility="gone">
 
         <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+        <LinearLayout
             android:layout_width="500dp"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
@@ -410,6 +416,13 @@
                 android:background="@drawable/tv_dialog_cancel"
                 android:text="@string/hint_close"
                 android:textColor="@color/tv_on_glass_secondary" />
+        </LinearLayout>
+        <FrameLayout
+            android:id="@+id/error_diagnostics"
+            android:layout_width="332dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:visibility="gone" />
         </LinearLayout>
     </FrameLayout>
 </merge>

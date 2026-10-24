@@ -593,18 +593,35 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         }
     }
     private void failed(Throwable e) {
+        int mine = generation;
+        app.workers.execute(() -> {
+            boolean enabled = false;
+            try { enabled = services != null && SetupScreens.developerMode(services); }
+            catch (RuntimeException unavailable) { /* No verified preference: keep diagnostics hidden. */ }
+            boolean developer = enabled;
+            main.post(() -> { if (mine == generation && !stopped && !isFinishing()) showFailure(e, developer); });
+        });
+    }
+    private void showFailure(Throwable e, boolean developer) {
         finishIntro();
         Sounds.play(Sounds.Sound.WARNING);
+        Item.Action reportAction = null;
+        if (developer) {
+            app.lastErrorReport = DiagnosticReport.capture(this, route().screen, "Unable to load", Failures.message(e), "application", e, null);
+            reportAction = new Item.Action("error-report", Item.Action.Style.SECONDARY, "Error report", this::errorReport);
+        }
         if (shownRoute == route() && shownPage != null) {
             Page retained = shownPage.copy();
             retained.items.removeIf(item -> item.kind == Item.Kind.SKELETON || item.key.equals("notice:Unable to update") || item.key.equals("notice:Loading add-on details"));
+            Item.Action retry = new Item.Action("retry-update", Item.Action.Style.SECONDARY, "Retry", this::refresh);
             retained.add(Item.notice(R.drawable.ic_tv_offline, "Unable to update", Failures.message(e),
-                    new Item.Action("retry-update", Item.Action.Style.SECONDARY, "Retry", this::refresh)));
+                    reportAction == null ? new Item.Action[]{retry} : new Item.Action[]{retry, reportAction}));
             show(retained); return;
         }
+        Item.Action retry = new Item.Action("retry", Item.Action.Style.PRIMARY, "Retry", () -> { if (services == null) { loading(); initialize(); } else render(); }).icon(R.drawable.ic_tv_refresh);
         Page page = new Page().add(Item.message(e instanceof AddonException && ((AddonException) e).kind == AddonException.Kind.CERTIFICATE ? R.drawable.ic_tv_info : R.drawable.ic_tv_offline,
                 "Unable to load", Failures.message(e),
-                new Item.Action("retry", Item.Action.Style.PRIMARY, "Retry", () -> { if (services == null) { loading(); initialize(); } else render(); }).icon(R.drawable.ic_tv_refresh)));
+                reportAction == null ? new Item.Action[]{retry} : new Item.Action[]{retry, reportAction}));
         page.initialFocus = "retry";
         show(page);
     }
@@ -703,6 +720,10 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         show(Tv.choices(this, title, header, options, selected, accept, onPreview, null));
     }
     @Override public void alert(String title, String message) { showGlassMessage(title, message, false, null); }
+    @Override public void errorReport() {
+        work(() -> services != null && SetupScreens.developerMode(services) ? app.lastErrorReport : null,
+                report -> { if (report != null) show(ErrorQrPanel.alert(this, report)); });
+    }
     @Override public void openWebsite(String address) {
         try {
             AddonUrl.web(address);
@@ -777,8 +798,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         }));
     }
     @Override public void notices() {
-        String[] files = {"androidx.txt", "libtorrent.txt", "boost.txt", "openssl.txt", "ed25519.txt", "try-signal.txt", "inter.txt"};
-        choose("Open source notices", new String[]{"AndroidX / Media3", "libtorrent", "Boost", "OpenSSL", "Ed25519", "try_signal", "Inter typeface"}, which -> work(() -> {
+        String[] files = {"androidx.txt", "libtorrent.txt", "boost.txt", "openssl.txt", "ed25519.txt", "try-signal.txt", "inter.txt", "zxing.txt"};
+        choose("Open source notices", new String[]{"AndroidX / Media3", "libtorrent", "Boost", "OpenSSL", "Ed25519", "try_signal", "Inter typeface", "ZXing"}, which -> work(() -> {
             try (java.io.InputStream input = getAssets().open("notices/" + files[which]); java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
                 byte[] buffer = new byte[8192];
                 for (int count; (count = input.read(buffer)) != -1; ) bytes.write(buffer, 0, count);

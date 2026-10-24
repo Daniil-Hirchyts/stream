@@ -38,4 +38,5 @@ interface Navigator {
     void importAddress();
     void importFile();
     void notices();
+    default void errorReport() {}
 }

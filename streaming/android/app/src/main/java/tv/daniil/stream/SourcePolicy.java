@@ -35,8 +35,9 @@ public final class SourcePolicy {
                 : hint.matches("(?s).*\\b(vp9|vp09)\\b.*") ? "video/x-vnd.on2.vp9" : hint.matches("(?s).*\\b(avc|h[ ._-]?264|x264)\\b.*") ? "video/avc" : null;
         String audio = advertisedAudio(hint);
         try {
-            if (codec != null && (MediaCodecUtil.getDecoderInfos(codec, false, false).isEmpty() || !Capabilities.decodes(Capabilities.name(codec)))) return new Assessment(false, "Video decoder unavailable", -1000);
-            if (audio != null && MediaCodecUtil.getDecoderInfos(audio, false, false).isEmpty()) return new Assessment(false, "Audio decoder unavailable", -1000);
+            if (codec != null && !StreamDecoders.supports(codec)
+                    && (MediaCodecUtil.getDecoderInfos(codec, false, false).isEmpty() || !Capabilities.decodes(Capabilities.name(codec)))) return new Assessment(false, "Video decoder unavailable", -1000);
+            if (audio != null && !StreamDecoders.supports(audio) && MediaCodecUtil.getDecoderInfos(audio, false, false).isEmpty()) return new Assessment(false, "Audio decoder unavailable", -1000);
             if (codec != null && !advertisedProfileSupported(codec, hint))
                 return new Assessment(false, "Advertised video profile unavailable", -1000);
             int rank = hint.contains("1080p") ? 20 : hint.contains("720p") ? 10 : 0;
@@ -64,6 +65,7 @@ public final class SourcePolicy {
         boolean dolby = Pattern.compile("\\b(?:dovi|dolby[ ._-]?vision|dv)\\b").matcher(hint).find();
         if (dolby && MediaCodecUtil.getDecoderInfos("video/dolby-vision", false, false).isEmpty()) return false;
         if (!tenBit) return true;
+        if (StreamDecoders.supports(mime)) return true;
         int wanted = "video/avc".equals(mime) ? android.media.MediaCodecInfo.CodecProfileLevel.AVCProfileHigh10
                 : "video/hevc".equals(mime) ? android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10
                 : "video/x-vnd.on2.vp9".equals(mime) ? android.media.MediaCodecInfo.CodecProfileLevel.VP9Profile2
@@ -142,12 +144,11 @@ public final class SourcePolicy {
         List<MediaSource> result = new ArrayList<>(); for (MediaSource s : sources) if (ranks.containsKey(s)) result.add(s);
         result.sort(Comparator.comparingInt((MediaSource s) -> ranks.get(s)).reversed()); return result;
     }
-    public static boolean actualSupported(android.content.Context context, Format format) {
+    /** Media3's actual renderer capabilities validate codecs, including software and audio passthrough.
+     * Only our separate resolution budget belongs here; MediaCodec-only checks reject working extensions. */
+    public static boolean withinDeviceProfile(Format format) {
         if (format == null || format.sampleMimeType == null) return true;
-        if (format.sampleMimeType.startsWith("video/") && (format.width > 1920 || format.height > 1080)) return false;
-        try { for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo decoder : MediaCodecUtil.getDecoderInfos(format.sampleMimeType, false, false)) if (decoder.isFormatSupported(context, format)) return true; }
-        catch (Exception ignored) { /* report unsupported rather than assuming */ }
-        return false;
+        return !format.sampleMimeType.startsWith("video/") || (format.width <= 1920 && format.height <= 1080);
     }
     /** Stable across refreshed signed URLs, without carrying credentials in intents or diagnostics. */
     public static String key(MediaSource s) {

@@ -82,6 +82,10 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private PlaybackErrors.Description handledError;
     private boolean keepPausedOnRecovery;
     private Format observedVideo, observedAudio;
+    private Throwable failureCause;
+    private String diagnosticStage = "Starting playback";
+    private JSONObject sourceResolution = new JSONObject();
+    private String videoDecoder, audioDecoder;
 
 
     private Dialog show(Tv.Alert alert) { alert.show(); return alert.dialog; }
@@ -99,13 +103,14 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackPressed);
     }
     @Override protected void onStart() {
-        super.onStart(); visible = true; releasing = false; Sounds.get(this).refresh(this);
+        super.onStart(); visible = true; releasing = false; developerMode = false; Sounds.get(this).refresh(this);
         setContentView(R.layout.activity_watch);
         int mine = ++generation;
         preparation = loader.submit(() -> {
             try {
                 TvApplication.Services data = app.services();
                 boolean diagnosticsEnabled = SetupScreens.developerMode(data);
+                main.post(() -> { if (current(mine)) developerMode = diagnosticsEnabled; });
                 String clockFormat = SetupScreens.clockFormat(data); boolean clockShown = SetupScreens.playerClock(data);
                 Title saved = null;
                 String id = getIntent().getStringExtra("titleId"), provider = getIntent().getStringExtra("provider");
@@ -116,9 +121,11 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                     if (!current(mine)) return;
                     services = data; title = chosen; developerMode = diagnosticsEnabled;
                     tv.daniil.stream.ui.Clock.apply(findViewById(R.id.player_clock), clockFormat, clockShown);
-                    session = new PlaybackSession(this, data.playerPreferences, getString(R.string.app_name), "DaniilTV/0.1", this, 24 << 20);
+                    session = new PlaybackSession(this, data.playerPreferences, getString(R.string.app_name), "DaniilTV/0.1", this, 24 << 20, new StreamDecoders());
                     session.player().setTrackSelectionParameters(session.player().getTrackSelectionParameters().buildUpon().setMaxVideoSize(1920, 1080).build());
                     session.player().addAnalyticsListener(new AnalyticsListener() {
+                        @Override public void onVideoDecoderInitialized(EventTime time, String name, long at, long duration) { videoDecoder = name; }
+                        @Override public void onAudioDecoderInitialized(EventTime time, String name, long at, long duration) { audioDecoder = name; }
                         @Override public void onDroppedVideoFrames(EventTime time, int count, long elapsedMs) { droppedFrames += count; }
                         @Override public void onPositionDiscontinuity(EventTime time, Player.PositionInfo old, Player.PositionInfo next, int reason) {
                             if (reason == Player.DISCONTINUITY_REASON_SEEK) { seekStarted = lastAdvanceMs = SystemClock.elapsedRealtime(); previousPosition = next.positionMs; }
@@ -130,6 +137,14 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 });
             } catch (Exception e) { main.post(() -> { if (current(mine)) {
                 Tv.Alert alert = Tv.alert(this, "Could not open this title", Failures.message(e));
+                if (developerMode) {
+                    app.lastErrorReport = DiagnosticReport.capture(this, diagnosticStage, "Could not open this title", Failures.message(e), "initialization", e, diagnosticSnapshot());
+                    DiagnosticReport report = app.lastErrorReport;
+                    alert.button("error-report", "Error report", () -> {
+                        alert.dialog.dismiss(); Tv.Alert qr = ErrorQrPanel.alert(this, report);
+                        qr.dialog.setOnDismissListener(d -> finish()); choiceDialog = show(qr);
+                    });
+                }
                 alert.cancelButton("close", "Close", this::finish); alert.dialog.setOnCancelListener(d -> finish()); choiceDialog = show(alert);
             } }); }
         });
@@ -137,6 +152,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private boolean current(int mine) { return visible && !releasing && mine == generation && !isFinishing(); }
     /** Keep source names and transport steps behind the viewer's diagnostics switch. */
     private void showLoading(String id, String step, String detail, boolean untilReady) {
+        diagnosticStage = step;
         screen.setLoading(new PlayerScreen.Loading(id, developerMode ? step : "Loading", developerMode ? detail : null, untilReady));
     }
     /** Keep the first remote key usable after a pointer action; focus is taken before View handles the click. */
@@ -204,9 +220,10 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     }
     private void resolve(boolean resetAttempts) {
         if (session == null || !visible) return;
+        clearErrorQr();
         save(session.snapshot()); session.stop(); cancelPreparation();
         if (resetAttempts) { keepPausedOnRecovery = false; attempts = 0; candidate = 0; attemptedSources.clear(); attemptedProviders.clear();
-            while (sourceFailures.length() > 0) sourceFailures.remove(0); }
+            while (sourceFailures.length() > 0) sourceFailures.remove(0); sourceResolution = new JSONObject(); }
         switching = true; lastAdvanceMs = SystemClock.elapsedRealtime(); scope = services.addons.newRequest();
         int mine = generation; Cancellation request = scope;
         screen.setTitle(title.name); showLoading("sources", "Finding sources", null, false);
@@ -224,19 +241,24 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 long resume = resumePosition > 0 ? resumePosition : progress != null && !progress.watched ? progress.positionMs : 0;
                 List<MediaSource> choices = Collections.emptyList();
                 Availability empty = null;
+                JSONObject resolution = new JSONObject();
                 if (!metadata.provider.equals("local")) {
                     List<tv.daniil.stream.data.InstalledAddon> providers = services.addons.providers("stream", metadata.type, video);
                     AddonRepository.Result<MediaSource> found = providers.isEmpty() ? null : services.addons.streams(metadata.type, video, request);
                     List<MediaSource> available = new ArrayList<>(found == null ? Collections.emptyList() : found.items);
                     for (Title.Episode e : metadata.episodes) if (e.id.equals(video)) available.addAll(e.streams);
                     choices = SourcePolicy.ranked(available);
+                    JSONArray failures = new JSONArray();
+                    if (found != null) for (AddonException.Kind kind : found.failures.values()) failures.put(kind.name());
+                    resolution.put("providersAsked", providers.size()).put("providerFailures", failures)
+                            .put("advertisedSources", available.size()).put("playableSources", choices.size());
                     if (choices.isEmpty()) empty = Availability.of(providers, available, found == null ? Collections.emptyMap() : found.failures, services.store.addons());
                 }
                 Map<String, TvStore.SourceMark> history = services.store.sourceMarks(metadata.key(), video);
                 request.check(); Title resolved = metadata; List<MediaSource> sources = choices; Availability why = empty;
                 main.post(() -> {
                     if (!current(mine)) return;
-                    title = resolved; resumePosition = resume; candidates = sources; marks = history;
+                    title = resolved; resumePosition = resume; candidates = sources; marks = history; sourceResolution = resolution;
                     automatic = explicitKey == null || explicitKey.isEmpty();
                     if (title.provider.equals("local")) { open(null, -1); return; }
                     if (candidates.isEmpty()) { failure(why.heading, why.detail, "no-sources"); return; }
@@ -246,10 +268,11 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                     }
                     candidate = 0; open(candidates.get(0), -1);
                 });
-            } catch (Exception e) { main.post(() -> { if (current(mine)) failure("Could not open this title", Failures.message(e), "provider"); }); }
+            } catch (Exception e) { main.post(() -> { if (current(mine)) { failureCause = e; failure("Could not open this title", Failures.message(e), "provider"); } }); }
         });
     }
     private void open(MediaSource source, int chosenIndex) {
+        clearErrorQr();
         save(session.snapshot()); session.stop(); cancelPreparation();
         findViewById(R.id.player_root).requestFocus();
         int mine = generation; scope = services.addons.newRequest(); Cancellation request = scope;
@@ -328,10 +351,10 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 if (!current(mine)) return;
                 if (e instanceof TorrentException && ((TorrentException) e).kind == TorrentException.LOW_STORAGE) {
                     String cache = services.store.preference("cacheMiB", "256");
-                    main.post(() -> { if (current(mine)) lowStorage(cache); });
+                    main.post(() -> { if (current(mine)) { failureCause = e; lowStorage(cache); } });
                     return;
                 }
-                main.post(() -> { if (current(mine)) attemptFailed(Failures.message(e), "opening"); });
+                main.post(() -> { if (current(mine)) { failureCause = e; attemptFailed(Failures.message(e), "opening"); } });
             }
         });
     }
@@ -469,12 +492,15 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         PlaybackSnapshot state = session == null ? null : session.snapshot();
         try {
             JSONObject failed = new JSONObject().put("attempt", attempts).put("code", code)
+                    .put("message", message).put("stage", diagnosticStage)
                     .put("renderedFirstFrame", state != null && state.renderedFirstFrame)
                     .put("positionMs", state == null ? 0 : state.positionMs);
+            if (selected != null) failed.put("transport", selected.kind.name());
             if (observedVideo != null) failed.put("videoMime", observedVideo.sampleMimeType)
                     .put("width", observedVideo.width).put("height", observedVideo.height).put("codecs", observedVideo.codecs);
             if (observedAudio != null) failed.put("audioMime", observedAudio.sampleMimeType);
-            if (state != null && state.error != null) failed.put("playerCode", state.error.code).put("detail", state.error.detail);
+            if (state != null && state.error != null) failed.put("playerCode", state.error.code).put("detail", state.error.detail).put("httpStatus", state.error.httpStatus);
+            if (developerMode) failed.put("causes", DiagnosticReport.exception(failureCause != null ? failureCause : session.player().getPlayerError()));
             sourceFailures.put(failed);
         } catch (Exception ignored) { /* diagnostic fields never prevent recovery */ }
         if (state == null || !state.renderedFirstFrame) markSource(TvStore.SourceMark.FAILED);
@@ -508,10 +534,23 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         Sounds.play(Sounds.Sound.WARNING);
         switching = false;
         if (screen == null || session == null) return;
+        // Freeze before fail/stop/closeNative replace the original Media3 error and torrent counters.
+        if (developerMode) {
+            JSONObject state = diagnosticSnapshot();
+            try { if (session.error() != null) state.put("playerError", session.error().toJson()); }
+            catch (org.json.JSONException ignored) { /* the remaining report is still useful */ }
+            app.lastErrorReport = DiagnosticReport.capture(this, diagnosticStage, heading, message, code,
+                    failureCause != null ? failureCause : session.player().getPlayerError(), state);
+        }
+        ErrorQrPanel.attach(findViewById(R.id.error_diagnostics), developerMode, developerMode ? app.lastErrorReport : null);
         handledError = new PlaybackErrors.Description(code, heading, message, "", 0, true);
         session.fail(handledError);
         cancelPreparation(); loader.execute(this::closeNative);
         screen.setLoading(null); screen.render();
+    }
+    private void clearErrorQr() {
+        ErrorQrPanel.attach(findViewById(R.id.error_diagnostics), false, null);
+        failureCause = null;
     }
     private void queueFailure(String message, String code) {
         if (failureQueued || releasing || switching) return;
@@ -528,7 +567,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         }
         if (snapshot.videoFormat != null) observedVideo = snapshot.videoFormat;
         if (snapshot.audioFormat != null) observedAudio = snapshot.audioFormat;
-        if (snapshot.renderedFirstFrame && firstFrameMs == 0) { firstFrameMs = SystemClock.elapsedRealtime() - startMs; markSource(TvStore.SourceMark.PLAYED); }
+        if (snapshot.renderedFirstFrame && firstFrameMs == 0) { diagnosticStage = "Playing video"; firstFrameMs = SystemClock.elapsedRealtime() - startMs; markSource(TvStore.SourceMark.PLAYED); }
         // The viewer's pause and play, heard as small sounds; never the first state a source starts in.
         if (snapshot.started && snapshot.error == null) {
             if (heardPlay != null && heardPlay != snapshot.playWhenReady) Sounds.play(snapshot.playWhenReady ? Sounds.Sound.RESUME : Sounds.Sound.PAUSE);
@@ -539,7 +578,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             if (snapshot.error != handledError) queueFailure(playbackFailure(snapshot.error), "opening");
             return;
         }
-        if (!SourcePolicy.actualSupported(this, snapshot.videoFormat) || !SourcePolicy.actualSupported(this, snapshot.audioFormat)) {
+        if (!SourcePolicy.withinDeviceProfile(snapshot.videoFormat)) {
             onUnsupportedFormat("the supplied media format"); return;
         }
         if (snapshot.started) {
@@ -611,6 +650,9 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         View focused = getCurrentFocus();
         if (session == null) return false;
         if (session.error() != null) {
+            if (ok && focused != null && (focused.getId() == R.id.error_qr_previous || focused.getId() == R.id.error_qr_next)) {
+                focused.performClick(); return true;
+            }
             if (ok && focused != null) for (int id : ERROR_BUTTONS)
                 if (focused.getId() == id) { focused.performClick(); return true; }
             return false;
@@ -695,8 +737,15 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         JSONObject result = new JSONObject();
         try {
             result.put("sourceAttempts", attempts).put("sourceFailures", new JSONArray(sourceFailures.toString())).put("firstFrameMs", firstFrameMs).put("seekRecoveryMs", seekRecoveryMs).put("droppedFrames", droppedFrames)
+                    .put("videoDecoder", videoDecoder).put("audioDecoder", audioDecoder)
                     .put("bufferingMs", bufferingMs).put("nativeHeapBytes", android.os.Debug.getNativeHeapAllocatedSize())
                     .put("javaHeapBytes", Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory());
+            result.put("automatic", automatic).put("candidateCount", candidates.size()).put("stage", diagnosticStage);
+            result.put("sourceResolution", sourceResolution).put("elapsedSourceMs", startMs == 0 ? 0 : SystemClock.elapsedRealtime() - startMs);
+            if (selected != null) result.put("transport", selected.kind.name());
+            if (observedVideo != null) result.put("videoMime", observedVideo.sampleMimeType).put("codecs", observedVideo.codecs)
+                    .put("width", observedVideo.width).put("height", observedVideo.height);
+            if (observedAudio != null) result.put("audioMime", observedAudio.sampleMimeType);
             if (session != null) { PlaybackSnapshot s = session.snapshot(); result.put("positionMs", s.positionMs).put("durationMs", s.durationMs).put("renderedFirstFrame", s.renderedFirstFrame).put("playing", s.playing); }
             for (String key : new String[]{"peers", "seeds", "totalDownload", "downloadRate", "hashFailures", "evictionsRequested", "cache", "disk"}) if (nativeStats.has(key)) result.put(key, nativeStats.get(key));
         } catch (Exception ignored) { /* diagnostics remain best effort */ }

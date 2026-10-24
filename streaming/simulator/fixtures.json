@@ -6,5 +6,6 @@
   {"name": "late-index", "torrent": "late-index.torrent", "save": "", "about": "MP4 with its index after the media"},
   {"name": "matroska", "torrent": "matroska.torrent", "save": "", "about": "MKV, two audio languages, embedded subtitles"},
   {"name": "series", "torrent": "series.torrent", "save": "", "about": "Three episodes, a text file and a poster"},
-  {"name": "unicode", "torrent": "unicode.torrent", "save": "unicode", "about": "A file name outside ASCII, emoji included"}
+  {"name": "unicode", "torrent": "unicode.torrent", "save": "unicode", "about": "A file name outside ASCII, emoji included"},
+  {"name": "codec-eac3", "torrent": "codec-eac3.torrent", "save": "codecs", "about": "H.264 MKV with E-AC-3 5.1; software audio fallback"}
 ]

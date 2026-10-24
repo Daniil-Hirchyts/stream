@@ -131,7 +131,9 @@ final class SetupScreens {
         boolean developerMode = developerMode(services);
         List<Item> about = new ArrayList<>();
         about.add(Item.row("developer-mode", 0, "Developer mode", developerMode ? "On" : "Off", () -> nav.mutate(() -> {
-            services.store.setPreference("developerMode", developerMode ? "false" : "true"); return null;
+            services.store.setPreference("developerMode", developerMode ? "false" : "true");
+            if (developerMode) ((TvApplication) context.getApplicationContext()).lastErrorReport = null;
+            return null;
         })));
         if (developerMode) about.add(Item.row("developer", 0, "Developer", "", () -> nav.push(new Route("Developer"))));
         category(categories, panes, "settings:about", R.drawable.ic_tv_info, "About", about);
@@ -194,13 +196,16 @@ final class SetupScreens {
     Page developer() throws Exception {
         Page page = new Page().title("Developer").narrow();
         if (!developerMode(services)) return page.add(Item.text("Developer mode is off", "Enable it in Settings → About."));
+        if (((TvApplication) context.getApplicationContext()).lastErrorReport != null)
+            page.add(Item.row("last-error-report", 0, "Last error report", "Scan QR", nav::errorReport));
+        else page.add(Item.text("Error reports", "A QR report appears when a problem occurs with Developer mode on. Reports are kept only until the app closes or Developer mode is turned off."));
         page.add(Item.text("Version", context.getString(R.string.app_name) + " " + context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName
                 + "\n" + tv.daniil.torrent.TorrentEngine.version()));
         page.add(Item.text("Device", android.os.Build.MODEL + " · Android API " + android.os.Build.VERSION.SDK_INT + " · " + String.join(", ", android.os.Build.SUPPORTED_ABIS)));
         page.add(Item.text("Storage", context.getFilesDir().getUsableSpace() / (1 << 20) + " MiB free · " + services.cacheBytes() / (1 << 20)
                 + " MiB playback cache · 512 MiB kept free"));
         for (InstalledAddon a : services.store.addons()) page.add(Item.text(a.manifest.name, a.address.toString()));
-        page.add(Item.text("Third-party software", "Media3 (Apache-2.0), libtorrent and Boost (BSD/Boost), OpenSSL (Apache-2.0)."));
+        page.add(Item.text("Third-party software", "Media3 and ZXing (Apache-2.0), libtorrent and Boost (BSD/Boost), OpenSSL (Apache-2.0)."));
         page.add(Item.row("notices", 0, "Open source notices", "", nav::notices));
         return page;
     }

@@ -238,5 +238,15 @@ for folder, w in (("drawable-mdpi", 160), ("drawable-hdpi", 240), ("drawable-xhd
     out = banner.convert("RGB").resize((w, w * 9 // 16), Image.LANCZOS)
     os.makedirs(f"{RES}/{folder}", exist_ok=True)
     out.save(f"{RES}/{folder}/tv_banner.png", optimize=True)
-    if w == 640: out.save(f"{PREVIEW}/banner-preview.png")
+    if w == 640:
+        out.save(f"{PREVIEW}/banner-preview.png")
+        # Reuse the original horizontal artwork exactly. Fit it inside the square icon slot instead of
+        # stretching it or replacing it with a different composition. Transparent space belongs to the launcher.
+        legacy = Image.new("RGBA", (640, 640), (0, 0, 0, 0))
+        legacy.paste(out.convert("RGBA"), (0, (640 - out.height) // 2))
+        for icon_folder, size in (("mipmap-mdpi", 48), ("mipmap-hdpi", 72), ("mipmap-xhdpi", 96),
+                                  ("mipmap-xxhdpi", 144), ("mipmap-xxxhdpi", 192)):
+            os.makedirs(f"{RES}/{icon_folder}", exist_ok=True)
+            legacy.resize((size, size), Image.LANCZOS).save(f"{RES}/{icon_folder}/tv_launcher.png", optimize=True)
+        legacy.resize((512, 512), Image.LANCZOS).save(f"{PREVIEW}/fire-icon-preview.png")
 print("ok")

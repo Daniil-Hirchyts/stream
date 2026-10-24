@@ -36,8 +36,9 @@ public final class SourcePolicyTest {
     @Test public void advertisedDolbyAudioIsCheckedBeforeOpening() throws Exception {
         for (String label : new String[]{"EAC3", "E-AC-3", "DDP5.1", "DD+5.1", "Dolby Digital Plus"}) {
             assertEquals(label, "audio/eac3", SourcePolicy.advertisedAudio(label));
-            if (androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getDecoderInfos("audio/eac3", false, false).isEmpty())
-                assertFalse(label, SourcePolicy.assess(source("1080p H264 " + label, "http://127.0.0.1/video")).usable);
+            boolean supported = StreamDecoders.supports("audio/eac3")
+                    || !androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getDecoderInfos("audio/eac3", false, false).isEmpty();
+            assertEquals(label, supported, SourcePolicy.assess(source("1080p H264 " + label, "http://127.0.0.1/video")).usable);
         }
         assertEquals("audio/ac3", SourcePolicy.advertisedAudio("DD5.1"));
         assertEquals("audio/ac3", SourcePolicy.advertisedAudio("AC-3"));
