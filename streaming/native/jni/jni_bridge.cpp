@@ -18,6 +18,9 @@ namespace {
 struct engine_entry
 {
 	std::unique_ptr<dtv::engine> engine;
+	std::mutex calls_mutex;
+	std::condition_variable calls_changed;
+	int calls = 0;
 	// Recent diagnostics for the Developer view; native threads never call into Java.
 	std::mutex log_mutex;
 	std::deque<std::string> log;
@@ -56,13 +59,24 @@ void throw_error(JNIEnv* env, int kind, std::string const& message)
 	env->DeleteLocalRef(cls);
 }
 
-std::shared_ptr<engine_entry> find(JNIEnv* env, jlong id)
+struct engine_lease {
+	std::shared_ptr<engine_entry> entry;
+	explicit engine_lease(std::shared_ptr<engine_entry> e = {}) : entry(std::move(e)) {
+		if (entry) { std::lock_guard<std::mutex> lock(entry->calls_mutex); ++entry->calls; }
+	}
+	engine_lease(engine_lease const&) = delete;
+	engine_lease(engine_lease&&) = default;
+	~engine_lease() { if (entry) { std::lock_guard<std::mutex> lock(entry->calls_mutex); --entry->calls; entry->calls_changed.notify_all(); } }
+	explicit operator bool() const { return bool(entry); }
+	engine_entry* operator->() const { return entry.get(); }
+};
+engine_lease find(JNIEnv* env, jlong id)
 {
 	std::lock_guard<std::mutex> lock(registry_mutex);
 	auto const i = registry.find(id);
-	if (i != registry.end()) return i->second;
+	if (i != registry.end()) return engine_lease(i->second);
 	throw_error(env, int(dtv::error_kind::invalid_handle), "The torrent engine is closed");
-	return {};
+	return engine_lease();
 }
 
 // Inputs (paths, magnet links, addresses) are ASCII in practice; modified UTF-8 matches UTF-8 for them.
@@ -183,11 +197,14 @@ JNIEXPORT void JNICALL Java_tv_daniil_torrent_TorrentEngine_nativeDestroy(JNIEnv
 		entry = std::move(i->second);
 		registry.erase(i);
 	}
-	// Calls still running keep the entry; the engine stops when the last of them returns.
+	// No new leases can enter. Wake blocked operations before waiting for existing ones.
+	entry->engine->request_stop();
+	{ std::unique_lock<std::mutex> lock(entry->calls_mutex); entry->calls_changed.wait(lock, [&] { return entry->calls == 0; }); }
+	entry->engine.reset();
 }
 
 JNIEXPORT jlong JNICALL Java_tv_daniil_torrent_TorrentEngine_nativeAdd(JNIEnv* env, jclass, jlong id
-	, jbyteArray metainfo, jstring magnet, jstring info_hash, jobjectArray trackers, jobjectArray peers)
+	, jbyteArray metainfo, jstring magnet, jstring info_hash, jobjectArray trackers, jobjectArray peers, jobjectArray fallback_trackers)
 {
 	auto entry = find(env, id);
 	if (!entry) return 0;
@@ -202,6 +219,7 @@ JNIEXPORT jlong JNICALL Java_tv_daniil_torrent_TorrentEngine_nativeAdd(JNIEnv* e
 		src.magnet = string(env, magnet);
 		src.info_hash = string(env, info_hash);
 		src.trackers = strings(env, trackers);
+		src.fallback_trackers = strings(env, fallback_trackers);
 		src.peers = strings(env, peers);
 		return jlong(entry->engine->add(src));
 	});
@@ -252,6 +270,22 @@ JNIEXPORT void JNICALL Java_tv_daniil_torrent_TorrentEngine_nativeSetBitrate(JNI
 	guarded<int>(env, 0, [&] { entry->engine->set_bitrate(std::uint64_t(torrent), bytes_per_second); return 0; });
 }
 
+JNIEXPORT void JNICALL Java_tv_daniil_torrent_TorrentEngine_nativeSetDemand(JNIEnv* env, jclass, jlong id, jlong torrent, jlong bytes, jint seconds)
+{
+	auto entry = find(env, id); if (!entry) return;
+	guarded<int>(env, 0, [&] { entry->engine->set_demand(std::uint64_t(torrent), bytes, seconds); return 0; });
+}
+JNIEXPORT jbyteArray JNICALL Java_tv_daniil_torrent_TorrentEngine_nativeMetainfo(JNIEnv* env, jclass, jlong id, jlong torrent)
+{
+	auto entry = find(env, id); if (!entry) return nullptr;
+	return guarded<jbyteArray>(env, nullptr, [&] {
+		auto bytes = entry->engine->metainfo(std::uint64_t(torrent));
+		jbyteArray result = env->NewByteArray(jsize(bytes.size()));
+		if (result) env->SetByteArrayRegion(result, 0, jsize(bytes.size()), reinterpret_cast<jbyte const*>(bytes.data()));
+		return result;
+	});
+}
+
 JNIEXPORT void JNICALL Java_tv_daniil_torrent_TorrentEngine_nativeAddPeers(JNIEnv* env, jclass, jlong id
 	, jlong torrent, jobjectArray peers)
 {
@@ -273,6 +307,9 @@ JNIEXPORT jstring JNICALL Java_tv_daniil_torrent_TorrentEngine_nativeStats(JNIEn
 			+ ",\"downloadRate\":" + std::to_string(s.download_rate) + ",\"uploadRate\":" + std::to_string(s.upload_rate)
 			+ ",\"totalDownload\":" + std::to_string(s.total_download)
 			+ ",\"totalUpload\":" + std::to_string(s.total_upload)
+			+ ",\"verifiedReadBytes\":" + std::to_string(s.verified_read_bytes)
+			+ ",\"urgentReservationFailures\":" + std::to_string(s.urgent_reservation_failures)
+			+ ",\"obsoletePartials\":" + std::to_string(s.obsolete_partials)
 			+ ",\"pieceLength\":" + std::to_string(s.piece_length) + ",\"pieces\":" + std::to_string(s.num_pieces)
 			+ ",\"hashFailures\":" + std::to_string(s.hash_failures)
 			+ ",\"evictionsRequested\":" + std::to_string(s.evictions_requested)

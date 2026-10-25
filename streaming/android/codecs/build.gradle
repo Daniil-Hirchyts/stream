@@ -1,0 +1,37 @@
+plugins { id 'com.android.library'; id 'org.jetbrains.kotlin.android' }
+
+def codecDir = file('../../codecs')
+def upstream = new File(codecDir, '.deps/nextlib/media3ext')
+def nativeLock = file('../../native/deps.lock')
+def locked = { String name -> nativeLock.readLines().find { it.startsWith(name + ' ') }.split(/\s+/)[1] }
+android {
+    namespace 'io.github.anilbeesetti.nextlib.media3ext'
+    compileSdk 36
+    ndkVersion locked('ndk')
+    defaultConfig {
+        minSdk 26
+        consumerProguardFiles new File(upstream, 'consumer-rules.pro')
+        ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64' }
+        externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_shared'; targets 'media3ext' } }
+    }
+    sourceSets.main.java.srcDirs = [new File(upstream, 'src/main/java')]
+    externalNativeBuild { cmake { path new File(upstream, 'src/main/cpp/CMakeLists.txt'); version locked('cmake') } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    kotlinOptions { jvmTarget = '17' }
+}
+dependencies {
+    api 'androidx.media3:media3-exoplayer:1.11.1'
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.10'
+    implementation 'androidx.annotation:annotation:1.9.1'
+    compileOnly 'com.google.errorprone:error_prone_annotations:2.18.0'
+    compileOnly 'org.checkerframework:checker-qual:3.49.1'
+    compileOnly 'org.jetbrains.kotlin:kotlin-annotations-jvm:2.2.10'
+}
+def sources = tasks.register('codecSources', Exec) { commandLine new File(codecDir, 'fetch-deps.sh') }
+def binaries = tasks.register('codecNative', Exec) {
+    dependsOn sources
+    environment 'ANDROID_HOME', android.sdkDirectory.absolutePath
+    commandLine new File(codecDir, 'build-native.sh')
+}
+tasks.named('preBuild') { dependsOn sources }
+tasks.configureEach { if (name.startsWith('configureCMake') || name.startsWith('buildCMake')) dependsOn binaries }

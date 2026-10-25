@@ -68,7 +68,9 @@ final class SetupScreens {
                 Item.row("audio-language", 0, "Audio language", languageName(services.store.preference("audioLanguage", "")),
                         () -> language("audioLanguage", "Audio language")),
                 Item.row("subtitle-language", 0, "Subtitle language", languageName(services.store.preference("subtitleLanguage", "")),
-                        () -> language("subtitleLanguage", "Subtitle language"))));
+                        () -> language("subtitleLanguage", "Subtitle language")),
+                Item.row("keyboard-languages", 0, "Keyboard languages", keyboardLanguageNames(),
+                        () -> nav.push(new Route("Keyboard languages")))));
 
         List<Item> subtitles = new ArrayList<>();
         subtitles.add(Item.subtitlePreview("subtitle-preview", services.playerPreferences));
@@ -145,7 +147,28 @@ final class SetupScreens {
         categories.add(Item.row(key, icon, title, "", null));
         panes.put(key, rows);
     }
-    /** Removes only this app's disposable payload/subtitle files and cached metadata. */
+    private String keyboardLanguageNames() {
+        List<String> names = new ArrayList<>();
+        for (String code : tv.daniil.stream.ui.KeyboardLanguages.parse(services.store.preference("keyboardLanguages", "en")))
+            names.add(tv.daniil.stream.ui.KeyboardLanguages.name(code));
+        return String.join(", ", names);
+    }
+    Page keyboardLanguages() {
+        List<String> enabled = tv.daniil.stream.ui.KeyboardLanguages.parse(services.store.preference("keyboardLanguages", "en"));
+        Page page = new Page().title("Keyboard languages").narrow();
+        page.add(Item.text("", "Choose one or more languages. Use the language key to switch while searching."));
+        for (String code : tv.daniil.stream.ui.KeyboardLanguages.CODES) {
+            boolean selected = enabled.contains(code);
+            page.add(Item.row("keyboard-language:" + code, selected ? R.drawable.ic_tv_check : 0,
+                    tv.daniil.stream.ui.KeyboardLanguages.name(code), selected ? "On" : "", () -> {
+                if (selected && enabled.size() == 1) return;
+                List<String> next = new ArrayList<>(enabled);
+                if (selected) next.remove(code); else next.add(code);
+                nav.mutate(() -> { services.store.setPreference("keyboardLanguages", String.join(",", next)); return null; });
+            }));
+        }
+        return page;
+    }
     /** The viewer's interface sounds switch (on unless turned off). Reads the store: call on a worker. */
     static boolean soundsOn(TvApplication.Services services) { return !services.store.preference("interfaceSounds", "true").equals("false"); }
     /** The clock's format ("", "24", "12" or "off"); reads the store, so call on a worker. */

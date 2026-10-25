@@ -9,13 +9,11 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import tv.daniil.stream.data.InstalledAddon;
 import tv.daniil.stream.data.TvStore;
@@ -29,12 +27,17 @@ public final class AddonRepository implements AutoCloseable {
         public final boolean stale;
         /** Catalogue/resource identity to results, preserving separate Home rows after concurrent requests. */
         public final Map<String, List<T>> byResource;
-        Result(List<T> items, Map<String, AddonException.Kind> failures, boolean stale) {
+        public Result(List<T> items, Map<String, AddonException.Kind> failures, boolean stale) {
             this(items, failures, stale, Collections.emptyMap());
         }
         Result(List<T> items, Map<String, AddonException.Kind> failures, boolean stale, Map<String, List<T>> byResource) {
-            this.items = Collections.unmodifiableList(items); this.failures = Collections.unmodifiableMap(failures); this.stale = stale;
-            this.byResource = Collections.unmodifiableMap(byResource);
+            this.items = Collections.unmodifiableList(new ArrayList<>(items)); this.failures = Collections.unmodifiableMap(new LinkedHashMap<>(failures)); this.stale = stale;
+            Map<String, List<T>> groups = new LinkedHashMap<>();
+            for (Map.Entry<String, List<T>> group : byResource.entrySet()) groups.put(group.getKey(), Collections.unmodifiableList(new ArrayList<>(group.getValue())));
+            this.byResource = Collections.unmodifiableMap(groups);
+        }
+        public Result<T> withItems(List<T> replacement) {
+            return new Result<>(replacement, failures, stale, byResource);
         }
     }
     public static final class CatalogQuery {
@@ -58,7 +61,16 @@ public final class AddonRepository implements AutoCloseable {
     private final TvStore store;
     private final List<String> directory;
     private final AddonClient client = new AddonClient();
-    private final ThreadPoolExecutor workers = new ThreadPoolExecutor(4, 4, 0, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(64));
+    private final ProviderExecutor workers = new ProviderExecutor();
+    private volatile long configuration;
+    public long configuration() { return configuration; }
+    public void prioritize(Cancellation wanted) {
+        wanted.priority(0);
+        List<Cancellation> open;
+        synchronized (scopeLock) { open = new ArrayList<>(scopes); }
+        for (Cancellation scope : open) if (scope != wanted && scope.priority() > 0) scope.close();
+        workers.promote();
+    }
     /** Guards only {@link #scopes}: screens open requests on the UI thread while workers hold {@code this} to save. */
     private final Object scopeLock = new Object();
     private final List<Cancellation> scopes = new ArrayList<>();
@@ -75,6 +87,7 @@ public final class AddonRepository implements AutoCloseable {
     }
     /** Called before configuration changes and when leaving all provider screens. */
     public void cancelRequests() {
+        configuration++;
         List<Cancellation> open;
         synchronized (scopeLock) { open = new ArrayList<>(scopes); scopes.clear(); }
         for (Cancellation scope : open) scope.close();
@@ -102,12 +115,16 @@ public final class AddonRepository implements AutoCloseable {
         }
         return queries;
     }
-    public Result<Title> search(String text, Cancellation scope) throws AddonException {
+    public Result<Title> search(String text, Cancellation scope) throws AddonException { return search(text, scope, ignored -> {}); }
+    public Result<Title> search(String text, Cancellation scope, java.util.function.Consumer<Result<Title>> progress) throws AddonException {
         List<CatalogQuery> queries = new ArrayList<>();
         for (InstalledAddon a : store.addons()) if (a.enabled) for (AddonManifest.Catalog c : a.manifest.catalogs) {
             if (c.searchable() && a.manifest.handles("catalog", c.type, null)) queries.add(new CatalogQuery(a, c, Collections.singletonMap("search", text)));
         }
-        Result<Title> remote = catalogs(queries, scope);
+        Result<Title> remote = catalogs(queries, scope, partial -> progress.accept(searchResults(text, partial)));
+        return searchResults(text, remote);
+    }
+    private Result<Title> searchResults(String text, Result<Title> remote) {
         LinkedHashMap<String, Title> deduplicated = new LinkedHashMap<>();
         for (Title t : remote.items) deduplicated.putIfAbsent(t.discoveryKey(), t);
         String lower = text.toLowerCase(java.util.Locale.ROOT);
@@ -117,6 +134,9 @@ public final class AddonRepository implements AutoCloseable {
         return new Result<>(new ArrayList<>(deduplicated.values()), remote.failures, remote.stale);
     }
     public Result<Title> catalogs(List<CatalogQuery> queries, Cancellation scope) throws AddonException {
+        return catalogs(queries, scope, ignored -> {});
+    }
+    public Result<Title> catalogs(List<CatalogQuery> queries, Cancellation scope, java.util.function.Consumer<Result<Title>> progress) throws AddonException {
         long deadline = AddonClient.deadline();
         List<Callable<Part<Title>>> tasks = new ArrayList<>();
         List<String> keys = new ArrayList<>();
@@ -124,7 +144,7 @@ public final class AddonRepository implements AutoCloseable {
             String key = q.addon.id + ":" + q.catalog.type + ":" + q.catalog.id; keys.add(key);
             tasks.add(() -> catalog(q, scope, deadline, key));
         }
-        return collect(tasks, keys, scope, deadline);
+        return collect(tasks, keys, scope, deadline, progress);
     }
     private Part<Title> catalog(CatalogQuery q, Cancellation scope, long deadline, String key) {
         String address = q.addon.address.resource("catalog", q.catalog.type, q.catalog.id, q.extras);
@@ -146,6 +166,9 @@ public final class AddonRepository implements AutoCloseable {
         } catch (JSONException e) { return new Part<>(key, Collections.emptyList(), AddonException.Kind.MALFORMED, false); }
     }
     public Result<Title> metadata(String provider, String type, String id, Cancellation scope) throws AddonException {
+        return metadata(provider, type, id, scope, ignored -> {});
+    }
+    public Result<Title> metadata(String provider, String type, String id, Cancellation scope, java.util.function.Consumer<Result<Title>> progress) throws AddonException {
         long deadline = AddonClient.deadline();
         List<Callable<Part<Title>>> tasks = new ArrayList<>(); List<String> keys = new ArrayList<>();
         // Origin first; other matching providers may enrich common identifiers.
@@ -170,7 +193,15 @@ public final class AddonRepository implements AutoCloseable {
                 }
             });
         }
-        return collect(tasks, keys, scope, deadline);
+        // At most two metadata providers occupy sockets; stream discovery keeps room to run.
+        Map<String, AddonException.Kind> failures = new LinkedHashMap<>();
+        for (int start = 0; start < tasks.size(); start += 2) {
+            int end = Math.min(tasks.size(), start + 2);
+            Result<Title> result = collect(tasks.subList(start, end), keys.subList(start, end), scope, deadline, progress, true);
+            failures.putAll(result.failures);
+            if (!result.items.isEmpty()) return new Result<>(result.items, failures, result.stale, result.byResource);
+        }
+        return new Result<>(Collections.emptyList(), failures, false);
     }
     /**
      * The add-on store, by list: built-in add-ons, curated torrent scrapers when using the public directory, then each list that installed add-ons publish through
@@ -243,16 +274,19 @@ public final class AddonRepository implements AutoCloseable {
         return found;
     }
     public Result<MediaSource> streams(String type, String videoId, Cancellation scope) throws AddonException {
-        return resource("stream", type, videoId, Collections.emptyMap(), "streams", MediaSource::list, scope);
+        return streams(type, videoId, scope, ignored -> {});
+    }
+    public Result<MediaSource> streams(String type, String videoId, Cancellation scope, java.util.function.Consumer<Result<MediaSource>> progress) throws AddonException {
+        return resource("stream", type, videoId, Collections.emptyMap(), "streams", MediaSource::list, scope, progress);
     }
     public Result<SubtitleSource> subtitles(String type, String videoId, Map<String, String> hints, Cancellation scope) throws AddonException {
         // Preserve provider episode IDs; forward only subtitle matching hints, never media request headers.
         Map<String, String> extras = new LinkedHashMap<>();
         for (String key : new String[]{"filename", "videoHash", "videoSize"}) if (hints.containsKey(key)) extras.put(key, hints.get(key));
-        return resource("subtitles", type, videoId, extras, "subtitles", SubtitleSource::list, scope);
+        return resource("subtitles", type, videoId, extras, "subtitles", SubtitleSource::list, scope, ignored -> {});
     }
     private interface Parser<T> { List<T> parse(String provider, JSONObject json); }
-    private <T> Result<T> resource(String resource, String type, String id, Map<String, String> extras, String field, Parser<T> parser, Cancellation scope) throws AddonException {
+    private <T> Result<T> resource(String resource, String type, String id, Map<String, String> extras, String field, Parser<T> parser, Cancellation scope, java.util.function.Consumer<Result<T>> progress) throws AddonException {
         long deadline = AddonClient.deadline();
         List<Callable<Part<T>>> tasks = new ArrayList<>(); List<String> keys = new ArrayList<>();
         for (InstalledAddon a : store.addons()) if (a.enabled && a.manifest.handles(resource, type, id)) {
@@ -265,12 +299,19 @@ public final class AddonRepository implements AutoCloseable {
                 } catch (AddonException e) { return new Part<>(a.id, Collections.emptyList(), e.kind, false); }
             });
         }
-        // Playable addresses/subtitles are deliberately never cached.
-        return collect(tasks, keys, scope, deadline);
+        // Playable addresses/subtitles are deliberately never persisted.
+        return collect(tasks, keys, scope, deadline, progress);
     }
     private <T> Result<T> collect(List<Callable<Part<T>>> tasks, List<String> keys, Cancellation scope, long deadline) throws AddonException {
+        return collect(tasks, keys, scope, deadline, ignored -> {});
+    }
+    private <T> Result<T> collect(List<Callable<Part<T>>> tasks, List<String> keys, Cancellation scope, long deadline, java.util.function.Consumer<Result<T>> progress) throws AddonException {
+        return collect(tasks, keys, scope, deadline, progress, false);
+    }
+    private <T> Result<T> collect(List<Callable<Part<T>>> tasks, List<String> keys, Cancellation scope, long deadline,
+            java.util.function.Consumer<Result<T>> progress, boolean firstUseful) throws AddonException {
         scope.check();
-        ExecutorCompletionService<Part<T>> completion = new ExecutorCompletionService<>(workers);
+        ExecutorCompletionService<Part<T>> completion = new ExecutorCompletionService<>(command -> workers.execute(command, scope));
         Map<Future<Part<T>>, Integer> pending = new LinkedHashMap<>();
         Map<Integer, Part<T>> finished = new java.util.TreeMap<>();
         List<Runnable> aborts = new ArrayList<>();
@@ -291,13 +332,12 @@ public final class AddonRepository implements AutoCloseable {
                 Integer index = pending.remove(ready);
                 try { finished.put(index, ready.get()); }
                 catch (ExecutionException e) { finished.put(index, new Part<>(keys.get(index), Collections.emptyList(), AddonException.Kind.MALFORMED, false)); }
+                scope.check(); progress.accept(snapshot(finished));
+                if (firstUseful && !finished.get(index).items.isEmpty()) break;
             }
-            for (Map.Entry<Future<Part<T>>, Integer> e : pending.entrySet()) finished.put(e.getValue(), new Part<>(keys.get(e.getValue()), Collections.emptyList(), AddonException.Kind.TIMEOUT, false));
+            for (Map.Entry<Future<Part<T>>, Integer> e : pending.entrySet()) if (!firstUseful || finished.values().stream().noneMatch(part -> !part.items.isEmpty())) finished.put(e.getValue(), new Part<>(keys.get(e.getValue()), Collections.emptyList(), AddonException.Kind.TIMEOUT, false));
             scope.check();
-            List<T> items = new ArrayList<>(); Map<String, AddonException.Kind> failures = new LinkedHashMap<>(); boolean stale = false;
-            Map<String, List<T>> groups = new LinkedHashMap<>();
-            for (Part<T> part : finished.values()) { items.addAll(part.items); groups.put(part.key, Collections.unmodifiableList(part.items)); if (part.failure != null) failures.put(part.key, part.failure); stale |= part.stale; }
-            return new Result<>(items, failures, stale, groups);
+            Result<T> result = snapshot(finished); progress.accept(result); return result;
         } catch (InterruptedException | java.util.concurrent.CancellationException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             throw new AddonException(AddonException.Kind.CANCELLED, "Request cancelled");
@@ -305,6 +345,15 @@ public final class AddonRepository implements AutoCloseable {
             for (Runnable abort : aborts) { scope.remove(abort); abort.run(); }
             workers.purge();
         }
+    }
+    private static <T> Result<T> snapshot(Map<Integer, Part<T>> finished) {
+        List<T> items = new ArrayList<>(); Map<String, AddonException.Kind> failures = new LinkedHashMap<>();
+        Map<String, List<T>> groups = new LinkedHashMap<>(); boolean stale = false;
+        for (Part<T> part : finished.values()) {
+            items.addAll(part.items); groups.put(part.key, Collections.unmodifiableList(new ArrayList<>(part.items)));
+            if (part.failure != null) failures.put(part.key, part.failure); stale |= part.stale;
+        }
+        return new Result<>(items, failures, stale, groups);
     }
     @Override public void close() { cancelRequests(); workers.shutdownNow(); client.close(); }
 }

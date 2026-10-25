@@ -4,7 +4,8 @@ NextLib Media3 Extensions 1.11.1-0.16.0 (GPL-3.0)
 Copyright (c) the NextLib contributors
 Sources and build instructions:
 https://github.com/anilbeesetti/nextlib/tree/v1.11.1-0.16.0
-Maven coordinates: io.github.anilbeesetti:nextlib-media3ext:1.11.1-0.16.0
+Pinned commit: 2dc77cd2d9352bc308aa26782f9c77a320df510b
+Locally built with streaming/codecs/patches/nextlib/ (codec extensions and audio buffer safety).
 See nextlib-GPL-3.0.txt.
 
 FFmpeg 9.0.1 (LGPL-3.0 configuration)
@@ -22,4 +23,6 @@ Copyright (c) the Mbed TLS contributors
 https://github.com/Mbed-TLS/mbedtls/tree/mbedtls-3.6.7
 See mbedtls-Apache-2.0.txt.
 
-Native binaries are supplied by the pinned NextLib Maven dependency, without local modifications.
+Native binaries are built from the verified source inputs in streaming/codecs/deps.lock.
+Local modifications and build scripts: streaming/codecs/ in the Daniil TV source distribution.
+Keep those inputs, patches and license texts available with binary distributions.

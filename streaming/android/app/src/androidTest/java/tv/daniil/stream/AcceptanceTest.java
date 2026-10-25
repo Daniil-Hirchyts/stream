@@ -64,6 +64,33 @@ public final class AcceptanceTest extends AppHarness {
         assertEquals(3, field(watch(), "attempts")); assertFalse(state().renderedFirstFrame);
         waitUntil("source choice is accessible after failure", 5000, () -> visible("Choose source"));
     }
+    @Test public void pressuredPayloadResetKeepsTheChosenEpisodeAndPosition() throws Exception {
+        readyLibrary("multiple-files"); launch(); tap("Generated Film", true); tap("Play", true);
+        waitUntil("episode file choice", 30000, () -> visible("Choose a video file"));
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+        waitUntil("chosen episode renders", 30000, () -> state() != null && state().renderedFirstFrame && state().playing);
+        WatchActivity activity = watch(); PlaybackCoordinator coordinator = (PlaybackCoordinator) field(activity, "coordinator");
+        int selected = coordinator.fileIndex;
+        instrumentation.runOnMainSync(() -> AppFlowTest.session(activity).seekTo(6000));
+        waitUntil("position before pressure", 10000, () -> state().playing && state().positionMs >= 6000);
+        long before = state().positionMs;
+        // The native stalled-peer test supplies real cache pressure. Here inject its reported condition
+        // to exercise the UI handoff, real session/storage drain, and selected-file restoration.
+        instrumentation.runOnMainSync(() -> {
+            try {
+                java.lang.reflect.Field stats = WatchActivity.class.getDeclaredField("nativeStats"); stats.setAccessible(true);
+                stats.set(activity, new org.json.JSONObject().put("urgentReservationFailures", 1).put("obsoletePartials", 1).put("verifiedReadBytes", 0));
+                ((StartupWatchdog) field(activity, "startupWatchdog")).start(android.os.SystemClock.elapsedRealtime() - 7000);
+                Runnable tick = (Runnable) field(activity, "tick"); ((android.os.Handler) field(activity, "main")).removeCallbacks(tick); tick.run();
+            } catch (Exception error) { throw new AssertionError(error); }
+        });
+        waitUntil("same episode restarts after storage drain", 30000, () -> state().error == null && state().renderedFirstFrame && state().playing
+                && state().positionMs >= before && coordinator.fileIndex == selected && !visible("Choose a video file"));
+        assertEquals(1, diagnostics().getInt("sourceAttempts"));
+        assertEquals(0, diagnostics().getJSONArray("sourceFailures").length());
+    }
+
     @Test public void decoderAndNetworkFailuresAfterFramesResumeOnDifferentSources() throws Exception {
         readyLibrary("recover-after-frame"); launch(); tap("Generated Film", true); startAutomaticFixturePlayback();
         waitUntil("initial video", 30_000, () -> state() != null && state().renderedFirstFrame && state().playing);
@@ -90,6 +117,31 @@ public final class AcceptanceTest extends AppHarness {
         assertEquals(3, field(activity, "attempts"));
         assertEquals(3, diagnostics().getJSONArray("sourceFailures").length());
         waitUntil("source choice is accessible after failure", 5000, () -> visible("Choose source"));
+    }
+
+    @Test public void activityRecreationRetainsPauseSpeedPositionAndNativeTelemetry() throws Exception {
+        playFilm(); WatchActivity original = watch();
+        instrumentation.runOnMainSync(() -> { AppFlowTest.session(original).setSpeed(1.5f); AppFlowTest.session(original).pause(); AppFlowTest.session(original).seekTo(6000); });
+        waitUntil("paused before recreation", 10000, () -> !state().buffering && state().positionMs >= 6000 && !state().playWhenReady);
+        instrumentation.runOnMainSync(original::recreate);
+        waitUntil("restored paused video", 30000, () -> watch() != null && watch() != original && state() != null && state().error == null && state().renderedFirstFrame && !state().buffering);
+        assertFalse(state().playWhenReady); assertEquals(1.5f, state().speed, .001f); assertTrue(state().positionMs >= 6000);
+        waitUntil("native telemetry resumes", 10000, () -> diagnostics().optLong("verifiedReadBytes") > 0);
+        WatchActivity restored = watch(); instrumentation.runOnMainSync(() -> AppFlowTest.session(restored).play());
+        waitUntil("restored playback advances", 10000, () -> state().playing && state().positionMs > 6500);
+    }
+    @Test public void manuallyChangingSourcesRetainsTheCurrentPausedPositionAndSpeed() throws Exception {
+        readyLibrary("recover-after-frame"); launch(); tap("Generated Film", false); tap("Play", true);
+        waitUntil("video before source change", 30000, () -> state() != null && state().playing && state().renderedFirstFrame);
+        WatchActivity activity = watch();
+        instrumentation.runOnMainSync(() -> { AppFlowTest.session(activity).setSpeed(1.5f); AppFlowTest.session(activity).pause(); AppFlowTest.session(activity).seekTo(6000); });
+        waitUntil("paused before source change", 10000, () -> !state().buffering && state().positionMs >= 6000);
+        instrumentation.runOnMainSync(activity::onChooseSource);
+        waitUntil("manual source dialog", 5000, () -> visible("Choose source"));
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN); instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+        waitUntil("replacement source ready", 30000, () -> state().error == null && state().renderedFirstFrame && !state().buffering);
+        assertFalse(state().playWhenReady); assertEquals(1.5f, state().speed, .001f); assertTrue(state().positionMs >= 6000);
+        assertFalse(diagnostics().getBoolean("automatic"));
     }
 
     private Object field(WatchActivity activity, String name) {

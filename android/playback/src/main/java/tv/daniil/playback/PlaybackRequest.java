@@ -18,6 +18,7 @@ import java.util.Map;
 public final class PlaybackRequest {
     /** The host's name for this media, such as a provider's video id; the player doesn't read it. */
     public final String id;
+    public final String mediaIdentity;
     public final String title;
     /** A line under the title, such as "S1 E2"; empty when there is none. */
     public final String detail;
@@ -37,11 +38,13 @@ public final class PlaybackRequest {
     public final long positionMs;
     /** Keeps the previous media's speed and chosen voice-over, as for the next episode of a series. */
     public final boolean continuing;
+    public final boolean startPaused;
     /** Reads the media itself, such as from a torrent; null fetches {@link #uri} over HTTP. */
     @Nullable public final DataSource.Factory dataSource;
 
     private PlaybackRequest(Builder builder) {
         id = builder.id;
+        mediaIdentity = builder.mediaIdentity == null ? builder.uri.toString() : builder.mediaIdentity;
         title = builder.title;
         detail = builder.detail;
         uri = builder.uri;
@@ -55,7 +58,7 @@ public final class PlaybackRequest {
         audioIndex = builder.audioIndex;
         audioLanguage = builder.audioLanguage;
         positionMs = builder.positionMs;
-        continuing = builder.continuing;
+        continuing = builder.continuing; startPaused = builder.startPaused;
         dataSource = builder.dataSource;
     }
 
@@ -63,6 +66,7 @@ public final class PlaybackRequest {
         private final Uri uri;
         private final String title;
         private String id = "", detail = "";
+        private String mediaIdentity;
         @Nullable private String mimeType, audioLanguage;
         private Map<String, String> headers = Collections.emptyMap();
         @Nullable private Map<String, String> subtitleHeaders;
@@ -71,7 +75,7 @@ public final class PlaybackRequest {
         private List<String> audioNames = Collections.emptyList();
         private int audioIndex = -1;
         private long positionMs;
-        private boolean continuing;
+        private boolean continuing, startPaused;
         @Nullable private DataSource.Factory dataSource;
 
         public Builder(Uri uri, String title) {
@@ -79,6 +83,7 @@ public final class PlaybackRequest {
             this.title = title;
         }
 
+        public Builder mediaIdentity(String value) { mediaIdentity = value; return this; }
         public Builder id(String value) { id = value; return this; }
         public Builder detail(String value) { detail = value; return this; }
         public Builder mimeType(@Nullable String value) { mimeType = value; return this; }
@@ -90,6 +95,7 @@ public final class PlaybackRequest {
         public Builder audioIndex(int value) { audioIndex = value; return this; }
         public Builder audioLanguage(@Nullable String value) { audioLanguage = value; return this; }
         public Builder position(long value) { positionMs = Math.max(0, value); return this; }
+        public Builder startPaused(boolean value) { startPaused = value; return this; }
         public Builder continuing(boolean value) { continuing = value; return this; }
         public Builder dataSource(@Nullable DataSource.Factory value) { dataSource = value; return this; }
 

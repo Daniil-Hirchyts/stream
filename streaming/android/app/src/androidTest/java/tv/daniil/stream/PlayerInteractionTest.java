@@ -19,7 +19,7 @@ public final class PlayerInteractionTest extends AppHarness {
     @Test public void pointerMenusTracksStyleAndTimelineWorkInTheAppPlayer() throws Exception {
         readyLibrary("http-mkv"); launch(); tap("Generated Film", false); tap("Play", true); chooseFirstSource();
         waitUntil("Matroska renders", 30_000, () -> state() != null && state().playing && state().renderedFirstFrame);
-        control(tv.daniil.playback.R.id.player_view, false); control(tv.daniil.playback.R.id.center_icon, true);
+        control(tv.daniil.playback.R.id.player_view, false); control(tv.daniil.playback.R.id.progress, true);
         waitUntil("pointer pauses", 5000, () -> !state().playWhenReady);
         android.graphics.Bitmap image = instrumentation.getUiAutomation().takeScreenshot();
         assertNotNull(image);
@@ -30,8 +30,10 @@ public final class PlayerInteractionTest extends AppHarness {
         control(tv.daniil.playback.R.id.control_options, false);
         tap("Audio", true); tap(audio, false);
         waitUntil("audio selected through menu", 5000, () -> state().audio != null && state().audio.label.equals(audio));
-        tap("Subtitles", false); tap(subtitle, true);
+        tap(subtitle, true);
         waitUntil("subtitle selected through menu", 5000, () -> state().subtitles != null && state().subtitles.label.equals(subtitle));
+        control(tv.daniil.playback.R.id.player_view, false);
+        control(R.id.control_settings, true);
         tap("Speed", true); tap("1.5×", false);
         waitUntil("speed selected through menu", 5000, () -> state().speed == 1.5f);
         tap("Subtitle style", false); tap("Size", true); tap("Large", false);
@@ -63,14 +65,15 @@ public final class PlayerInteractionTest extends AppHarness {
             assertTrue(instrumentation.getUiAutomation().injectInputEvent(event, true)); event.recycle(); SystemClock.sleep(30);
         }
         waitUntil("timeline drag seeks while paused", 10_000, () -> !state().playWhenReady && Math.abs(state().positionMs - target) < 2000);
-        control(tv.daniil.playback.R.id.center_icon, true);
+        control(tv.daniil.playback.R.id.progress, true);
         waitUntil("pointer resumes after drag", 10_000, () -> state().playing);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
         waitUntil("remote opens menu after touch", 5000, () -> shown(tv.daniil.playback.R.id.menu));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
         waitUntil("remote closes menu", 5000, () -> !shown(tv.daniil.playback.R.id.menu));
+        control(tv.daniil.playback.R.id.player_view, false);
         WatchActivity playing = watch();
-        instrumentation.runOnMainSync(() -> assertFalse("Close is absent from the playback toolbar",
+        instrumentation.runOnMainSync(() -> assertTrue("Back exits from the playback toolbar",
                 playing.findViewById(tv.daniil.playback.R.id.control_stop).isShown()));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
         if (watch() != null) instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
@@ -88,26 +91,21 @@ public final class PlayerInteractionTest extends AppHarness {
         assertTrue("Focused options stay visible", shown(tv.daniil.playback.R.id.controls));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
         waitUntil("OK opens options", 5000, () -> shown(tv.daniil.playback.R.id.menu));
-        // Main menu: Choose source, Audio, Subtitles. Navigate using only real remote keys.
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+        // Subtitle choices are directly on the Audio & subtitles page: Off, then the first track.
         waitUntil("subtitle choices", 5000, () -> visible("Off"));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
         waitUntil("remote subtitle selected", 5000, () -> state().subtitles != null);
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
-        waitUntil("menu dismissed", 5000, () -> !shown(tv.daniil.playback.R.id.menu));
+        waitUntil("selection dismisses menu", 5000, () -> !shown(tv.daniil.playback.R.id.menu));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
-        instrumentation.runOnMainSync(() -> assertTrue("Down focuses centre transport",
-                activity.findViewById(tv.daniil.playback.R.id.center_icon).hasFocus()));
+        instrumentation.runOnMainSync(() -> assertTrue("Down focuses the timeline",
+                activity.findViewById(tv.daniil.playback.R.id.progress).hasFocus()));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
         waitUntil("remote pauses", 5000, () -> !state().playWhenReady);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
         waitUntil("remote timeline seeks", 5000, () -> state().positionMs >= 9000);
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
         waitUntil("remote resumes", 5000, () -> state().playing);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);

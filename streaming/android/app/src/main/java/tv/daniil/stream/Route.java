@@ -21,6 +21,7 @@ final class Route {
     @Nullable Title title;
     int season = -1, page;
     @Nullable Parcelable scroll;
+    final Map<String, Parcelable> childScroll = new LinkedHashMap<>();
     final Map<String, String> extras = new LinkedHashMap<>();
     /** A screen's fetched data, kept in memory only so re-sorting or returning does not ask providers again. */
     @Nullable Object cache;

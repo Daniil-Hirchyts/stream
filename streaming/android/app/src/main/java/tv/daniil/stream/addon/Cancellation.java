@@ -7,6 +7,9 @@ import java.util.List;
 public final class Cancellation implements AutoCloseable {
     private final List<Runnable> actions = new ArrayList<>();
     private boolean cancelled;
+    private volatile int priority = 1;
+    public int priority() { return priority; }
+    public void priority(int value) { priority = value; }
 
     public synchronized boolean isCancelled() { return cancelled; }
     public void check() throws AddonException {

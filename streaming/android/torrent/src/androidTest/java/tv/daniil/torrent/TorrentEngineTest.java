@@ -75,6 +75,30 @@ public final class TorrentEngineTest {
         assertFiles(hybrid, engine.awaitMetadata(c, 30_000));
     }
 
+    @Test public void metadataSnapshotRetainsMagnetBootstrapPeersAfterEngineReplacement() throws Exception {
+        Fixtures.Torrent film = fixtures.torrent("film-v1");
+        TorrentEngine.Source magnet = TorrentEngine.Source.magnet("magnet:?xt=urn:btih:" + film.v1
+                + "&x.pe=" + fixtures.seeder);
+        long first = engine.add(magnet);
+        assertFiles(film, engine.awaitMetadata(first, 30_000));
+        TorrentEngine.Source recovered = engine.snapshotSource(first, magnet);
+
+        // A fresh session has neither a peer list nor payload from the original torrent.
+        // DHT, trackers and discovery are disabled, so only the retained x.pe can supply data.
+        engine.close();
+        engine = null;
+        open();
+        long replacement = engine.add(recovered);
+        assertFiles(film, engine.awaitMetadata(replacement, 10_000));
+        engine.selectFile(replacement, 0);
+        long reader = engine.openReader(replacement, 0);
+        try {
+            assertTrue(engine.read(reader, 0, new byte[16384], 0, 16384) > 0);
+        } finally {
+            engine.closeReader(reader);
+        }
+    }
+
     @Test public void fileNamesOutsideAsciiCrossTheNativeBoundary() throws Exception {
         Fixtures.Torrent t = fixtures.torrent("unicode");
         List<TorrentFile> files = engine.awaitMetadata(add(t), 10_000);

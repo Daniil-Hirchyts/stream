@@ -9,6 +9,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import java.util.List;
 
 /** The session's state at one moment. Immutable; times are milliseconds and 0 when unknown. */
+@androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
 public final class PlaybackSnapshot {
     /** Counts loads and stops; a snapshot from an older generation describes media that is gone. */
     public final int generation;

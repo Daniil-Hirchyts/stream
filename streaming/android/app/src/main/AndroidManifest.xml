@@ -2,12 +2,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
-    <application android:name=".TvApplication" android:label="${launcherLabel}" android:icon="@mipmap/tv_launcher" android:roundIcon="@mipmap/tv_launcher" android:banner="@drawable/tv_banner" android:theme="@style/TvTheme" android:allowBackup="false" android:fullBackupContent="false"
+    <application android:name=".TvApplication" android:label="${launcherLabel}" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:banner="@drawable/tv_banner" android:theme="@style/TvTheme" android:allowBackup="false" android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:supportsRtl="true" android:networkSecurityConfig="@xml/network_security">
-        <!-- Keep the square APK icon separate from the TV banner: Fire TV forces sideloaded icons into a square. -->
-        <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="landscape"
-            android:icon="@mipmap/tv_launcher" android:banner="@drawable/tv_banner">
+        <!-- Inherit the application icon and banner without overriding either on the launcher activity. -->
+        <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="landscape">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.VIEW"/><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="application/x-bittorrent"/><data android:mimeType="application/octet-stream"/></intent-filter>
         </activity>

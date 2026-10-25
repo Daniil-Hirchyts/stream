@@ -26,15 +26,21 @@ final class TitleScreens {
 
     TitleScreens(Navigator nav, TvApplication.Services services) { this.nav = nav; this.services = services; }
 
-    Page details(Route route, Cancellation scope) throws Exception {
-        Title original = route.title, title = original;
-        String note = "";
-        boolean local = original.provider.equals("local");
-        if (!local) {
-            AddonRepository.Result<Title> found = services.addons.metadata(original.provider, original.type, original.id, scope);
-            if (!found.items.isEmpty()) title = found.items.get(0);
-            if (!found.failures.isEmpty()) note = "Showing saved details.";
-        }
+    Page details(Route route, Cancellation scope) throws Exception { return details(route, scope, ignored -> {}); }
+    Page overview(Route route) throws Exception { return detailContent(route, ""); }
+    Page details(Route route, Cancellation scope, java.util.function.Consumer<Page> progress) throws Exception {
+        Page initial = detailContent(route, ""); progress.accept(initial);
+        if (route.title.provider.equals("local")) return initial;
+        PlaybackPreparation.Entry entry = services.preparation.prepare(route.title, route.video);
+        route.title = entry.awaitMetadata(scope);
+        scope.check();
+        Page enriched = detailContent(route, "");
+        scope.check(); services.preparation.prepare(route.title, route.video);
+        return enriched;
+    }
+    private Page detailContent(Route route, String note) throws Exception {
+        Title title = route.title;
+        boolean local = title.provider.equals("local");
         route.title = title;
         Title chosen = title;
         boolean favourite = false;
@@ -49,19 +55,19 @@ final class TitleScreens {
         boolean resume = progress != null && !progress.watched && progress.positionMs > 0;
 
         Page page = detailsPage(title, note);
-        // Every button says what it does; the two toggles show their state by their look ("Favourite" lit when set).
+        // Primary actions retain labels; compact toggles show their state and keep accessible action names.
         List<Action> actions = new ArrayList<>();
         boolean series = title.type.equals("series") && !title.episodes.isEmpty();
-        actions.add(new Action("play", Action.Style.PRIMARY, resume ? "Resume" : "Play", () -> nav.play(chosen, selected, "")).icon(R.drawable.ic_tv_play)
+        if (!title.type.equals("series") || !video.equals(title.id)) actions.add(new Action("play", Action.Style.PRIMARY, resume ? "Resume" : "Play", () -> nav.play(chosen, selected, "")).icon(R.drawable.ic_tv_play)
                 .detail(series ? shortEpisode(title, video) : ""));
-        if (!local) actions.add(new Action("sources", Action.Style.SECONDARY, "Sources", () -> nav.sources(chosen, selected)).icon(R.drawable.ic_tv_list));
+        if (!local && (!title.type.equals("series") || !video.equals(title.id))) actions.add(new Action("sources", Action.Style.ICON, "Sources", () -> nav.sources(chosen, selected)).icon(R.drawable.ic_tv_list));
         boolean isFavourite = favourite, watched = progress != null && progress.watched;
-        actions.add(new Action("favourite", Action.Style.SECONDARY, isFavourite ? "Remove favourite" : "Add favourite",
+        actions.add(new Action("favourite", Action.Style.ICON, isFavourite ? "Remove favourite" : "Add favourite",
                 () -> { Sounds.play(isFavourite ? Sounds.Sound.FAVOURITE_OFF : Sounds.Sound.FAVOURITE_ON); nav.mutate(() -> { services.store.favourite(chosen, !isFavourite); return null; }); })
-                .text("Favourite").icon(isFavourite ? R.drawable.ic_tv_heart : R.drawable.ic_tv_heart_outline).selected(isFavourite));
-        actions.add(new Action("watched", Action.Style.SECONDARY, watched ? "Mark unwatched" : "Mark watched",
+                .icon(isFavourite ? R.drawable.ic_tv_heart : R.drawable.ic_tv_heart_outline).selected(isFavourite));
+        actions.add(new Action("watched", Action.Style.ICON, watched ? "Mark unwatched" : "Mark watched",
                 () -> { Sounds.play(watched ? Sounds.Sound.WATCHED_OFF : Sounds.Sound.WATCHED_ON); nav.mutate(() -> { services.store.watched(chosen, selected, !watched); return null; }); })
-                .text(watched ? "Watched" : "Mark watched").icon(R.drawable.ic_tv_check).selected(watched));
+                .icon(R.drawable.ic_tv_check).selected(watched));
         if (local) {
             actions.add(new Action("rename", Action.Style.SECONDARY, "Rename import", () -> nav.edit("Rename import", "Title", chosen.name, name -> nav.mutate(() -> {
                 services.imports.rename(chosen.id, name);
@@ -98,32 +104,47 @@ final class TitleScreens {
             for (Title.Episode e : title.episodes) if (e.id.equals(route.video)) route.season = e.season;
         }
         List<Action> tabs = new ArrayList<>();
+        Map<String, List<Item>> panes = new java.util.LinkedHashMap<>();
+        Map<String, TvStore.Progress> saved = new java.util.HashMap<>();
+        for (TvStore.Progress progress : services.store.history(false))
+            if (progress.titleKey.equals(title.key())) saved.put(progress.video, progress);
         for (int season : seasons) {
-            tabs.add(new Action("season:" + season, Action.Style.CHIP, season == 0 ? "Specials" : "Season " + season, () -> {
-                route.season = season; route.scroll = null; nav.refresh();
-            }).selected(season == route.season));
+            String key = "season:" + season;
+            tabs.add(new Action(key, Action.Style.CHIP, season == 0 ? "Specials" : "Season " + season, () -> {})
+                    .selected(season == route.season));
+            List<Tile> tiles = new ArrayList<>();
+            for (Title.Episode e : title.episodes) if (e.season == season) {
+                TvStore.Progress p = saved.get(e.id);
+                boolean watched = p != null && p.watched;
+                boolean resume = p != null && !watched && p.positionMs > 0;
+                Tile tile = new Tile("episode:" + e.id, Tile.Style.LANDSCAPE, e.name, "",
+                        e.thumbnail != null ? e.thumbnail : title.background, null, () -> nav.choose(e.name,
+                        new String[]{resume ? "Resume" : "Play", "Choose source", watched ? "Mark unwatched" : "Mark watched"}, which -> {
+                            if (!route.video.equals(e.id)) route.cache = null;
+                            route.video = e.id;
+                            if (which == 0) nav.play(title, e.id, "");
+                            else if (which == 1) nav.sources(title, e.id);
+                            else { Sounds.play(watched ? Sounds.Sound.WATCHED_OFF : Sounds.Sound.WATCHED_ON); nav.mutate(() -> { services.store.watched(title, e.id, !watched); return null; }); }
+                        })).episode(e.number, e.overview).released(episodeDate(e.released)).description("Episode " + e.number + ". " + e.name
+                                + (watched ? ". Watched" : ""));
+                if (watched) tile.badge(R.drawable.ic_tv_check);
+                else if (p != null && p.durationMs > 0) tile.progress(p.positionMs / (float) p.durationMs);
+                tiles.add(tile);
+            }
+            panes.put(key, java.util.Collections.singletonList(Item.shelf("episodes:" + season, "", "", Tile.Style.LANDSCAPE, tiles)));
         }
-        if (seasons.size() > 1) page.add(Item.chips("seasons", "Episodes", tabs));
-        List<Tile> tiles = new ArrayList<>();
-        for (Title.Episode e : title.episodes) if (e.season == route.season) {
-            TvStore.Progress p = services.store.progress(title.key(), e.id);
-            String state = p == null ? e.overview.isEmpty() ? released(e) : e.overview
-                    : p.watched ? "Watched" : p.durationMs > 0 ? BrowseScreens.minutes(p.durationMs - p.positionMs) + " left" : "In progress";
-            Tile tile = new Tile("episode:" + e.id, Tile.Style.LANDSCAPE, (e.number > 0 ? e.number + ". " : "") + e.name, state,
-                    e.thumbnail != null ? e.thumbnail : title.background, null, () -> nav.choose(e.name,
-                    new String[]{"Play / Resume", "Choose source", "Mark watched", "Mark unwatched"}, which -> {
-                        route.video = e.id;
-                        if (which == 0) nav.play(title, e.id, "");
-                        else if (which == 1) nav.sources(title, e.id);
-                        else { Sounds.play(which == 2 ? Sounds.Sound.WATCHED_ON : Sounds.Sound.WATCHED_OFF); nav.mutate(() -> { services.store.watched(title, e.id, which == 2); return null; }); }
-                    }));
-            if (p != null && p.watched) tile.badge(R.drawable.ic_tv_check);
-            else if (p != null && p.durationMs > 0) tile.progress(p.positionMs / (float) p.durationMs);
-            tiles.add(tile);
-        }
-        page.add(Item.shelf("episodes", seasons.size() > 1 ? "" : (route.season == 0 ? "Specials" : "Season " + route.season), "", Tile.Style.LANDSCAPE, tiles));
+        page.add(Item.episodes(tabs, panes, "season:" + route.season,
+                key -> route.season = Integer.parseInt(key.substring("season:".length()))));
     }
-    private static String released(Title.Episode e) { return e.released.length() >= 10 ? e.released.substring(0, 10) : e.released; }
+
+    /** Keep the provider's broadcast day; converting a midnight UTC stamp can move it to yesterday. */
+    static String episodeDate(String released) {
+        if (released == null || released.length() < 10) return "";
+        try {
+            return java.time.LocalDate.parse(released.substring(0, 10))
+                    .format(java.time.format.DateTimeFormatter.ofPattern("d MMM uuuu", Locale.getDefault()));
+        } catch (java.time.DateTimeException invalid) { return ""; }
+    }
 
     /** True when no enabled add-on could supply streams and the metadata carries none itself. */
     private boolean noSources(Title title, String video) {
@@ -134,23 +155,24 @@ final class TitleScreens {
 
     /** What the providers answered for one video; reused for ten minutes while the viewer re-sorts. */
     private static final class Fetched {
+        final long configuration;
         final List<InstalledAddon> providers; @androidx.annotation.Nullable final AddonRepository.Result<MediaSource> found;
-        Fetched(List<InstalledAddon> providers, @androidx.annotation.Nullable AddonRepository.Result<MediaSource> found) { this.providers = providers; this.found = found; }
+        Fetched(List<InstalledAddon> providers, @androidx.annotation.Nullable AddonRepository.Result<MediaSource> found, long configuration) { this.providers = providers; this.found = found; this.configuration = configuration; }
     }
-    private static final long SOURCES_FRESH_MS = 10 * 60_000;
+    private static final long SOURCES_FRESH_MS = 60_000;
 
     /** The initial and loaded pages share the same fixed toolbar, including during provider requests. */
     Page detailsPage(Title title, String note) {
         Page page = new Page(); page.backdrop = title;
         if (!title.provider.equals("local")) page.tools = java.util.Collections.singletonList(
-                new Action("refresh-details", Action.Style.ICON, "Refresh details", nav::refresh).icon(R.drawable.ic_tv_refresh));
+                new Action("refresh-details", Action.Style.ICON, "Refresh details", () -> { services.preparation.invalidate(title, null); nav.refresh(); }).icon(R.drawable.ic_tv_refresh));
         return page.add(Item.details(title, note));
     }
     Page sourcesPage(Route route) {
         Title title = route.title;
         Page page = new Page().title(title.name).narrow(); page.backdrop = title; page.blurBackdrop = true;
         page.tools = java.util.Collections.singletonList(new Action("refresh-sources", Action.Style.ICON, "Refresh sources", () -> {
-            route.cache = null; nav.refresh();
+            route.cache = null; services.preparation.invalidate(title, route.video); nav.refresh();
         }).icon(R.drawable.ic_tv_refresh));
         return page.add(Item.text("Sources", title.type.equals("series") ? episodeName(title, route.video) : ""));
     }
@@ -159,20 +181,31 @@ final class TitleScreens {
     Page sources(Route route, Cancellation scope, java.util.function.Consumer<Page> progress) throws Exception {
         Title title = route.title;
         Page page = sourcesPage(route);
-        Fetched fetched = route.cache instanceof Fetched && android.os.SystemClock.elapsedRealtime() - route.cachedAt < SOURCES_FRESH_MS ? (Fetched) route.cache : null;
+        Fetched fetched = route.cache instanceof Fetched && ((Fetched) route.cache).configuration == services.addons.configuration() && android.os.SystemClock.elapsedRealtime() - route.cachedAt < SOURCES_FRESH_MS ? (Fetched) route.cache : null;
         if (fetched == null) {
             progress.accept(page.copy().add(Item.skeleton("Source results")));
             List<InstalledAddon> providers = services.addons.providers("stream", title.type, route.video);
-            fetched = new Fetched(providers, providers.isEmpty() ? null : services.addons.streams(title.type, route.video, scope));
+            PlaybackPreparation.Entry entry = services.preparation.prepare(title, route.video);
+            entry.awaitComplete(scope, result -> {
+                try { progress.accept(sourceContent(route, new Fetched(providers, result, entry.configuration), entry.complete && entry.metadataReady)); }
+                catch (Exception error) { throw new IllegalStateException(error); }
+            });
+            fetched = new Fetched(providers, entry.result(), entry.configuration);
             route.cache = fetched; route.cachedAt = android.os.SystemClock.elapsedRealtime();
         }
+        return sourceContent(route, fetched);
+    }
+    private Page sourceContent(Route route, Fetched fetched) throws Exception { return sourceContent(route, fetched, true); }
+    private Page sourceContent(Route route, Fetched fetched, boolean complete) throws Exception {
+        Title title = route.title;
+        Page page = sourcesPage(route);
         List<InstalledAddon> providers = fetched.providers;
         AddonRepository.Result<MediaSource> found = fetched.found;
         List<MediaSource> sources = new ArrayList<>(found == null ? new ArrayList<>() : found.items);
-        for (Title.Episode e : title.episodes) if (e.id.equals(route.video)) sources.addAll(e.streams);
         List<InstalledAddon> installed = services.store.addons();
         // Only what this TV can play. The rest is counted, not listed.
         List<MediaSource> playable = SourcePolicy.ranked(sources);
+        if (playable.isEmpty() && !complete) return page.add(Item.skeleton("Finding sources"));
         if (!playable.isEmpty()) {
             Map<String, TvStore.SourceMark> marks = services.store.sourceMarks(title.key(), route.video);
             // "SIZE" or "SIZE:reverse". Choosing the current order again turns it around.

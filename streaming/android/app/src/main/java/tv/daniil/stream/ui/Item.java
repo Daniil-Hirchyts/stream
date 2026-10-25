@@ -5,12 +5,13 @@ import androidx.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import tv.daniil.stream.addon.Title;
 
 /** One block of a page. Screens build these on workers; {@link PageAdapter} turns them into views. */
 public final class Item {
-    public enum Kind { SPOTLIGHT, DETAILS, INTRO, TITLE, HEADER, SHELF, GRID, ACTIONS, CHIPS, LIST, SOURCE, FIELD, KEYBOARD, SPLIT, SKELETON, MESSAGE, NOTICE, TEXT, LOADING, SUBTITLE_PREVIEW, CATALOGUE_HEADER, PAGINATION }
+    public enum Kind { SPOTLIGHT, DETAILS, INTRO, TITLE, HEADER, SHELF, GRID, ACTIONS, CHIPS, LIST, SOURCE, FIELD, KEYBOARD, SPLIT, SKELETON, MESSAGE, NOTICE, TEXT, LOADING, SUBTITLE_PREVIEW, CATALOGUE_HEADER, PAGINATION, EPISODES, SERIES_HEADER }
 
     /** A poster, landscape thumbnail or catalogue card. */
     public static final class Tile {
@@ -23,6 +24,9 @@ public final class Item {
         @Nullable public final Title media;
         /** 0–1 playback progress, or below zero for none. */
         public float progress = -1;
+        public int episodeNumber = -1;
+        public String synopsis = "";
+        public String releaseDate = "";
         @DrawableRes public int badge;
         /** The accessible label when it should differ from "title. subtitle" (a catalogue card is named by its catalogue). */
         @Nullable public String description;
@@ -34,6 +38,8 @@ public final class Item {
         public Tile progress(float value) { progress = value; return this; }
         public Tile badge(@DrawableRes int icon) { badge = icon; return this; }
         public Tile description(String value) { description = value; return this; }
+        public Tile episode(int number, String overview) { episodeNumber = number; synopsis = overview; return this; }
+        public Tile released(String date) { releaseDate = date; return this; }
         /** A plain block with its title inside and no artwork or caption (a Browse category). */
         public boolean block;
         public int colorIndex;
@@ -78,12 +84,21 @@ public final class Item {
     public List<Tile> tiles = Collections.emptyList();
     public List<Action> actions = Collections.emptyList();
     @Nullable public Consumer<String> keyboardInput;
+    public List<String> keyboardLanguages = Collections.singletonList("en");
+    public String keyboardLanguage = "en";
+    @Nullable public Consumer<String> keyboardLanguageChanged, keyboardVoice;
     public boolean loading;
 
     private Item(Kind kind, String key) { this.kind = kind; this.key = key; }
 
     public static Item spotlight(Title first) { Item i = new Item(Kind.SPOTLIGHT, "spotlight"); i.media = first; return i; }
     public static Item details(Title title, String note) { Item i = new Item(Kind.DETAILS, "details"); i.media = title; i.detail = note; return i; }
+    public static Item seriesHeader(Title title) { Item i = new Item(Kind.SERIES_HEADER, "series-header"); i.media = title; return i; }
+    /** Seasons select on focus; each pane is its own episode shelf, with independent horizontal scroll. */
+    public static Item episodes(List<Action> seasons, Map<String, List<Item>> panes, String selected, Consumer<String> select) {
+        Item i = new Item(Kind.EPISODES, "episode-browser"); i.actions = seasons; i.panes = panes;
+        i.value = selected; i.keyboardInput = select; return i;
+    }
     public static Item intro(String overline, String title, String detail) {
         Item i = new Item(Kind.INTRO, "intro:" + title); i.meta = overline; i.title = title; i.detail = detail; return i;
     }

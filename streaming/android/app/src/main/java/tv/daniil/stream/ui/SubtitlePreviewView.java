@@ -67,6 +67,7 @@ public final class SubtitlePreviewView extends FrameLayout {
         addView(scrim, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         subtitleView = new SubtitleView(context);
+        androidx.media3.ui.DaniilSubtitleOutput.install(subtitleView);
         subtitleView.setCues(Collections.singletonList(
                 new Cue.Builder().setText(context.getString(tv.daniil.playback.R.string.subtitle_sample)).build()));
         addView(subtitleView, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));

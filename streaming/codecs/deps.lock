@@ -1,0 +1,5 @@
+# Source inputs are immutable; generated checkouts and native libraries live in .deps/.
+nextlib 1.11.1-0.16.0 git 2dc77cd2d9352bc308aa26782f9c77a320df510b https://github.com/anilbeesetti/nextlib.git
+ffmpeg 9.0.1 tar 657dbf258cce6c0681714b6e40b8ca69e988c67ecfc2f7aab47574e6ebaceb38 https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.gz
+dav1d 1.5.4 tar a1d5b63d2d38ec9bd03acf643caa51fa22edd1e89c5a109c4807717216bbec07 https://code.videolan.org/videolan/dav1d/-/archive/1.5.4/dav1d-1.5.4.tar.gz
+mbedtls 3.6.7 tar a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6 https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.7/mbedtls-3.6.7.tar.bz2

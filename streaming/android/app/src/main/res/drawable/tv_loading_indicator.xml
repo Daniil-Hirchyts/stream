@@ -1,52 +1,194 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- An activity indicator after Apple's: eight rounded spokes with a fading tail, turning clockwise at a constant speed.
-     An animated vector runs on the render thread, so it keeps turning while the main thread lays out a page or
-     opens a source (an animated-rotate is driven by the main thread and stalls with it). Tinted by its user. -->
+<!-- Fixed spokes: only their opacity changes, in eight clockwise clicks, 128 ms apart (1.024 s per cycle).
+     Keep the animated vector on the render thread, including the stepped timing, while a page/source loads. -->
 <animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt">
     <aapt:attr name="android:drawable">
         <vector android:width="48dp" android:height="48dp" android:viewportWidth="48" android:viewportHeight="48">
-            <group android:name="wheel" android:pivotX="24" android:pivotY="24">
             <group android:rotation="0" android:pivotX="24" android:pivotY="24">
-                <path android:pathData="M24,5 L24,13" android:strokeColor="#FFFFFFFF" android:strokeAlpha="1.0"
+                <path android:name="spoke_0" android:pathData="M24,5 L24,13"
+                    android:strokeColor="#FFFFFFFF" android:strokeAlpha="1.0"
                     android:strokeLineCap="round" android:strokeWidth="4.2" />
             </group>
             <group android:rotation="45" android:pivotX="24" android:pivotY="24">
-                <path android:pathData="M24,5 L24,13" android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.28"
+                <path android:name="spoke_1" android:pathData="M24,5 L24,13"
+                    android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.28"
                     android:strokeLineCap="round" android:strokeWidth="4.2" />
             </group>
             <group android:rotation="90" android:pivotX="24" android:pivotY="24">
-                <path android:pathData="M24,5 L24,13" android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.32"
+                <path android:name="spoke_2" android:pathData="M24,5 L24,13"
+                    android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.32"
                     android:strokeLineCap="round" android:strokeWidth="4.2" />
             </group>
             <group android:rotation="135" android:pivotX="24" android:pivotY="24">
-                <path android:pathData="M24,5 L24,13" android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.38"
+                <path android:name="spoke_3" android:pathData="M24,5 L24,13"
+                    android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.38"
                     android:strokeLineCap="round" android:strokeWidth="4.2" />
             </group>
             <group android:rotation="180" android:pivotX="24" android:pivotY="24">
-                <path android:pathData="M24,5 L24,13" android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.46"
+                <path android:name="spoke_4" android:pathData="M24,5 L24,13"
+                    android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.46"
                     android:strokeLineCap="round" android:strokeWidth="4.2" />
             </group>
             <group android:rotation="225" android:pivotX="24" android:pivotY="24">
-                <path android:pathData="M24,5 L24,13" android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.57"
+                <path android:name="spoke_5" android:pathData="M24,5 L24,13"
+                    android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.57"
                     android:strokeLineCap="round" android:strokeWidth="4.2" />
             </group>
             <group android:rotation="270" android:pivotX="24" android:pivotY="24">
-                <path android:pathData="M24,5 L24,13" android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.7"
+                <path android:name="spoke_6" android:pathData="M24,5 L24,13"
+                    android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.70"
                     android:strokeLineCap="round" android:strokeWidth="4.2" />
             </group>
             <group android:rotation="315" android:pivotX="24" android:pivotY="24">
-                <path android:pathData="M24,5 L24,13" android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.85"
+                <path android:name="spoke_7" android:pathData="M24,5 L24,13"
+                    android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.85"
                     android:strokeLineCap="round" android:strokeWidth="4.2" />
-            </group>
             </group>
         </vector>
     </aapt:attr>
-    <target android:name="wheel">
+    <target android:name="spoke_0">
         <aapt:attr name="android:animation">
-            <objectAnimator android:duration="1000" android:repeatCount="infinite" android:propertyName="rotation"
-                android:valueFrom="0" android:valueTo="360" android:valueType="floatType"
-                android:interpolator="@android:anim/linear_interpolator" />
+            <objectAnimator android:duration="1024" android:repeatCount="infinite"
+                android:interpolator="@interpolator/tv_loading_steps">
+                <propertyValuesHolder android:propertyName="strokeAlpha" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="1.0" />
+                    <keyframe android:fraction="0.125" android:value="0.85" />
+                    <keyframe android:fraction="0.25" android:value="0.70" />
+                    <keyframe android:fraction="0.375" android:value="0.57" />
+                    <keyframe android:fraction="0.5" android:value="0.46" />
+                    <keyframe android:fraction="0.625" android:value="0.38" />
+                    <keyframe android:fraction="0.75" android:value="0.32" />
+                    <keyframe android:fraction="0.875" android:value="0.28" />
+                    <keyframe android:fraction="1" android:value="1.0" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="spoke_1">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1024" android:repeatCount="infinite"
+                android:interpolator="@interpolator/tv_loading_steps">
+                <propertyValuesHolder android:propertyName="strokeAlpha" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="0.28" />
+                    <keyframe android:fraction="0.125" android:value="1.0" />
+                    <keyframe android:fraction="0.25" android:value="0.85" />
+                    <keyframe android:fraction="0.375" android:value="0.70" />
+                    <keyframe android:fraction="0.5" android:value="0.57" />
+                    <keyframe android:fraction="0.625" android:value="0.46" />
+                    <keyframe android:fraction="0.75" android:value="0.38" />
+                    <keyframe android:fraction="0.875" android:value="0.32" />
+                    <keyframe android:fraction="1" android:value="0.28" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="spoke_2">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1024" android:repeatCount="infinite"
+                android:interpolator="@interpolator/tv_loading_steps">
+                <propertyValuesHolder android:propertyName="strokeAlpha" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="0.32" />
+                    <keyframe android:fraction="0.125" android:value="0.28" />
+                    <keyframe android:fraction="0.25" android:value="1.0" />
+                    <keyframe android:fraction="0.375" android:value="0.85" />
+                    <keyframe android:fraction="0.5" android:value="0.70" />
+                    <keyframe android:fraction="0.625" android:value="0.57" />
+                    <keyframe android:fraction="0.75" android:value="0.46" />
+                    <keyframe android:fraction="0.875" android:value="0.38" />
+                    <keyframe android:fraction="1" android:value="0.32" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="spoke_3">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1024" android:repeatCount="infinite"
+                android:interpolator="@interpolator/tv_loading_steps">
+                <propertyValuesHolder android:propertyName="strokeAlpha" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="0.38" />
+                    <keyframe android:fraction="0.125" android:value="0.32" />
+                    <keyframe android:fraction="0.25" android:value="0.28" />
+                    <keyframe android:fraction="0.375" android:value="1.0" />
+                    <keyframe android:fraction="0.5" android:value="0.85" />
+                    <keyframe android:fraction="0.625" android:value="0.70" />
+                    <keyframe android:fraction="0.75" android:value="0.57" />
+                    <keyframe android:fraction="0.875" android:value="0.46" />
+                    <keyframe android:fraction="1" android:value="0.38" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="spoke_4">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1024" android:repeatCount="infinite"
+                android:interpolator="@interpolator/tv_loading_steps">
+                <propertyValuesHolder android:propertyName="strokeAlpha" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="0.46" />
+                    <keyframe android:fraction="0.125" android:value="0.38" />
+                    <keyframe android:fraction="0.25" android:value="0.32" />
+                    <keyframe android:fraction="0.375" android:value="0.28" />
+                    <keyframe android:fraction="0.5" android:value="1.0" />
+                    <keyframe android:fraction="0.625" android:value="0.85" />
+                    <keyframe android:fraction="0.75" android:value="0.70" />
+                    <keyframe android:fraction="0.875" android:value="0.57" />
+                    <keyframe android:fraction="1" android:value="0.46" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="spoke_5">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1024" android:repeatCount="infinite"
+                android:interpolator="@interpolator/tv_loading_steps">
+                <propertyValuesHolder android:propertyName="strokeAlpha" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="0.57" />
+                    <keyframe android:fraction="0.125" android:value="0.46" />
+                    <keyframe android:fraction="0.25" android:value="0.38" />
+                    <keyframe android:fraction="0.375" android:value="0.32" />
+                    <keyframe android:fraction="0.5" android:value="0.28" />
+                    <keyframe android:fraction="0.625" android:value="1.0" />
+                    <keyframe android:fraction="0.75" android:value="0.85" />
+                    <keyframe android:fraction="0.875" android:value="0.70" />
+                    <keyframe android:fraction="1" android:value="0.57" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="spoke_6">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1024" android:repeatCount="infinite"
+                android:interpolator="@interpolator/tv_loading_steps">
+                <propertyValuesHolder android:propertyName="strokeAlpha" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="0.70" />
+                    <keyframe android:fraction="0.125" android:value="0.57" />
+                    <keyframe android:fraction="0.25" android:value="0.46" />
+                    <keyframe android:fraction="0.375" android:value="0.38" />
+                    <keyframe android:fraction="0.5" android:value="0.32" />
+                    <keyframe android:fraction="0.625" android:value="0.28" />
+                    <keyframe android:fraction="0.75" android:value="1.0" />
+                    <keyframe android:fraction="0.875" android:value="0.85" />
+                    <keyframe android:fraction="1" android:value="0.70" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="spoke_7">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:duration="1024" android:repeatCount="infinite"
+                android:interpolator="@interpolator/tv_loading_steps">
+                <propertyValuesHolder android:propertyName="strokeAlpha" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="0.85" />
+                    <keyframe android:fraction="0.125" android:value="0.70" />
+                    <keyframe android:fraction="0.25" android:value="0.57" />
+                    <keyframe android:fraction="0.375" android:value="0.46" />
+                    <keyframe android:fraction="0.5" android:value="0.38" />
+                    <keyframe android:fraction="0.625" android:value="0.32" />
+                    <keyframe android:fraction="0.75" android:value="0.28" />
+                    <keyframe android:fraction="0.875" android:value="1.0" />
+                    <keyframe android:fraction="1" android:value="0.85" />
+                </propertyValuesHolder>
+            </objectAnimator>
         </aapt:attr>
     </target>
 </animated-vector>

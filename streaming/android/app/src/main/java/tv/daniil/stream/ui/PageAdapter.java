@@ -52,8 +52,23 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     @Nullable private RecyclerView recycler;
     private int generation;
     private int shownResults;
+    private final java.util.Map<String, android.os.Parcelable> childScroll = new java.util.HashMap<>();
+    public java.util.Map<String, android.os.Parcelable> scrollPositions() { return new java.util.HashMap<>(childScroll); }
+    public void restoreScrollPositions(java.util.Map<String, android.os.Parcelable> positions) {
+        childScroll.clear(); childScroll.putAll(positions);
+    }
+    private void retainScroll(RecyclerView list, String key) {
+        android.os.Parcelable state = childScroll.get(key);
+        if (state != null) list.getLayoutManager().onRestoreInstanceState(state);
+        list.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override public void onScrolled(RecyclerView view, int dx, int dy) {
+                childScroll.put(key, view.getLayoutManager().onSaveInstanceState());
+            }
+        });
+    }
     /** The live Search results column, if Search is showing. */
     @Nullable private LinearLayout searchResults;
+    @Nullable private StringBuilder keyboardQuery;
 
     public PageAdapter(Context context, Artwork artwork, Listener listener) {
         this.context = context; this.artwork = artwork; this.listener = listener;
@@ -66,9 +81,12 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     public boolean set(List<Item> value, String restoreKey) {
         // A new search answer replaces only the results: rebinding would rebuild the keyboard and drop its focus.
         if (value.size() == 1 && items.size() == 1 && value.get(0).kind == Item.Kind.KEYBOARD && items.get(0).kind == Item.Kind.KEYBOARD
-                && value.get(0).key.equals(items.get(0).key) && searchResults != null && searchResults.isAttachedToWindow()) {
+                && value.get(0).key.equals(items.get(0).key) && value.get(0).keyboardLanguages.equals(items.get(0).keyboardLanguages)
+                && searchResults != null && searchResults.isAttachedToWindow()) {
             Item shown = items.get(0), next = value.get(0);
             shown.tiles = next.tiles; shown.loading = next.loading; shown.detail = next.detail; shown.meta = next.meta;
+            shown.value = next.value;
+            if (keyboardQuery != null && !keyboardQuery.toString().equals(next.value)) { keyboardQuery.setLength(0); keyboardQuery.append(next.value); }
             restore = restoreKey == null ? "" : restoreKey;
             results(searchResults, shown);
             snapshots = Collections.singletonList(snapshot(shown));
@@ -97,9 +115,9 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     private static List<Object> snapshot(Item item) {
         List<Object> state = new ArrayList<>(java.util.Arrays.asList(item.kind, item.key, item.title, item.detail, item.value,
                 item.meta, item.icon, item.statusIcon, item.muted, item.centered, item.style, item.loading,
-                item.media == null ? null : item.media.cacheJson()));
+                item.media == null ? null : item.media.cacheJson(), item.keyboardLanguages, item.keyboardLanguage));
         for (Item.Action a : item.actions) state.add(java.util.Arrays.asList(a.key, a.label, a.text, a.detail, a.icon, a.style, a.selected));
-        for (Item.Tile t : item.tiles) state.add(java.util.Arrays.asList(t.key, t.title, t.subtitle, t.image, t.style,
+        for (Item.Tile t : item.tiles) state.add(java.util.Arrays.asList(t.key, t.title, t.subtitle, t.image, t.style, t.episodeNumber, t.synopsis, t.releaseDate,
                 t.progress, t.badge, t.description, t.block, t.colorIndex, t.media == null ? null : t.media.cacheJson()));
         if (item.children != null) for (Item child : item.children) state.add(snapshot(child));
         if (item.panes != null) for (Map.Entry<String, List<Item>> pane : item.panes.entrySet()) {
@@ -121,6 +139,8 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         if (item.kind == Item.Kind.KEYBOARD && key.startsWith(item.key + ":")) return true;
         for (Item.Tile t : item.tiles) if (t.key.equals(key)) return true;
         for (Item.Action a : item.actions) if (a.key.equals(key)) return true;
+        if (item.panes != null) for (List<Item> pane : item.panes.values())
+            for (Item child : pane) if (contains(child, key)) return true;
         return false;
     }
     @Override public int getItemCount() { return items.size(); }
@@ -155,6 +175,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         switch (item.kind) {
             case SPOTLIGHT: return spotlight(item);
             case DETAILS: return details(item);
+            case SERIES_HEADER: return seriesHeader(item);
             case INTRO: return intro(item);
             case TITLE: return pageTitle(item);
             case CATALOGUE_HEADER: return catalogueHeader(item);
@@ -164,6 +185,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             case GRID: return grid(item);
             case ACTIONS: return actions(item, item.centered ? Gravity.CENTER_HORIZONTAL : Gravity.START);
             case CHIPS: return chips(item);
+            case EPISODES: return episodes(item);
             case LIST: return row(item);
             case SOURCE: return source(item);
             case FIELD: return field(item);
@@ -241,7 +263,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             shown = media;
             root.setContentDescription(media.name);
             title.setText(media.name); gone(title, false);
-            String facts = metaLine(media), type = kind(media);
+            String facts = metaLine(media, false), type = kind(media);
             meta.setText(type.isEmpty() ? facts : facts.isEmpty() ? type : type + "  ·  " + facts); gone(meta, meta.getText().length() == 0);
             description.setText(media.description); gone(description, media.description.isEmpty());
             logo.setImageDrawable(null); gone(logo, true);
@@ -278,8 +300,11 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         }
     }
     public static String metaLine(Title title) {
+        return metaLine(title, true);
+    }
+    private static String metaLine(Title title, boolean year) {
         List<String> parts = new ArrayList<>();
-        if (!title.releaseInfo.isEmpty()) parts.add(title.releaseInfo);
+        if (year && !title.releaseInfo.isEmpty()) parts.add(title.releaseInfo);
         if (!title.genres.isEmpty()) parts.add(String.join(", ", title.genres.subList(0, Math.min(3, title.genres.size()))));
         if (!title.rating.isEmpty()) parts.add("★ " + title.rating);
         return String.join("  ·  ", parts);
@@ -333,8 +358,27 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
 
     private View pageTitle(Item item) {
         TextView title = Tv.onArtwork(Tv.oneLine(Tv.bold(context, item.title, 30))); title.setPadding(gutterStart, dp(6), gutterEnd, dp(4));
+        title.setTag(item.key);
         title.setLayoutParams(fill());
         return title;
+    }
+    private View seriesHeader(Item item) {
+        FrameLayout root = new FrameLayout(context); root.setTag(item.key);
+        root.setPadding(gutterStart, dp(12), gutterEnd, dp(16));
+        root.setContentDescription(item.media.name);
+        TextView fallback = Tv.onArtwork(Tv.oneLine(Tv.bold(context, item.media.name, 30)));
+        root.addView(fallback, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER_VERTICAL));
+        ImageView logo = new ImageView(context); logo.setTag("series-logo");
+        logo.setAdjustViewBounds(true); logo.setMaxWidth(dp(360)); logo.setMaxHeight(dp(52));
+        logo.setScaleType(ImageView.ScaleType.FIT_START); logo.setVisibility(View.GONE);
+        logo.setContentDescription(item.media.name);
+        root.addView(logo, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER_VERTICAL));
+        if (item.media.logo != null) artwork.fetch(item.media.logo, Artwork.LOGO, true, bitmap -> {
+            logo.setImageBitmap(bitmap); logo.setVisibility(View.VISIBLE); fallback.setVisibility(View.GONE);
+            logo.setAlpha(0f); logo.animate().alpha(1f).setDuration(160).start();
+        });
+        root.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(80)));
+        return root;
     }
     /** A shelf or grid heading: white, above artwork. */
     private View header(String title, String detail, int topDp) { return header(title, detail, topDp, 17, R.color.tv_text); }
@@ -366,23 +410,26 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     }
 
     // Shelves: a heading over a horizontally scrolling row of tiles.
-    private View shelf(Item item) {
+    private View shelf(Item item) { return shelf(item, null); }
+    private View shelf(Item item, @Nullable View season) {
         LinearLayout root = new LinearLayout(context); root.setOrientation(LinearLayout.VERTICAL);
         root.setClipChildren(false); root.setClipToPadding(false);
-        root.addView(header(item.title, item.detail, 14));
+        if (!item.title.isEmpty() || !item.detail.isEmpty()) root.addView(header(item.title, item.detail, 14));
         RecyclerView list = new RecyclerView(context);
-        list.setLayoutManager(new Layout(context, RecyclerView.HORIZONTAL, 96));
+        Layout layout = new Layout(context, RecyclerView.HORIZONTAL, 96); layout.navigationTarget(season);
+        list.setLayoutManager(layout);
         list.setClipToPadding(false); list.setClipChildren(false); list.setItemAnimator(null);
         list.setHasFixedSize(true);
-        list.setPadding(gutterStart, dp(12), gutterEnd, dp(14));
+        list.setPadding(gutterStart, dp(season == null ? 12 : 16), gutterEnd, dp(14));
         list.setHorizontalScrollBarEnabled(false);
         TileAdapter adapter = new TileAdapter(item.tiles, item.style, item.style == Item.Tile.Style.POSTER ? POSTER_WIDTH : LANDSCAPE_WIDTH);
         list.setAdapter(adapter);
+        retainScroll(list, item.key);
         root.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         int inShelf = -1;
         for (int i = 0; i < item.tiles.size(); i++) if (item.tiles.get(i).key.equals(restore)) inShelf = i;
         if (inShelf >= 0) {
-            list.scrollToPosition(inShelf);
+            if (!childScroll.containsKey(item.key)) list.scrollToPosition(inShelf);
             String key = restore;
             list.post(() -> { View target = list.findViewWithTag(key); if (target != null) target.requestFocus(); });
         }
@@ -730,7 +777,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                 outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), context.getResources().getDimension(R.dimen.tv_radius_control));
             }
         });
-        TextView placeholder = Tv.lines(Tv.bold(context, tile.title, style == Item.Tile.Style.POSTER ? 15 : 17), 4);
+        TextView placeholder = Tv.lines(Tv.bold(context, tile.episodeNumber >= 0 ? "" : tile.title, style == Item.Tile.Style.POSTER ? 15 : 17), 4);
         placeholder.setGravity(Gravity.CENTER); placeholder.setPadding(dp(10), 0, dp(10), 0);
         placeholder.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         frame.addView(placeholder, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER));
@@ -757,12 +804,28 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         }
         int fill = ViewGroup.LayoutParams.MATCH_PARENT;
         root.addView(frame, new LinearLayout.LayoutParams(fill, ViewGroup.LayoutParams.WRAP_CONTENT));
-        TextView title = Tv.onArtwork(Tv.oneLine(Tv.heading(context, tile.title, 13.5f, R.color.tv_caption)));
-        title.setDuplicateParentStateEnabled(true); title.setPadding(dp(2), dp(9), dp(2), 0);
+        List<View> captions = new ArrayList<>();
+        if (tile.episodeNumber >= 0) {
+            TextView number = Tv.onArtwork(Tv.oneLine(Tv.text(context, "Episode " + tile.episodeNumber, 12, R.color.tv_text_secondary)));
+            number.setTag("episode-number"); number.setPadding(dp(2), dp(9), dp(2), 0);
+            root.addView(number, new LinearLayout.LayoutParams(fill, ViewGroup.LayoutParams.WRAP_CONTENT)); captions.add(number);
+        }
+        TextView title = Tv.onArtwork(Tv.lines(Tv.heading(context, tile.title, tile.episodeNumber >= 0 ? 15 : 13.5f, R.color.tv_caption), tile.episodeNumber >= 0 ? 2 : 1));
+        title.setTag("tile-title"); title.setDuplicateParentStateEnabled(true); title.setPadding(dp(2), dp(tile.episodeNumber >= 0 ? 3 : 9), dp(2), 0);
         root.addView(title, new LinearLayout.LayoutParams(fill, ViewGroup.LayoutParams.WRAP_CONTENT));
-        TextView subtitle = Tv.onArtwork(Tv.oneLine(Tv.text(context, tile.subtitle.isEmpty() ? " " : tile.subtitle, 12, R.color.tv_text_secondary)));
-        subtitle.setPadding(dp(2), dp(3), dp(2), 0);
-        root.addView(subtitle, new LinearLayout.LayoutParams(fill, ViewGroup.LayoutParams.WRAP_CONTENT));
+        captions.add(title);
+        String detail = tile.episodeNumber >= 0 ? tile.synopsis : tile.subtitle;
+        if (!detail.isEmpty()) {
+            TextView subtitle = Tv.onArtwork(Tv.lines(Tv.text(context, detail, 12, R.color.tv_text_secondary), tile.episodeNumber >= 0 ? 3 : 1));
+            subtitle.setTag(tile.episodeNumber >= 0 ? "episode-description" : "tile-detail"); subtitle.setPadding(dp(2), dp(4), dp(2), 0);
+            root.addView(subtitle, new LinearLayout.LayoutParams(fill, ViewGroup.LayoutParams.WRAP_CONTENT)); captions.add(subtitle);
+        }
+        if (tile.episodeNumber >= 0 && !tile.releaseDate.isEmpty()) {
+            TextView date = Tv.onArtwork(Tv.oneLine(Tv.text(context, tile.releaseDate, 11.5f, R.color.tv_text_tertiary)));
+            date.setTag("episode-release-date"); date.setContentDescription("Release date, " + tile.releaseDate);
+            date.setPadding(dp(2), dp(7), dp(2), 0);
+            root.addView(date, new LinearLayout.LayoutParams(fill, ViewGroup.LayoutParams.WRAP_CONTENT)); captions.add(date);
+        }
         root.setLayoutParams(new LinearLayout.LayoutParams(width > 0 ? width : fill, ViewGroup.LayoutParams.WRAP_CONTENT));
         // Only the artwork grows, rimmed in white over a deep shadow; the caption keeps its size and moves down with
         // the artwork's lower edge, so nothing around the card shifts or rescales.
@@ -776,8 +839,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             frame.animate().cancel();
             frame.animate().scaleX(scale).scaleY(scale).translationZ(has ? dp(18) : 0).setDuration(has ? 200 : 160).start();
             float drop = frame.getHeight() * (scale - 1f) / 2f;
-            title.animate().translationY(drop).setDuration(has ? 200 : 160).start();
-            subtitle.animate().translationY(drop).setDuration(has ? 200 : 160).start();
+            for (View caption : captions) caption.animate().translationY(drop).setDuration(has ? 200 : 160).start();
         });
         if (tile.key.equals(restore)) root.post(root::requestFocus);
         return root;
@@ -896,7 +958,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         boolean icons = false;
         for (Item.Action action : item.actions) icons |= action.style == Item.Action.Style.ICON;
         // tvOS names an icon-only button beneath it while it has focus.
-        TextView caption = icons ? Tv.oneLine(Tv.text(context, "", 12.5f, R.color.tv_text_secondary)) : null;
+        FocusCaption caption = icons ? new FocusCaption(context) : null;
         for (int i = 0; i < item.actions.size(); i++) {
             Item.Action action = item.actions.get(i);
             View button = Tv.button(context, action, this::focused);
@@ -908,10 +970,8 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                 button.setOnFocusChangeListener((v, has) -> {
                     focus.onFocusChange(v, has);
                     if (has && iconOnly) {
-                        caption.setText(action.label);
-                        caption.post(() -> caption.setTranslationX(v.getLeft() + v.getWidth() / 2f - caption.getWidth() / 2f - scroll.getScrollX()));
-                        caption.animate().alpha(1f).setDuration(160).start();
-                    } else if (has || caption.getText().toString().equals(action.label)) caption.animate().alpha(0f).setDuration(120).start();
+                        caption.show(action.label, v, scroll);
+                    } else caption.hide(action.label);
                 });
             }
             if (action.key.equals(restore)) button.post(button::requestFocus);
@@ -921,9 +981,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         LinearLayout column = new LinearLayout(context); column.setOrientation(LinearLayout.VERTICAL);
         column.setClipChildren(false); column.setClipToPadding(false);
         column.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        caption.setAlpha(0f); caption.setGravity(Gravity.CENTER); caption.setMinWidth(dp(160));
-        caption.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        column.addView(caption, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        column.addView(caption);
         column.setLayoutParams(fill());
         return column;
     }
@@ -935,6 +993,66 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         root.addView(actions(item, Gravity.START));
         root.setLayoutParams(fill());
         return root;
+    }
+
+    /** Focus changes just the episode shelf; the season strip stays attached and keeps its focus. */
+    private View episodes(Item item) {
+        LinearLayout root = new LinearLayout(context); root.setOrientation(LinearLayout.VERTICAL);
+        root.setClipChildren(false); root.setClipToPadding(false);
+        HorizontalScrollView seasons = new HorizontalScrollView(context);
+        seasons.setHorizontalScrollBarEnabled(false); seasons.setClipChildren(false); seasons.setClipToPadding(false);
+        LinearLayout row = new LinearLayout(context); row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setClipChildren(false); row.setClipToPadding(false); row.setPadding(gutterStart, dp(14), gutterEnd, dp(22));
+        seasons.addView(row); root.addView(seasons);
+        FrameLayout shelf = new FrameLayout(context); shelf.setClipChildren(false); shelf.setClipToPadding(false);
+        root.addView(shelf, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        Map<String, View> buttons = new java.util.LinkedHashMap<>();
+        String[] selected = {""};
+        java.util.function.Consumer<String> select = key -> {
+            if (key.equals(selected[0])) return;
+            int index = position(item.key);
+            Item current = index >= 0 ? items.get(index) : item;
+            List<Item> pane = current.panes.get(key);
+            if (pane == null || pane.isEmpty()) return;
+            selected[0] = key; current.value = key;
+            for (Item.Action action : current.actions) {
+                action.selected = action.key.equals(key);
+                View button = buttons.get(action.key); if (button != null) button.setActivated(action.selected);
+            }
+            shelf.removeAllViews(); shelf.addView(shelf(pane.get(0), buttons.get(key)));
+            // Keep the existing strip when the surrounding overview contracts into episode browsing.
+            if (index >= 0) snapshots.set(index, snapshot(current));
+            if (current.keyboardInput != null) current.keyboardInput.accept(key);
+        };
+        for (Item.Action action : item.actions) {
+            View button = Tv.button(context, action, this::focused);
+            if (row.getChildCount() > 0) ((LinearLayout.LayoutParams) button.getLayoutParams()).leftMargin = dp(12);
+            View.OnFocusChangeListener focus = button.getOnFocusChangeListener();
+            button.setOnFocusChangeListener((view, has) -> {
+                if (has) select.accept(action.key);
+                focus.onFocusChange(view, has);
+            });
+            button.setOnHoverListener((view, event) -> {
+                if ((event.getActionMasked() == android.view.MotionEvent.ACTION_HOVER_ENTER
+                        || event.getActionMasked() == android.view.MotionEvent.ACTION_HOVER_MOVE) && !view.hasFocus()) view.requestFocus();
+                return false;
+            });
+            button.setOnClickListener(view -> {
+                select.accept(action.key); focused(action.key); Sounds.click();
+                View first = firstFocusable(shelf); if (first != null) first.requestFocus();
+            });
+            button.setOnKeyListener((view, code, event) -> {
+                if (code != android.view.KeyEvent.KEYCODE_DPAD_DOWN) return false;
+                if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                    View first = firstFocusable(shelf); if (first != null) first.requestFocus();
+                }
+                return true;
+            });
+            buttons.put(action.key, button); row.addView(button);
+            if (action.key.equals(restore)) button.post(button::requestFocus);
+        }
+        select.accept(item.value);
+        root.setLayoutParams(fill()); return root;
     }
 
     private View subtitlePreview(Item item) {
@@ -1027,18 +1145,22 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
 
     // States.
     private View message(Item item) {
-        LinearLayout root = column(); root.setGravity(Gravity.CENTER_HORIZONTAL); root.setPadding(gutterStart, dp(52), gutterEnd, dp(12));
+        boolean quiet = item.icon == 0 && item.actions.isEmpty();
+        LinearLayout root = column(); root.setGravity(Gravity.CENTER_HORIZONTAL);
+        root.setPadding(gutterStart, dp(quiet ? 100 : 52), gutterEnd, dp(12));
         if (item.icon != 0) {
             FrameLayout disc = new FrameLayout(context); disc.setBackgroundResource(R.drawable.tv_icon_disc);
             ImageView icon = Tv.icon(context, item.icon, 30, R.color.tv_text);
             disc.addView(icon, new FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER));
             root.addView(disc, new LinearLayout.LayoutParams(dp(64), dp(64)));
         }
-        TextView title = Tv.heading(context, item.title, 22, R.color.tv_text); title.setGravity(Gravity.CENTER); title.setPadding(0, dp(18), 0, 0);
+        TextView title = quiet ? Tv.text(context, item.title, 20, R.color.tv_text_secondary)
+                : Tv.heading(context, item.title, 22, R.color.tv_text);
+        title.setGravity(Gravity.CENTER); title.setPadding(0, quiet ? 0 : dp(18), 0, 0);
         root.addView(title, wrap());
         if (!item.detail.isEmpty()) {
-            TextView detail = Tv.text(context, item.detail, 15, R.color.tv_text_secondary); detail.setGravity(Gravity.CENTER);
-            detail.setLineSpacing(0, 1.22f); detail.setMaxWidth(dp(520)); detail.setPadding(0, dp(8), 0, dp(8)); root.addView(detail, wrap());
+            TextView detail = Tv.text(context, item.detail, quiet ? 14 : 15, quiet ? R.color.tv_text_tertiary : R.color.tv_text_secondary); detail.setGravity(Gravity.CENTER);
+            detail.setLineSpacing(0, 1.22f); detail.setMaxWidth(dp(quiet ? 400 : 520)); detail.setPadding(0, dp(8), 0, dp(8)); root.addView(detail, wrap());
         }
         if (!item.actions.isEmpty()) root.addView(actions(item, Gravity.CENTER_HORIZONTAL));
         root.setLayoutParams(fill());
@@ -1087,8 +1209,8 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
 
         LinearLayout keyboardPanel = new LinearLayout(context); keyboardPanel.setGravity(Gravity.CENTER);
         keyboardPanel.setClipChildren(false); keyboardPanel.setClipToPadding(false);
-        root.addView(keyboardPanel, new LinearLayout.LayoutParams(dp(KEY_COLUMNS * KEY + (KEY_COLUMNS - 1) * KEY_GAP + 12), ViewGroup.LayoutParams.MATCH_PARENT));
-        keyboardPanel.addView(keyboardKeys(item), wrap());
+        root.addView(keyboardPanel, new LinearLayout.LayoutParams(keyboardWidth() + dp(12), ViewGroup.LayoutParams.MATCH_PARENT));
+        keyboardPanel.addView(keyboardKeys(item), new LinearLayout.LayoutParams(keyboardWidth(), ViewGroup.LayoutParams.WRAP_CONTENT));
 
         View divider = new View(context); divider.setBackgroundColor(context.getColor(R.color.tv_hairline));
         LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(dp(1), dp(300));
@@ -1130,6 +1252,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             list.setVerticalFadingEdgeEnabled(false);
             if (item.loading) list.setAdapter(skeletonCards(SEARCH_COLUMNS * 2));
             else list.setAdapter(new TileAdapter(item.tiles, Item.Tile.Style.POSTER, 0, 14, true, SEARCH_COLUMNS, 18));
+            retainScroll(list, "search:" + item.value);
             // Rows scrolled up must not draw over the heading or the search bar; the edge columns keep room to lift.
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1);
             params.leftMargin = params.rightMargin = -dp(12);
@@ -1139,9 +1262,8 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             // search, or "No results" after one.
             LinearLayout empty = new LinearLayout(context); empty.setOrientation(LinearLayout.VERTICAL); empty.setGravity(Gravity.CENTER);
             empty.setPadding(0, 0, 0, dp(12 + 40));
-            empty.addView(Tv.icon(context, R.drawable.ic_tv_search, 44, R.color.tv_text_tertiary));
-            TextView message = Tv.heading(context, item.detail.isEmpty() ? "Films and series" : item.detail, 20, R.color.tv_text_secondary);
-            message.setGravity(Gravity.CENTER); message.setPadding(0, dp(14), 0, 0);
+            TextView message = Tv.text(context, item.detail.isEmpty() ? "Search films and series" : item.detail, 18, R.color.tv_text_secondary);
+            message.setGravity(Gravity.CENTER);
             empty.addView(message, wrap());
             results.addView(empty, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         }
@@ -1257,7 +1379,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         }
     }
 
-    /** Letters, then digits and punctuation, then accented letters: 26 characters each, six to a row. */
+    /** Letters, digits/punctuation and language-specific accents, normally six characters to a row. */
     private static final String[] KEY_PAGES = {
             "abcdefghijklmnopqrstuvwxyz",
             "1234567890-':&!?.,()#+@/\"_",
@@ -1268,35 +1390,48 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     private int keyboardPage;
 
     /**
-     * A tvOS-style grid with no gaps: every key is one cell, or exactly two cells for Space, Delete and the page
-     * switches, so the rows line up on both edges.
+     * Fill short character rows with Space/Delete. If only one cell remains, spread the five letters evenly
+     * and give the commands their own row. Every offered language and character page fills both edges.
      */
     private LinearLayout keyboardKeys(Item item) {
-        LinearLayout keys = new LinearLayout(context); keys.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout keys = new LinearLayout(context); keys.setOrientation(LinearLayout.VERTICAL); keys.setTag("keyboard-keys");
         keys.setClipChildren(false); keys.setClipToPadding(false);
         StringBuilder query = new StringBuilder(item.value);
+        keyboardQuery = query;
         Runnable[] rebuild = new Runnable[1];
         rebuild[0] = () -> {
             keys.removeAllViews();
-            String characters = KEY_PAGES[keyboardPage];
+            String characters = keyboardCharacters(item, keyboardPage);
             LinearLayout row = null;
             for (int i = 0; i < characters.length(); i++) {
                 if (i % KEY_COLUMNS == 0) row = keyboardRow(keys);
                 String character = characters.substring(i, i + 1);
                 addKeyboardButton(row, item, character, "Type " + character, 1, () -> type(item, query, character));
             }
-            addKeyboardButton(row, item, "Space", "Insert a space", 2, () -> type(item, query, " "));
-            addKeyboardButton(row, item, "⌫", "Delete last character", 2, () -> {
+            int used = characters.length() % KEY_COLUMNS;
+            if (used == KEY_COLUMNS - 1) {
+                // Five letters cannot share a row with two usable commands. Their backgrounds fill
+                // the row evenly, without an invisible sixth key or a large blank tail.
+                for (int i = 0; i < row.getChildCount(); i++) {
+                    LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) row.getChildAt(i).getLayoutParams();
+                    params.width = 0; params.weight = 1;
+                }
+            }
+            int remaining = KEY_COLUMNS - used;
+            if (used == 0 || remaining < 2) { row = keyboardRow(keys); remaining = KEY_COLUMNS; }
+            addKeyboardButton(row, item, "Space", "Insert a space", (remaining + 1) / 2, () -> type(item, query, " "));
+            addKeyboardButton(row, item, "⌫", "Delete last character", remaining / 2, () -> {
                 if (query.length() > 0) query.deleteCharAt(query.length() - 1);
                 if (item.keyboardInput != null) item.keyboardInput.accept(query.toString());
             });
             row = keyboardRow(keys);
             for (int other = 0; other < KEY_PAGES.length; other++) if (other != keyboardPage) {
                 int target = other;
-                addKeyboardButton(row, item, KEY_PAGE_NAMES[other], "Show " + KEY_PAGE_NAMES[other] + " keys", 2, () -> {
+                String name = other == 0 ? KeyboardLanguages.alphabet(item.keyboardLanguage).substring(0, 3) : KEY_PAGE_NAMES[other];
+                addKeyboardButton(row, item, name, "Show " + name + " keys", 2, () -> {
                     keyboardPage = target; rebuild[0].run();
                     keys.post(() -> {
-                        View first = keys.findViewWithTag(item.key + ":" + KEY_PAGES[target].charAt(0));
+                        View first = keys.findViewWithTag(item.key + ":" + keyboardCharacters(item, target).charAt(0));
                         if (first != null) first.requestFocus();
                     });
                 });
@@ -1305,13 +1440,31 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                 query.setLength(0);
                 if (item.keyboardInput != null) item.keyboardInput.accept("");
             });
+            row = keyboardRow(keys);
+            addKeyboardButton(row, item, item.keyboardLanguage.toUpperCase(java.util.Locale.ROOT), "Change keyboard language", 3, () -> {
+                if (item.keyboardLanguages.size() == 1) { if (item.action != null) item.action.run(); return; }
+                int next = (item.keyboardLanguages.indexOf(item.keyboardLanguage) + 1) % item.keyboardLanguages.size();
+                item.keyboardLanguage = item.keyboardLanguages.get(next); keyboardPage = 0;
+                if (item.keyboardLanguageChanged != null) item.keyboardLanguageChanged.accept(item.keyboardLanguage);
+                rebuild[0].run(); keys.post(() -> { View target = keys.findViewWithTag(item.key + ":Language"); if (target != null) target.requestFocus(); });
+            });
+            addKeyboardButton(row, item, "Voice", "Voice input", 3, () -> {
+                if (item.keyboardVoice != null) item.keyboardVoice.accept(item.keyboardLanguage);
+            });
         };
         rebuild[0].run();
         return keys;
     }
+    private int keyboardWidth() { return KEY_COLUMNS * dp(KEY) + (KEY_COLUMNS - 1) * dp(KEY_GAP); }
+    private static String keyboardCharacters(Item item, int page) {
+        return page == 0 ? KeyboardLanguages.alphabet(item.keyboardLanguage)
+                : page == 2 ? KeyboardLanguages.accents(item.keyboardLanguage) : KEY_PAGES[page];
+    }
     private LinearLayout keyboardRow(LinearLayout keys) {
         LinearLayout row = new LinearLayout(context); row.setClipChildren(false); row.setClipToPadding(false);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(KEY));
+        // Align the key backgrounds, not the baselines of the smaller Space/Delete labels.
+        row.setBaselineAligned(false);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(keyboardWidth(), dp(KEY));
         if (keys.getChildCount() > 0) params.topMargin = dp(KEY_GAP);
         keys.addView(row, params);
         return row;
@@ -1324,16 +1477,23 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         TextView key = Tv.heading(context, label, label.length() == 1 ? 16 : 12, R.color.tv_on_glass);
         key.setGravity(Gravity.CENTER); key.setSingleLine(true); key.setIncludeFontPadding(false);
         key.setContentDescription(description);
-        key.setBackgroundResource(R.drawable.keycap);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(cells * KEY + (cells - 1) * KEY_GAP), dp(KEY));
-        if (row.getChildCount() > 0) params.leftMargin = dp(KEY_GAP);
+        key.setPadding(0, 0, 0, 0);
+        if (description.equals("Voice input") || description.equals("Change keyboard language")) {
+            android.graphics.drawable.Drawable glyph = context.getDrawable(description.equals("Voice input") ? R.drawable.ic_tv_microphone : R.drawable.ic_tv_language).mutate();
+            glyph.setTintList(context.getColorStateList(R.color.tv_on_glass)); glyph.setBounds(0, 0, dp(15), dp(15));
+            key.setCompoundDrawables(glyph, null, null, null); key.setCompoundDrawablePadding(dp(6)); key.setPadding(dp(12), 0, dp(10), 0);
+        }
+        key.setBackgroundResource(R.drawable.tv_keyboard_key);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(cells * dp(KEY) + (cells - 1) * dp(KEY_GAP), dp(KEY));
+        if (row.getChildCount() > 0) params.setMarginStart(dp(KEY_GAP));
         row.addView(key, params);
         // Letters and Space tap; Delete and Clear fall. Page switches use the plain select.
         boolean erase = description.startsWith("Delete") || description.startsWith("Clear");
         boolean typed = cells == 1 || label.equals("Space");
         Runnable press = erase ? () -> { Sounds.play(Sounds.Sound.DELETE); action.run(); }
                 : typed ? () -> { Sounds.at(Sounds.Sound.KEY, key); action.run(); } : action;
-        Tv.control(key, item.key + ":" + label, press, this::focused, 1.1f, false);
+        // The white focus fill keeps keys on their grid, including wide Space/Delete keys.
+        Tv.control(key, item.key + ":" + (description.equals("Change keyboard language") ? "Language" : label), press, this::focused, 1f, false);
         if (key.getTag() != null && key.getTag().equals(restore)) key.post(key::requestFocus);
     }
 
@@ -1350,7 +1510,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     public static final class Layout extends LinearLayoutManager {
         private final int margin;
         @Nullable private View navigationTarget;
-        public void navigationTarget(View target) { navigationTarget = target; }
+        public void navigationTarget(@Nullable View target) { navigationTarget = target; }
         /** Each block's height as last measured, so the distance to the top is known after the top has scrolled away. */
         private final android.util.SparseIntArray heights = new android.util.SparseIntArray();
         public Layout(Context context, int orientation, int marginDp) { super(context, orientation, false); margin = Tv.dp(context, marginDp); }
@@ -1403,6 +1563,8 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
          * sideways move out of itself (the framework would otherwise jump from the last tile or button up to a tab).
          */
         @Override public View onInterceptFocusSearch(View focused, int direction) {
+            if (direction == View.FOCUS_UP && getOrientation() == HORIZONTAL
+                    && navigationTarget != null && navigationTarget.isShown()) return navigationTarget;
             if (direction == View.FOCUS_UP && getOrientation() == VERTICAL) return upFromTop(focused);
             if (direction != View.FOCUS_LEFT && direction != View.FOCUS_RIGHT) return null;
             View item = findContainingItemView(focused);

@@ -10,6 +10,7 @@
 #include <libtorrent/torrent_info.hpp>
 #include <libtorrent/torrent_status.hpp>
 #include <libtorrent/version.hpp>
+#include <libtorrent/write_resume_data.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -127,25 +128,24 @@ engine::engine(engine_config cfg)
 	m_thread = std::thread([this] { loop(); });
 }
 
+void engine::request_stop()
+{
+	{ std::lock_guard<std::mutex> lock(m_wake_mutex); m_stop = true; }
+	m_wake_cv.notify_all();
+	std::lock_guard<std::mutex> lock(m_mutex);
+	for (auto& [id, r] : m_readers) r->cancelled = true;
+	for (auto const* streams : {&m_streams, &m_retiring}) for (auto const& [id, t] : *streams)
+	{
+		t->failed = true; t->error_type = error_kind::closed;
+		t->changed.notify_all();
+		if (t->cache) t->cache->close();
+	}
+}
+
 engine::~engine()
 {
-	{
-		std::lock_guard<std::mutex> lock(m_wake_mutex);
-		m_stop = true;
-	}
-	m_wake_cv.notify_all();
+	request_stop();
 	if (m_thread.joinable()) m_thread.join();
-	{
-		std::lock_guard<std::mutex> lock(m_mutex);
-		for (auto& [id, r] : m_readers) r->cancelled = true;
-		for (auto& [id, t] : m_streams)
-		{
-			t->failed = true;
-			t->error_type = error_kind::closed;
-			t->changed.notify_all();
-			if (t->cache) t->cache->close();
-		}
-	}
 	m_session.reset();
 }
 
@@ -227,7 +227,12 @@ std::uint64_t engine::add(source const& src)
 				+ " pieces need a cache of at least " + mib(std::int64_t(piece_length) * m_config.min_slots + cache_storage_overhead) + ".");
 		}
 	}
-	for (auto const& url : src.trackers) p.trackers.push_back(url);
+	for (auto const& url : src.trackers)
+		if (std::find(p.trackers.begin(), p.trackers.end(), url) == p.trackers.end()) p.trackers.push_back(url);
+	if (!src.info_hash.empty() && src.metainfo.empty() && src.magnet.empty() && p.trackers.empty())
+	{
+		for (auto const& url : src.fallback_trackers) p.trackers.push_back(url);
+	}
 	for (auto const& peer : src.peers) p.peers.push_back(parse_peer(peer));
 	p.save_path = m_config.cache_dir;
 	// Nothing downloads until a file is chosen, and then only the read-ahead window.
@@ -359,6 +364,28 @@ void engine::add_peers(std::uint64_t const torrent, std::vector<std::string> con
 	for (auto const& ep : endpoints) t->handle.connect_peer(ep);
 }
 
+void engine::set_demand(std::uint64_t const torrent, std::int64_t const bytes_per_second, int const ahead_seconds)
+{
+	auto t = find_stream(torrent);
+	{ std::lock_guard<std::mutex> lock(m_mutex);
+	  t->bitrate = std::clamp<std::int64_t>(bytes_per_second, 16000, 125000000);
+	  t->ahead_seconds = std::clamp(ahead_seconds, 1, m_config.read_ahead_seconds); }
+	wake();
+}
+
+std::string engine::metainfo(std::uint64_t const torrent)
+{
+	auto t = find_stream(torrent);
+	lt::add_torrent_params params;
+	auto info = t->handle.torrent_file();
+	if (info) params.ti = std::make_shared<lt::torrent_info>(*info);
+	if (!params.ti) throw engine_error(error_kind::metadata_failed, "Metadata is not available");
+	for (auto const& tracker : t->handle.trackers()) params.trackers.push_back(tracker.url);
+	auto bytes = lt::write_torrent_file_buf(params, lt::write_flags::allow_missing_piece_layer);
+	if (bytes.size() > (8 << 20)) throw engine_error(error_kind::bad_source, "Metadata is too large");
+	return std::string(bytes.begin(), bytes.end());
+}
+
 void engine::remove(std::uint64_t const torrent)
 {
 	std::shared_ptr<stream> t;
@@ -368,6 +395,7 @@ void engine::remove(std::uint64_t const torrent)
 		if (i == m_streams.end()) return;
 		t = i->second;
 		m_streams.erase(i);
+		m_retiring[torrent] = t;
 		t->failed = true;
 		t->error = "The torrent was closed";
 		t->error_type = error_kind::closed;
@@ -376,8 +404,26 @@ void engine::remove(std::uint64_t const torrent)
 		t->changed.notify_all();
 		if (t->cache) t->cache->close();
 	}
-	try { m_session->remove_torrent(t->handle); }
-	catch (std::exception const&) {}
+	std::weak_ptr<piece_cache> retired;
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		retired = t->cache; t->cache.reset();
+	}
+	m_session->remove_torrent(t->handle);
+	auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+	{
+		std::unique_lock<std::mutex> lock(m_mutex);
+		while (!t->removed && !m_stop) {
+			if (t->changed.wait_until(lock, deadline) == std::cv_status::timeout)
+				throw engine_error(error_kind::timeout, "Torrent removal did not finish");
+		}
+		m_retiring.erase(torrent);
+	}
+	while (!retired.expired()) {
+		if (std::chrono::steady_clock::now() >= deadline)
+			throw engine_error(error_kind::timeout, "Torrent storage did not drain");
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	}
 }
 
 torrent_stats engine::stats(std::uint64_t const torrent)
@@ -399,6 +445,8 @@ torrent_stats engine::stats(std::uint64_t const torrent)
 	}
 	ret.hash_failures = t->hash_failures;
 	ret.evictions_requested = t->evictions;
+	ret.urgent_reservation_failures = t->urgent_reservation_failures; ret.obsolete_partials = t->obsolete_partials;
+	ret.verified_read_bytes = t->verified_read_bytes;
 	try
 	{
 		lt::torrent_status const st = t->handle.status();
@@ -504,6 +552,7 @@ int engine::read(std::uint64_t const id, std::int64_t const position, char* cons
 	if (!cache->read_verified(req.piece, req.start, {out, chunk}, error)) return would_block;
 	if (error) throw engine_error(error_kind::engine_failed, "Cache read failed: " + error.ec.message());
 	r->waiting = -1;
+	t->verified_read_bytes += chunk;
 	r->position = position + chunk;
 	// The window follows the reader; moving into the next piece is worth an immediate update.
 	if (req.start + chunk == fs.piece_size(req.piece)) wake();
@@ -583,6 +632,9 @@ void engine::handle_alerts()
 			std::lock_guard<std::mutex> lock(m_mutex);
 			for (auto const& [id, s] : m_streams)
 				if (s->handle == ta->handle) t = s;
+			for (auto const& [id, s] : m_retiring)
+				if (s->handle == ta->handle) t = s;
+			if (t && lt::alert_cast<lt::torrent_removed_alert>(a)) { t->removed = true; t->changed.notify_all(); }
 		}
 		if (!t) continue;
 
@@ -595,6 +647,8 @@ void engine::handle_alerts()
 			std::shared_ptr<piece_cache> cache;
 			{
 				std::lock_guard<std::mutex> lock(m_mutex);
+				// A queued completion must not reattach storage while remove() is draining it.
+				if (t->failed) continue;
 				if (!t->cache && t->info)
 					if (auto* disk = m_disk.load()) t->cache = disk->find(t->info_hash);
 				cache = t->cache;
@@ -633,6 +687,7 @@ void engine::update(std::shared_ptr<stream> const& t)
 	std::shared_ptr<lt::torrent_info const> info;
 	int file;
 	std::int64_t bitrate;
+	int ahead_seconds;
 	std::int64_t anchor;
 	std::vector<int> waiting;
 	{
@@ -648,6 +703,7 @@ void engine::update(std::shared_ptr<stream> const& t)
 		info = t->info;
 		file = t->file;
 		bitrate = t->bitrate;
+		ahead_seconds = t->ahead_seconds > 0 ? t->ahead_seconds : m_config.read_ahead_seconds;
 		std::shared_ptr<reader> primary;
 		for (auto i = t->readers.begin(); i != t->readers.end();)
 		{
@@ -678,7 +734,7 @@ void engine::update(std::shared_ptr<stream> const& t)
 	bool const keep_edges = slots >= 8;
 	int const margin = 1 /* free spare */ + 1 /* behind the reader */ + (keep_edges ? 2 : 0);
 	int const max_ahead = std::max(1, slots - margin - int(waiting.size()));
-	int const for_time = int(std::ceil(double(m_config.read_ahead_seconds) * double(bitrate) / fs.piece_length()));
+	int const for_time = int(std::ceil(double(ahead_seconds) * double(bitrate) / fs.piece_length()));
 	int const ahead = std::min(max_ahead, std::max(m_config.min_read_ahead_pieces, for_time));
 
 	std::vector<bool> wanted(std::size_t(num_pieces), false);
@@ -708,12 +764,12 @@ void engine::update(std::shared_ptr<stream> const& t)
 
 	std::vector<lt::download_priority_t> prio(std::size_t(num_pieces), lt::dont_download);
 	std::vector<piece_index_t> urgent;
-	int need = 0;
+	int need = 0, urgent_need = 0, obsolete_partials = 0;
 	for (std::size_t i = 0; i < desired.size(); ++i)
 	{
 		piece_index_t const p = desired[i];
 		if (cache->verified(p)) continue;
-		if (!cache->reserve(p)) { ++need; continue; }
+		if (!cache->reserve(p)) { ++need; if (i < urgent_count) ++urgent_need; continue; }
 		bool const is_urgent = i < urgent_count;
 		prio[std::size_t(static_cast<int>(p))] = is_urgent ? lt::top_priority : lt::default_priority;
 		if (is_urgent) urgent.push_back(p);
@@ -728,12 +784,14 @@ void engine::update(std::shared_ptr<stream> const& t)
 			continue;
 		}
 		if (pr != lt::dont_download) continue;
+		if (kind == piece_cache::kind::partial && !keep[std::size_t(static_cast<int>(p))]) ++obsolete_partials;
 		if (kind == piece_cache::kind::partial || kind == piece_cache::kind::complete)
 			pr = lt::low_priority; // finish what was started; then it can be evicted
 		else if (kind == piece_cache::kind::reserved && !keep[std::size_t(static_cast<int>(p))])
 			cache->unreserve(p);
 	}
 
+	t->urgent_reservation_failures = urgent_need; t->obsolete_partials = obsolete_partials;
 	if (t->priorities_stale.exchange(false)) t->applied.clear();
 	if (prio != t->applied)
 	{

@@ -196,7 +196,7 @@ public final class SubtitleDownloader {
 
     /** Recognises the format from the content, since sites often serve subtitles as text/plain. */
     @Nullable private static Text identify(String text, String declared) {
-        String body = text.startsWith("﻿") ? text.substring(1) : text;
+        String body = text.startsWith("\uFEFF") ? text.substring(1) : text;
         String head = body.substring(0, Math.min(body.length(), 4000)).trim();
         if (head.startsWith("WEBVTT")) return new Text(MimeTypes.TEXT_VTT, body);
         if (head.startsWith("[Script Info]") || head.contains("[Events]")) return new Text(MimeTypes.TEXT_SSA, body);

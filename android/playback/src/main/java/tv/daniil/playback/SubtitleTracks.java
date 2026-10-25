@@ -35,11 +35,13 @@ public final class SubtitleTracks {
         @Nullable public final String language;
         public final boolean selected, preferred;
         @Nullable final String formatId;
-        final TrackGroup group;
+        @Nullable final TrackGroup group;
+        public final boolean external;
         final int index;
 
         Track(String id, String label, Format format, Tracks.Group group, int index) {
             this.id = id;
+            this.external = false;
             this.label = label;
             this.language = format.language;
             this.selected = group.isTrackSelected(index);
@@ -48,6 +50,15 @@ public final class SubtitleTracks {
             this.group = group.getMediaTrackGroup();
             this.index = index;
         }
+        Track(String id, String label, @Nullable String language, boolean selected) {
+            this.id = id; this.label = label; this.language = language; this.selected = selected;
+            preferred = false; formatId = id; group = null; index = -1; external = true;
+        }
+        Track(Track original, boolean selected) {
+            id = original.id; label = original.label; language = original.language; this.selected = selected;
+            preferred = original.preferred; formatId = original.formatId; group = original.group; index = original.index; external = original.external;
+        }
+
     }
 
     /**
@@ -108,7 +119,7 @@ public final class SubtitleTracks {
         TrackSelectionParameters.Builder parameters = player.getTrackSelectionParameters().buildUpon()
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, track == null);
-        if (track != null) parameters.addOverride(new TrackSelectionOverride(track.group, track.index));
+        if (track != null && track.group != null) parameters.addOverride(new TrackSelectionOverride(track.group, track.index));
         player.setTrackSelectionParameters(parameters.build());
     }
 

@@ -215,14 +215,15 @@ public abstract class AppHarness {
         WatchActivity activity = watch(); assertNotNull(activity); Rect bounds = new Rect();
         instrumentation.runOnMainSync(() -> { assertTrue(activity.findViewById(id).getGlobalVisibleRect(bounds)); }); pointer(bounds.centerX(), bounds.centerY(), mouse);
     }
-    /** Follow the explicit source-selection UI, using a real pointer on its first playable row. */
+    /** Play is automatic; Sources still exercises explicit pointer selection when that page is open. */
     void chooseFirstSource() {
         Rect bounds = new Rect();
         waitUntil("playable source row", 30000, () -> {
+            if (watch() != null) return true;
             bounds.setEmpty(); browse.onActivity(activity -> sourceBounds(activity.findViewById(R.id.page_rows), bounds));
             return !bounds.isEmpty();
         });
-        pointer(bounds.centerX(), bounds.centerY(), true);
+        if (!bounds.isEmpty()) pointer(bounds.centerX(), bounds.centerY(), true);
     }
     private boolean sourceBounds(android.view.View view, Rect bounds) {
         if (view.isClickable() && String.valueOf(view.getTag()).startsWith("source:") && view.getGlobalVisibleRect(bounds)) return true;
@@ -232,7 +233,7 @@ public abstract class AppHarness {
         }
         return false;
     }
-    /** Exercise the player's internal automatic-recovery mode directly; normal Play now requires a source choice. */
+    /** Exercise the player's internal automatic-recovery mode directly; normal Play uses this same automatic mode. */
     void startAutomaticFixturePlayback() throws Exception {
         Title title = Title.parse(services.store.addons().get(0).id, new JSONObject()
                 .put("id", "fixture:film").put("type", "movie").put("name", "Generated Film"));

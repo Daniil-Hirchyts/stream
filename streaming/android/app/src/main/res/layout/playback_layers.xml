@@ -74,11 +74,12 @@
             android:background="@drawable/scrim_bottom" />
 
         <LinearLayout
+            android:id="@+id/player_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="top"
             android:layout_marginStart="@dimen/safe_horizontal"
-            android:layout_marginTop="@dimen/safe_vertical"
+            android:layout_marginTop="22dp"
             android:layout_marginEnd="@dimen/safe_horizontal"
             android:clipChildren="false"
             android:clipToPadding="false"
@@ -140,61 +141,55 @@
                     android:visibility="gone" />
             </LinearLayout>
 
-            <!-- The time of day, shown with the overlay; Settings → Clock picks its format or turns it off. -->
-            <TextClock
-                android:id="@+id/player_clock"
-                style="@style/Text.Time"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="24dp"
-                android:importantForAccessibility="no"
-                android:shadowColor="#B3000000"
-                android:shadowDy="1"
-                android:shadowRadius="6"
-                android:textColor="@color/tv_text_on_artwork"
-                android:visibility="gone" />
-
             <ImageView
                 android:id="@+id/control_options"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_gravity="top"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:layout_marginStart="24dp"
                 android:background="@drawable/tv_button_round"
                 android:contentDescription="@string/player_audio_subtitles"
-                android:padding="13dp"
+                android:padding="10dp"
                 android:src="@drawable/ic_tv_subtitles"
+                android:tint="@color/tv_on_glass" />
+
+            <ImageView
+                android:id="@+id/control_watched"
+                android:layout_gravity="top"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="12dp"
+                android:background="@drawable/tv_button_round"
+                android:contentDescription="Mark watched"
+                android:padding="10dp"
+                android:src="@drawable/ic_tv_check"
                 android:tint="@color/tv_on_glass" />
 
             <!-- Quality, speed and subtitle style; the button beside it holds the audio and subtitle choices. -->
             <ImageView
                 android:id="@+id/control_settings"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_gravity="top"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:layout_marginStart="12dp"
                 android:background="@drawable/tv_button_round"
                 android:contentDescription="@string/player_settings"
-                android:padding="13dp"
+                android:padding="10dp"
                 android:src="@drawable/ic_tv_settings"
                 android:tint="@color/tv_on_glass" />
 
         </LinearLayout>
 
+        <!-- Retain the shared binding without a visible or focusable centre control. -->
         <ImageView
             android:id="@+id/center_icon"
-            android:layout_width="72dp"
-            android:layout_height="72dp"
-            android:layout_gravity="center"
-            android:background="@drawable/tv_player_disc"
-            android:contentDescription="@string/control_play"
-            android:padding="22dp"
-            android:src="@drawable/ic_play"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:importantForAccessibility="no"
             android:visibility="gone" />
 
-
-
-        <!-- The timeline, low on the screen, with the times under its ends. The remote plays and pauses (OK), skips
-             (left and right) and opens the menu; a pointer clicks the centre glyph or drags the timeline. The
-             transport buttons stay in the layout, hidden, because the shared player binds them. -->
+        <!-- Tap the timeline to pause/resume; drag to seek. Time and feedback follow the playhead,
+             bounded before the end-time label. Hidden transport views retain the shared bindings. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -204,69 +199,96 @@
             android:layout_marginBottom="22dp"
             android:orientation="vertical">
 
-            <SeekBar
+            <tv.daniil.stream.ui.PlayerTimeline
                 android:id="@+id/progress"
                 style="@android:style/Widget.Material.SeekBar"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
                 android:contentDescription="@string/control_seek"
                 android:max="1000"
-                android:maxHeight="6dp"
-                android:minHeight="6dp"
-                android:progressDrawable="@drawable/progress"
+                android:background="@null"
+                android:defaultFocusHighlightEnabled="false"
+                android:maxHeight="4dp"
+                android:minHeight="4dp"
+                android:progressDrawable="@drawable/tv_timeline_track"
                 android:splitTrack="false"
+                android:thumb="@drawable/tv_timeline_thumb"
+                android:thumbOffset="4dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
                 android:thumbTint="@color/tv_focus" />
 
             <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="-10dp"
-                android:minHeight="28dp">
+                android:layout_marginTop="-20dp"
+                android:minHeight="24dp">
 
-                <!-- Seek feedback lives beside the timeline times, leaving the picture clear. -->
-                <!-- No box, and no taller than the times' row, so showing it moves nothing. -->
+                <!-- Time is the anchor; feedback changes without moving it. At the right edge the
+                     feedback moves before the time, keeping the readout clear of the remaining time. -->
                 <LinearLayout
-                    android:id="@+id/seek_bubble"
+                    android:id="@+id/timeline_info"
                     android:layout_width="wrap_content"
-                    android:layout_height="28dp"
-                    android:layout_gravity="center"
+                    android:layout_height="24dp"
+                    android:clipChildren="false"
                     android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:accessibilityLiveRegion="polite"
-                    android:visibility="gone">
-
-                    <ImageView
-                        android:id="@+id/seek_icon"
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:importantForAccessibility="no"
-                        android:tint="@color/tv_text" />
+                    android:orientation="horizontal">
 
                     <TextView
-                        android:id="@+id/seek_label"
-                        style="@style/Text.Time"
-                        android:layout_marginStart="8dp"
-                        android:textSize="18sp"
-                        android:shadowColor="#B3000000"
-                        android:shadowDy="1"
-                        android:shadowRadius="6" />
+                        android:id="@+id/elapsed"
+                        style="@style/TvTimelineTime"
+                        android:textColor="@color/tv_text" />
+
+                    <FrameLayout
+                        android:id="@+id/timeline_status"
+                        android:layout_width="wrap_content"
+                        android:layout_height="match_parent"
+                        android:layout_marginStart="6dp">
+
+                        <ImageView
+                            android:id="@+id/timeline_paused"
+                            android:layout_width="14dp"
+                            android:layout_height="14dp"
+                            android:layout_gravity="center_vertical"
+                            android:background="@drawable/tv_timeline_pause_ring"
+                            android:contentDescription="Paused"
+                            android:padding="3dp"
+                            android:src="@drawable/ic_pause"
+                            android:tint="@color/tv_text_on_artwork"
+                            android:visibility="gone" />
+
+                        <LinearLayout
+                            android:id="@+id/seek_bubble"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:accessibilityLiveRegion="polite"
+                            android:visibility="gone">
+
+                            <ImageView
+                                android:id="@+id/seek_icon"
+                                android:layout_width="12dp"
+                                android:layout_height="12dp"
+                                android:importantForAccessibility="no"
+                                android:tint="@color/tv_text_on_artwork" />
+
+                            <TextView
+                                android:id="@+id/seek_label"
+                                style="@style/TvTimelineTime"
+                                android:layout_marginStart="3dp"
+                                android:textSize="12sp"
+                                android:textColor="@color/tv_text_on_artwork" />
+                        </LinearLayout>
+                    </FrameLayout>
                 </LinearLayout>
 
                 <TextView
-                    android:id="@+id/elapsed"
-                    style="@style/Text.Time"
-                    android:layout_gravity="start|center_vertical"
-                    android:shadowColor="#B3000000"
-                    android:shadowDy="1"
-                    android:shadowRadius="6" />
-
-                <TextView
                     android:id="@+id/remaining"
-                    style="@style/Text.Time"
+                    style="@style/TvTimelineTime"
+                    android:layout_height="24dp"
                     android:layout_gravity="end|center_vertical"
-                    android:shadowColor="#B3000000"
-                    android:shadowDy="1"
-                    android:shadowRadius="6"
+                    android:gravity="center_vertical"
                     android:textColor="@color/tv_text_on_artwork" />
 
                 <ImageView

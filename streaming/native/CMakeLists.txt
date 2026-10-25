@@ -110,6 +110,7 @@ if(DTV_HOST)
 		tests/test_piece_cache.cpp
 		tests/test_eviction.cpp
 		tests/test_streaming.cpp
+        tests/test_startup.cpp
 	)
 	target_include_directories(dtv-tests PRIVATE tests)
 	target_link_libraries(dtv-tests PRIVATE dtv_engine dtv_fixtures)

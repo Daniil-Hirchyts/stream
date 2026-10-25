@@ -39,4 +39,6 @@ interface Navigator {
     void importFile();
     void notices();
     default void errorReport() {}
+    default void keyboardLanguage(String language) {}
+    default void voiceInput(String language) {}
 }

@@ -37,6 +37,13 @@ public final class TorrentSourcesTest {
                     "audio/eac3", "audio/ac3", "audio/true-hd", "audio/vnd.dts").contains(mime);
         }
     }
+    @Test public void magnetBootstrapPeersSurviveMetadataRecoveryWithoutDns() throws Exception {
+        TorrentEngine.Source source = TorrentEngine.Source.magnet("magnet:?xt=urn:btih:" + "1".repeat(40)
+                + "&x.pe=127.0.0.1%3A58134&x.pe=%5B%3A%3A1%5D%3A58134&x.pe=host.invalid%3A80&x.pe=999.0.0.1%3A80&x.pe=127.0.0.1%3A99999");
+        java.lang.reflect.Field peers = TorrentEngine.Source.class.getDeclaredField("peers"); peers.setAccessible(true);
+        assertArrayEquals(new String[]{"127.0.0.1:58134", "[::1]:58134"}, (String[]) peers.get(source));
+    }
+
     @Before public void avcOnlyTv() {
         SoftwareDecoders.available = false;
         ShadowMediaCodecList.reset();

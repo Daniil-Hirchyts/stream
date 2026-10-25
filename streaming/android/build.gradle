@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application' version '8.10.1' apply false
     id 'com.android.library' version '8.10.1' apply false
+    id 'org.jetbrains.kotlin.android' version '2.2.10' apply false
 }
 // The shared library lives outside this build; keep its output here so other apps never share it.
 project(':playback') {

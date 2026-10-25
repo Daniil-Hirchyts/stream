@@ -26,7 +26,7 @@ import tv.daniil.stream.R;
  * in place beneath it.
  */
 public final class IntroView extends View {
-    private static final String NAME = "Stream";
+    private static final String NAME = "STREAM";
     /** The launcher mark's play symbol, in its 108-unit viewport. */
     private static final String MARK = "M40.50,42.00 L40.50,66.00 Q40.50,72.50 46.15,69.28 L67.35,57.22 Q73.00,54.00 67.35,50.78 L46.15,38.72 Q40.50,35.50 40.50,42.00 Z";
     private static final long TRACE_MS = 900, FILL_MS = 520, LETTER_MS = 420, LETTER_STAGGER = 55, EXIT_MS = 700;
@@ -38,14 +38,16 @@ public final class IntroView extends View {
     private final Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG), poster = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint name = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint[] lights = new Paint[3];
-    private final Shader halo = new RadialGradient(56.75f, 54f, 46f, new int[]{0x55FFFFFF, 0x1A8EA2FF, 0x00000000}, new float[]{0f, 0.45f, 1f}, Shader.TileMode.CLAMP);
+    private final Shader halo = new RadialGradient(56.75f, 54f, 46f, new int[]{0x55FFFFFF, 0x1AEBEBF5, 0x00000000}, new float[]{0f, 0.45f, 1f}, Shader.TileMode.CLAMP);
     private final Shader glass = new LinearGradient(0, 35.5f, 0, 72.5f, 0xB2FFFFFF, 0x5CFFFFFF, Shader.TileMode.CLAMP);
-    private final Shader sheen = new LinearGradient(-9f, 0, 9f, 0, new int[]{0x00FFFFFF, 0x99FFFFFF, 0x00FFFFFF}, null, Shader.TileMode.CLAMP);
+    private final Shader sheen = new LinearGradient(-9f, 0, 9f, 0,
+            new int[]{0x00FFFFFF, 0x99FFFFFF, 0x00FFFFFF}, null, Shader.TileMode.CLAMP);
     private Shader pool;
     private final Matrix matrix = new Matrix();
     private final Path mark = new Path(), traced = new Path();
     private final PathMeasure measure = new PathMeasure();
     private final RectF rect = new RectF();
+    private final RectF markBounds = new RectF();
     private final List<Bitmap> posters = new ArrayList<>();
     private final List<Long> posterArrived = new ArrayList<>();
     private final List<BitmapShader> posterShaders = new ArrayList<>();
@@ -58,17 +60,19 @@ public final class IntroView extends View {
         setBackgroundColor(context.getColor(R.color.tv_background));
         setClickable(true); setFocusable(false);
         setContentDescription("Loading " + NAME);
-        int[] colours = {0x4D3B5BFF, 0x388E44FF, 0x2E19B5FF};
+        int[] colours = {0x332C2C2E, 0x26202024, 0x1FEBEBF5};
         for (int i = 0; i < lights.length; i++) {
             lights[i] = new Paint(Paint.ANTI_ALIAS_FLAG);
             lights[i].setShader(new RadialGradient(0, 0, 1, colours[i], Color.TRANSPARENT, Shader.TileMode.CLAMP));
         }
         stroke.setStyle(Paint.Style.STROKE); stroke.setStrokeJoin(Paint.Join.ROUND); stroke.setStrokeCap(Paint.Cap.ROUND);
         stroke.setColor(Color.WHITE);
-        name.setTypeface(Tv.Font.DISPLAY.get(context)); name.setColor(context.getColor(R.color.tv_text));
-        name.setLetterSpacing(-0.01f);
+        name.setTypeface(android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL));
+        name.setColor(context.getColor(R.color.tv_text)); name.setLetterSpacing(0.16f);
         android.graphics.Path parsed = androidx.core.graphics.PathParser.createPathFromPathData(MARK);
-        mark.set(parsed);
+        mark.set(parsed); mark.close();
+        mark.computeBounds(markBounds, true);
+        measure.setPath(mark, true);
     }
 
     /** Artwork from the catalogues being loaded: it takes the next place on the poster wall. */
@@ -126,7 +130,7 @@ public final class IntroView extends View {
         postInvalidateOnAnimation();
     }
 
-    /** Three soft coloured lights wandering slowly on Lissajous paths. */
+    /** Three soft neutral lights wandering slowly on Lissajous paths. */
     private void drawLights(Canvas canvas, float t, int width, int height, float alpha) {
         float radius = Math.max(width, height) * 0.55f;
         float[][] paths = {{0.30f, 0.35f, 0.21f, 0.17f}, {0.72f, 0.62f, 0.15f, 0.23f}, {0.55f, 0.25f, 0.27f, 0.12f}};
@@ -187,7 +191,7 @@ public final class IntroView extends View {
         canvas.restore();
     }
 
-    /** The play mark: its rim traces itself, the glass fills in, a sheen sweeps across now and then, and it breathes. */
+    /** Glass fills the play mark, then a broad light sweeps through its entire interior. */
     private void drawMark(Canvas canvas, long now, float t, float cx, float cy, float size, float alpha) {
         if (alpha <= 0f) return;
         long age = now - started;
@@ -209,23 +213,21 @@ public final class IntroView extends View {
         fill.setAlpha(Math.round(255 * alpha * filled));
         canvas.drawPath(mark, fill);
 
-        if (filled > 0f) {
-            // Every few seconds a band of light crosses the glass.
+        if (age >= TRACE_MS && filled > 0f) {
             float sweep = ((age - TRACE_MS) % 3200) / 1100f;
-            if (sweep >= 0f && sweep <= 1f) {
-                canvas.save();
-                canvas.clipPath(mark);
-                float x = 30f + 52f * ease(sweep);
-                matrix.setTranslate(x, 0); sheen.setLocalMatrix(matrix);
-                fill.setShader(sheen);
-                fill.setAlpha(Math.round(255 * alpha * filled));
-                canvas.skew(-0.35f, 0);
-                canvas.drawRect(x - 30f, 30f, x + 30f, 80f, fill);
-                canvas.restore();
+            if (sweep <= 1f) {
+                // The diagonal band's projection includes the whole path plus its width at both ends.
+                // Move the shader, rather than skewing the drawing after calculating its travel.
+                float from = markBounds.left + 0.35f * markBounds.top - 12f;
+                float to = markBounds.right + 0.35f * markBounds.bottom + 12f;
+                float x = from + (to - from) * ease(sweep);
+                matrix.setSkew(-0.35f, 0); matrix.postTranslate(x, 0);
+                sheen.setLocalMatrix(matrix);
+                fill.setShader(sheen); fill.setAlpha(Math.round(255 * alpha * filled));
+                canvas.drawPath(mark, fill);
             }
         }
 
-        measure.setPath(mark, true);
         traced.reset();
         measure.getSegment(0, measure.getLength() * trace, traced, true);
         stroke.setStrokeWidth(1.6f);
@@ -237,7 +239,7 @@ public final class IntroView extends View {
     /** The name, each letter rising and sharpening into place after the mark has drawn. */
     private void drawName(Canvas canvas, long now, float cx, float baseline, float alpha) {
         if (alpha <= 0f) return;
-        name.setTextSize(46 * dp);
+        name.setTextSize(32 * dp);
         float total = name.measureText(NAME);
         float x = cx - total / 2f;
         long start = started + (long) (TRACE_MS * 0.7f);

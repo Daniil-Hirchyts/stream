@@ -61,3 +61,31 @@ To run the retained loading/navigation checks explicitly:
 Disabled tests should return only after their assertions prove the advertised
 behaviour. Screenshot exports remain useful for design review, but should not
 be reported as automated visual correctness checks.
+
+## Focused startup/decoder work
+
+`data-test` now forwards its optional class/method filter and runner arguments:
+
+```sh
+./streaming/simulator.sh data-test 'tv.daniil.stream.StartupPipelineTest'
+./streaming/simulator.sh data-test 'tv.daniil.stream.ProgressiveRecoveryTest'
+./streaming/simulator.sh data-test 'tv.daniil.stream.AcceptanceTest#pressuredPayloadResetKeepsTheChosenEpisodeAndPosition'
+./streaming/simulator.sh data-test 'tv.daniil.stream.AcceptanceTest#activityRecreationRetainsPauseSpeedPositionAndNativeTelemetry,tv.daniil.stream.AcceptanceTest#manuallyChangingSourcesRetainsTheCurrentPausedPositionAndSpeed'
+./streaming/simulator.sh data-test 'tv.daniil.stream.StartupTimingTest'
+```
+
+The timing test records 20 HTTP and 20 cold-engine torrent starts and individual
+stage traces. `-e transport ui` or `-e transport http-mp4` selects one transport
+when investigating a failure. Do not run other device tests or builds alongside
+measurements. See [implementation and local evidence](../PLAYBACK_IMPLEMENTATION.md)
+and [decoder coverage/builds](DECODERS.md). `decoder-test` generates the complete
+synthetic codec matrix before running its focused class.
+
+`StartupPipelineTest` covers claimed preparation ownership, cancellation,
+explicit refresh, late inline episode sources, probe timeout/TLS/status handling,
+redirected DASH and ranged reopens, and the normal progressive read timeout
+after probing. `ProgressiveRecoveryTest` plays a late provider's source after the
+first provider fails. The native `TorrentEngineTest` includes a fresh-engine
+snapshot recovery with magnet bootstrap peers as its only discovery path.
+The [verification report](../PLAYBACK_VERIFICATION.md) records the selected
+checks; it does not imply that every existing suite was run.

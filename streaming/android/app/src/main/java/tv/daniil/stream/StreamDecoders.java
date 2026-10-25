@@ -27,25 +27,45 @@ import tv.daniil.playback.SubtitlePlayback;
 final class StreamDecoders implements PlaybackDecoders {
     private final DecoderManager manager = new DecoderManager();
     private ExoPlayer player;
+    private NextRenderersFactory factory;
+    private boolean retriedStereo;
     private boolean retriedVideo, retriedAudio;
+    private String videoFormat, audioFormat;
 
     static boolean supports(String mime) {
         return mime != null && FfmpegLibrary.supportsFormat(mime);
     }
 
     @Override public DefaultRenderersFactory renderers(Context context) {
-        return new NextRenderersFactory(context) {
+        DecoderProfile.load(context);
+        return factory = new NextRenderersFactory(context) {
             @Override protected void buildTextRenderers(Context context, TextOutput output, Looper looper,
                     int mode, ArrayList<Renderer> out) {
                 out.add(SubtitlePlayback.textRenderer(output, looper));
             }
-        }.setDecoderManager(manager);
+        }.setDecoderManager(manager).setVideoFormatPredicate(format -> SourcePolicy.withinDeviceProfile(format) && DecoderProfile.hdrSupported(format));
     }
 
-    @Override public void attach(ExoPlayer player) { this.player = player; manager.attach(player); }
+    @Override public void attach(ExoPlayer player) {
+        this.player = player; manager.attach(player);
+        player.addAnalyticsListener(new androidx.media3.exoplayer.analytics.AnalyticsListener() {
+            @Override public void onAudioInputFormatChanged(EventTime time, Format format, androidx.media3.exoplayer.DecoderReuseEvaluation reuse) { inputFormat(format, false); }
+            @Override public void onVideoInputFormatChanged(EventTime time, Format format, androidx.media3.exoplayer.DecoderReuseEvaluation reuse) { inputFormat(format, true); }
+        });
+    }
+    private void inputFormat(Format format, boolean video) {
+        String key = format.sampleMimeType + ":" + format.codecs + ":" + format.cryptoType;
+        String previous = video ? videoFormat : audioFormat;
+        if (video) videoFormat = key; else audioFormat = key;
+        // Bitrate, resolution and language changes within a codec keep the working renderer.
+        if (previous == null || previous.equals(key)) return;
+        if (video) { retriedVideo = false; manager.selectVideoDecoder(DecoderMode.AUTO); }
+        else { retriedAudio = retriedStereo = false; factory.setForceStereoAudio(false); manager.selectAudioDecoder(DecoderMode.AUTO); }
+    }
 
     @Override public void reset() {
-        retriedVideo = retriedAudio = false;
+        retriedVideo = retriedAudio = retriedStereo = false; videoFormat = audioFormat = null;
+        if (factory != null) factory.setForceStereoAudio(false);
         manager.selectVideoDecoder(DecoderMode.AUTO);
         manager.selectAudioDecoder(DecoderMode.AUTO);
     }
@@ -60,11 +80,15 @@ final class StreamDecoders implements PlaybackDecoders {
                 || code == PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED;
         if (!decoder && !audioOutput) return false;
         Format format = failure.rendererFormat;
+        boolean ffmpeg = failure.rendererName != null && failure.rendererName.toLowerCase(Locale.ROOT).contains("ffmpeg");
+        if (audioOutput && ffmpeg && !retriedStereo && format != null && format.cryptoType == C.CRYPTO_TYPE_NONE) {
+            retriedStereo = true; factory.setForceStereoAudio(true); manager.selectAudioDecoder(DecoderMode.FFMPEG); player.prepare(); return true;
+        }
         // FFmpeg cannot decrypt DRM. Never retry failures from FFmpeg itself, or loop on corrupt input.
         if (format == null || format.cryptoType != C.CRYPTO_TYPE_NONE || !supports(format.sampleMimeType)
-                || (failure.rendererName != null && failure.rendererName.toLowerCase(Locale.ROOT).contains("ffmpeg"))) return false;
+                || ffmpeg) return false;
         if (MimeTypes.isVideo(format.sampleMimeType)) {
-            if (audioOutput || retriedVideo || manager.getActiveVideoMode() == DecoderMode.FFMPEG) return false;
+            if (DecoderProfile.hdr(format) || audioOutput || retriedVideo || manager.getActiveVideoMode() == DecoderMode.FFMPEG) return false;
             retriedVideo = true;
             manager.selectVideoDecoder(DecoderMode.FFMPEG);
         } else if (MimeTypes.isAudio(format.sampleMimeType)) {

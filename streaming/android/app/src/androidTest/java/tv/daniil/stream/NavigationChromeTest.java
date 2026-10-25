@@ -20,6 +20,7 @@ public final class NavigationChromeTest extends AppHarness {
             assertTrue(refresh.isShown()); assertEquals(label, refresh.getContentDescription());
             assertFalse("Refresh is outside scrolling content", descendant(activity.findViewById(R.id.page_rows), refresh));
             Rect bounds = new Rect(); assertTrue(refresh.getGlobalVisibleRect(bounds));
+            bounds = layoutBounds(refresh, bounds);
             if (refreshPosition.isEmpty()) refreshPosition.set(bounds);
             else assertEquals("Refresh occupies Home's exact position and size", refreshPosition, bounds);
             assertEquals(home ? View.VISIBLE : View.GONE, activity.findViewById(R.id.home_browse).getVisibility());
@@ -31,9 +32,16 @@ public final class NavigationChromeTest extends AppHarness {
             assertEquals(View.VISIBLE, back.getVisibility());
             assertFalse("Back is outside the scrolling list", descendant(activity.findViewById(R.id.page_rows), back));
             Rect bounds = new Rect(); assertTrue(back.getGlobalVisibleRect(bounds));
+            bounds = layoutBounds(back, bounds);
             if (fixed.isEmpty()) fixed.set(bounds); else assertEquals("Same position on every subpage", fixed, bounds);
             assertTrue("Back is in the upper left", bounds.right < activity.getResources().getDisplayMetrics().widthPixels * .2);
         });
+    }
+    private static Rect layoutBounds(View view, Rect drawn) {
+        // Focus grows a button around its centre; compare its resting bounds across pages.
+        int x = drawn.centerX(), y = drawn.centerY();
+        return new Rect(x - view.getWidth() / 2, y - view.getHeight() / 2,
+                x - view.getWidth() / 2 + view.getWidth(), y - view.getHeight() / 2 + view.getHeight());
     }
     private static boolean descendant(ViewGroup group, View view) {
         for (int i = 0; i < group.getChildCount(); i++) {
@@ -72,7 +80,7 @@ public final class NavigationChromeTest extends AppHarness {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
         waitUntil("settings", 5000, () -> visible("Add-ons")); assertFalse(visible("Back"));
         tap("Add-on store", false); waitUntil("store", 10000, () -> visible("All")); assertFixedBack();
-        tap("Back", false); tap("About", true); tap("Developer", false);
+        tap("Back", false); tap("About", true); tap("Developer mode", false); tap("Developer", false);
         waitUntil("developer", 5000, () -> visible("Open source notices")); assertFixedBack();
         tap("Back", true);
         browse.onActivity(MainActivity::openImports);
@@ -86,15 +94,13 @@ public final class NavigationChromeTest extends AppHarness {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
         browse.onActivity(activity -> assertEquals(R.id.home_refresh, activity.getCurrentFocus().getId()));
         browse.onActivity(activity -> activity.root("Library"));
-        waitUntil("empty library action", 5000, () -> visible("Find titles"));
-        browse.onActivity(activity -> activity.findViewById(R.id.page_rows).findViewWithTag("library-search").requestFocus());
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
-        browse.onActivity(activity -> assertEquals("Up enters active Library, not Search", "nav:Library", activity.getCurrentFocus().getTag()));
+        waitUntil("empty library", 5000, () -> visible("Your library is empty"));
+        browse.onActivity(activity -> assertEquals("Empty Library leaves focus on its active tab", "nav:Library", activity.getCurrentFocus().getTag()));
         browse.onActivity(activity -> activity.root("Settings"));
         waitUntil("settings categories", 5000, () -> visible("Add-ons"));
         browse.onActivity(activity -> activity.findViewById(R.id.page_rows).findViewWithTag("settings:addons").requestFocus());
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
-        browse.onActivity(activity -> assertEquals("Up from nested settings enters active tab", "nav:Settings", activity.getCurrentFocus().getTag()));
+        browse.onActivity(activity -> assertEquals("Up from settings reaches its active tab", "nav:Settings", activity.getCurrentFocus().getTag()));
     }
     @Test public void playOpensSourcesAndWaitsForAnExplicitChoice() throws Exception {
         readyLibrary(); launch(); tap("Generated Film", false); tap("Play", true);

@@ -40,7 +40,7 @@ public final class Title {
         type = Json.string(o, "type", "");
         name = Json.text(o, "name", id);
         description = Json.text(o, "description", "");
-        releaseInfo = Json.text(o, "releaseInfo", "");
+        releaseInfo = displayReleaseInfo(type, Json.text(o, "releaseInfo", ""));
         rating = Json.string(o, "imdbRating", "");
         poster = Json.webUrl(Json.string(o, "poster"));
         background = Json.webUrl(Json.string(o, "background"));
@@ -71,6 +71,23 @@ public final class Title {
         } catch (JSONException impossible) { throw new IllegalStateException(impossible); }
         cachedJson = safe.toString();
     }
+
+    /** Render incomplete catalogue ranges as a year for films, or an explicit ongoing series. */
+    static String displayReleaseInfo(String type, String release) {
+        String text = release.trim();
+        text = text.replaceFirst("^(\\d{4})\\s*[-–—]\\s*(?i:present)?$", type.equals("movie") ? "$1" : "$1 - Present");
+        return text.replaceFirst("^(\\d{4})\\s*[-–—]\\s*(\\d{4})$", "$1 - $2");
+    }
+
+    private Title(Title metadata, String provider) {
+        this.provider = provider; id = metadata.id; type = metadata.type; name = metadata.name;
+        description = metadata.description; releaseInfo = metadata.releaseInfo; rating = metadata.rating;
+        poster = metadata.poster; background = metadata.background; logo = metadata.logo; imdbId = metadata.imdbId;
+        genres = metadata.genres; cast = metadata.cast; directors = metadata.directors;
+        episodes = metadata.episodes; cachedJson = metadata.cachedJson;
+    }
+    /** Enrichment retains the catalogue/library identity; inline streams keep their actual source provider. */
+    public Title withProvider(String provider) { return this.provider.equals(provider) ? this : new Title(this, provider); }
 
     @Nullable public static Title parse(String provider, @Nullable JSONObject o) {
         if (o == null || Json.string(o, "id") == null || Json.string(o, "type") == null

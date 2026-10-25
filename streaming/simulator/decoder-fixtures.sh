@@ -25,6 +25,10 @@ audio() { # name encoder channels [encoder options]
   mv "$media/$name.tmp.mkv" "$media/$name.mkv"
 }
 audio eac3 eac3 6 -b:a 384k
+if [ ! -s "$media/eac3.ec3" ]; then
+  ff -i "$media/eac3.mkv" -map 0:a:0 -c:a copy -f eac3 "$media/eac3.tmp.ec3"
+  mv "$media/eac3.tmp.ec3" "$media/eac3.ec3"
+fi
 # The standard fixtures need just the regression from the report; the focused decoder command creates the matrix.
 [ "${1:-all}" != eac3 ] || exit 0
 audio ac3 ac3 6 -b:a 384k
@@ -48,4 +52,20 @@ video hevc-10 libx265 yuv420p10le -preset ultrafast -x265-params log-level=error
 video vp8 libvpx yuv420p -deadline realtime -cpu-used 8 -b:v 300k
 video vp9-10 libvpx-vp9 yuv420p10le -deadline realtime -cpu-used 8 -b:v 300k
 video av1-10 libsvtav1 yuv420p10le -preset 12 -crf 40 -svtav1-params 'lp=2:log-level=0'
+legacy() { # name encoder AVI FourCC
+  name=$1; encoder=$2; tag=$3
+  [ ! -s "$media/$name.avi" ] || return 0
+  ff -i "$base" -f lavfi -i 'sine=frequency=550:sample_rate=48000:duration=14' \
+    -c:v "$encoder" -q:v 4 -vtag "$tag" -c:a libmp3lame -b:a 128k "$media/$name.tmp.avi"
+  mv "$media/$name.tmp.avi" "$media/$name.avi"
+}
+legacy xvid mpeg4 XVID
+legacy mp42 msmpeg4v2 MP42
+legacy mp43 msmpeg4 MP43
+legacy mjpeg mjpeg MJPG
+if [ ! -s "$media/sdr-1080.mkv" ]; then
+  ff -f lavfi -i 'testsrc2=size=1920x1080:rate=24:duration=14' -f lavfi -i 'sine=frequency=660:sample_rate=48000:duration=14' \
+    -c:v libx264 -preset veryfast -crf 24 -g 24 -bf 3 -pix_fmt yuv420p -c:a aac -b:a 128k "$media/sdr-1080.tmp.mkv"
+  mv "$media/sdr-1080.tmp.mkv" "$media/sdr-1080.mkv"
+fi
 printf 'Decoder samples ready in %s\n' "$media"

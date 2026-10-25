@@ -20,6 +20,19 @@ import tv.daniil.torrent.TorrentFile;
 /** Conservative advertised hints, followed by actual Media3 format/decoder validation. No download side effects. */
 @OptIn(markerClass = UnstableApi.class)
 public final class SourcePolicy {
+    private static final Pattern ABOVE_PROFILE = Pattern.compile("\\b(2160p|4k|8k|uhd|4320p)\\b");
+    private static final Pattern HDR_HINT = Pattern.compile("\\b(?:hdr(?:10(?:\\+|plus)?)?|hlg|dovi|dolby[ ._-]?vision|dv)\\b");
+    private static final Pattern COMMON_AUDIO = Pattern.compile("\\b(?:aac|opus|mp3)(?=[^a-z]|$)");
+    private static final Pattern TRUEHD_AUDIO = Pattern.compile("\\btrue[ ._-]?hd\\b");
+    private static final Pattern DTS_AUDIO = Pattern.compile("\\bdts(?=[^a-z]|$)");
+    private static final Pattern EAC3_AUDIO = Pattern.compile("\\b(?:e[ ._-]?ac[ ._-]?3|ddp(?:lus)?|dd\\+)(?=[^a-z]|$)|\\bdolby[ ._-]+digital[ ._-]+plus\\b");
+    private static final Pattern AC3_AUDIO = Pattern.compile("\\b(?:ac[ ._-]?3|dd)(?=[^a-z]|$)|\\bdolby[ ._-]+digital\\b");
+    private static final Pattern TEN_BIT = Pattern.compile("\\b(?:10[ ._-]?bit|hi10p|main[ ._-]?10)\\b");
+    private static final Pattern DOLBY_VISION = Pattern.compile("\\b(?:dovi|dolby[ ._-]?vision|dv)\\b");
+    private static final Pattern AV1_HINT = Pattern.compile("\\b(av1|av01)\\b");
+    private static final Pattern HEVC_HINT = Pattern.compile("\\b(hevc|h[ ._-]?265|x265)\\b");
+    private static final Pattern VP9_HINT = Pattern.compile("\\b(vp9|vp09)\\b");
+    private static final Pattern AVC_HINT = Pattern.compile("\\b(avc|h[ ._-]?264|x264)\\b");
     private SourcePolicy() {}
     public static final class Assessment {
         public final boolean usable;
@@ -30,9 +43,9 @@ public final class SourcePolicy {
     public static Assessment assess(MediaSource source) {
         if (!source.playable()) return new Assessment(false, source.reason, -1000);
         String hint = (source.name + " " + source.description + " " + (source.filename == null ? "" : source.filename)).toLowerCase(Locale.ROOT);
-        if (Pattern.compile("\\b(2160p|4k|8k|uhd|4320p)\\b").matcher(hint).find()) return new Assessment(false, "Above the 1080p device profile", -1000);
-        String codec = hint.matches("(?s).*\\b(av1|av01)\\b.*") ? "video/av01" : hint.matches("(?s).*\\b(hevc|h[ ._-]?265|x265)\\b.*") ? "video/hevc"
-                : hint.matches("(?s).*\\b(vp9|vp09)\\b.*") ? "video/x-vnd.on2.vp9" : hint.matches("(?s).*\\b(avc|h[ ._-]?264|x264)\\b.*") ? "video/avc" : null;
+        if (ABOVE_PROFILE.matcher(hint).find()) return new Assessment(false, "Above the 1080p device profile", -1000);
+        String codec = AV1_HINT.matcher(hint).find() ? "video/av01" : HEVC_HINT.matcher(hint).find() ? "video/hevc"
+                : VP9_HINT.matcher(hint).find() ? "video/x-vnd.on2.vp9" : AVC_HINT.matcher(hint).find() ? "video/avc" : null;
         String audio = advertisedAudio(hint);
         try {
             if (codec != null && !StreamDecoders.supports(codec)
@@ -40,29 +53,35 @@ public final class SourcePolicy {
             if (audio != null && !StreamDecoders.supports(audio) && MediaCodecUtil.getDecoderInfos(audio, false, false).isEmpty()) return new Assessment(false, "Audio decoder unavailable", -1000);
             if (codec != null && !advertisedProfileSupported(codec, hint))
                 return new Assessment(false, "Advertised video profile unavailable", -1000);
+            boolean hdr = HDR_HINT.matcher(hint).find();
+            if (hdr && !DecoderProfile.hdrHintSupported(codec)) return new Assessment(false, "HDR needs a compatible hardware decoder and display", -1000);
             int rank = hint.contains("1080p") ? 20 : hint.contains("720p") ? 10 : 0;
             // Automatic Play favours the broadly supported AVC path over less certain high-bit-depth releases.
             if ("video/avc".equals(codec)) rank += 25;
-            if (Pattern.compile("\\b(?:aac|opus|mp3)(?=[^a-z]|$)").matcher(hint).find()) rank += 5;
+            if (COMMON_AUDIO.matcher(hint).find()) rank += 5;
+            SourceSort.Facts facts = SourceSort.facts(source);
+            rank += PlaybackOutcomes.rank(source)
+                    + (facts.seeds > 0 ? 30 : facts.seeds == 0 ? -30 : 0)
+                    - (int) Math.min(200, facts.bytes / (256L << 20));
             if (codec == null) return new Assessment(true, "Compatibility unknown; checked when opened", rank);
             boolean hardware = MediaCodecUtil.getDecoderInfos(codec, false, false).stream().anyMatch(info -> info.hardwareAccelerated);
-            return new Assessment(true, hardware ? "Supported hardware decoder; format checked when opened" : "Supported decoder; format checked when opened", rank + (hardware ? 40 : 5));
-        } catch (Exception e) { return new Assessment(true, "Compatibility unknown; checked when opened", 0); }
+            return new Assessment(true, hardware ? "Supported hardware decoder; format checked when opened" : "Supported decoder; format checked when opened", rank + (hardware ? 2000 : 1000));
+        } catch (Exception e) { return new Assessment(true, "Compatibility unknown; checked when opened", PlaybackOutcomes.rank(source)); }
     }
     /** Codec labels often touch channel counts: DDP5.1 and DD+5.1 are E-AC-3, not unknown audio. */
     static String advertisedAudio(String hint) {
         String text = hint.toLowerCase(Locale.ROOT);
         // A release advertising a common alternative can still contain a supported selectable audio track.
-        if (Pattern.compile("\\b(?:aac|opus|mp3)(?=[^a-z]|$)").matcher(text).find()) return null;
-        if (Pattern.compile("\\btrue[ ._-]?hd\\b").matcher(text).find()) return "audio/true-hd";
-        if (Pattern.compile("\\bdts(?=[^a-z]|$)").matcher(text).find()) return "audio/vnd.dts";
-        if (Pattern.compile("\\b(?:e[ ._-]?ac[ ._-]?3|ddp(?:lus)?|dd\\+)(?=[^a-z]|$)|\\bdolby[ ._-]+digital[ ._-]+plus\\b").matcher(text).find()) return "audio/eac3";
-        if (Pattern.compile("\\b(?:ac[ ._-]?3|dd)(?=[^a-z]|$)|\\bdolby[ ._-]+digital\\b").matcher(text).find()) return "audio/ac3";
+        if (COMMON_AUDIO.matcher(text).find()) return null;
+        if (TRUEHD_AUDIO.matcher(text).find()) return "audio/true-hd";
+        if (DTS_AUDIO.matcher(text).find()) return "audio/vnd.dts";
+        if (EAC3_AUDIO.matcher(text).find()) return "audio/eac3";
+        if (AC3_AUDIO.matcher(text).find()) return "audio/ac3";
         return null;
     }
     private static boolean advertisedProfileSupported(String mime, String hint) throws Exception {
-        boolean tenBit = Pattern.compile("\\b(?:10[ ._-]?bit|hi10p|main[ ._-]?10)\\b").matcher(hint).find();
-        boolean dolby = Pattern.compile("\\b(?:dovi|dolby[ ._-]?vision|dv)\\b").matcher(hint).find();
+        boolean tenBit = TEN_BIT.matcher(hint).find();
+        boolean dolby = DOLBY_VISION.matcher(hint).find();
         if (dolby && MediaCodecUtil.getDecoderInfos("video/dolby-vision", false, false).isEmpty()) return false;
         if (!tenBit) return true;
         if (StreamDecoders.supports(mime)) return true;

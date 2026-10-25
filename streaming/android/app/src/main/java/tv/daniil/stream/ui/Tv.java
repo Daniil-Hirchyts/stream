@@ -146,6 +146,7 @@ public final class Tv {
         int height = dp(context, action.style == Item.Action.Style.CHIP ? 36 : 44);
         switch (action.style) {
             case ICON: {
+                button.setTooltipText(action.label);
                 button.setBackgroundResource(R.drawable.tv_button_round);
                 content.addView(icon(context, action.icon, 22, R.color.tv_on_glass));
                 button.setLayoutParams(new LinearLayout.LayoutParams(height, height));

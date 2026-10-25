@@ -45,6 +45,8 @@ public final class ReleaseProbeInstrumentation extends Instrumentation {
     }
     private void probe() throws Exception {
         Context context = getTargetContext();
+        for (String mime : new String[]{"audio/eac3", "audio/true-hd", "video/mp4v-es", "video/mp43", "video/wvc1"})
+            check(io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegLibrary.supportsFormat(mime));
         String origin = arguments.getString("fixtures", "http://127.0.0.1:58133");
         String peer = arguments.getString("seeder", "127.0.0.1:58134");
         File directory = new File(context.getCacheDir(), "release-probe-" + UUID.randomUUID());
@@ -61,8 +63,8 @@ public final class ReleaseProbeInstrumentation extends Instrumentation {
                     boolean.class, boolean.class, boolean.class, boolean.class, boolean.class, boolean.class, boolean.class, String.class, int.class},
                     directory.getPath(), 16L << 20, 0L, "127.0.0.1:0", false, false, false, false, false, true, false, "", 45);
             try {
-                long torrent = (Long) call("nativeAdd", new Class<?>[]{long.class, byte[].class, String.class, String.class, String[].class, String[].class},
-                        engine, metainfo, null, null, new String[0], new String[]{peer});
+                long torrent = (Long) call("nativeAdd", new Class<?>[]{long.class, byte[].class, String.class, String.class, String[].class, String[].class, String[].class},
+                        engine, metainfo, null, null, new String[0], new String[]{peer}, new String[0]);
                 String metadata = (String) call("nativeAwaitMetadata", new Class<?>[]{long.class, long.class, long.class}, engine, torrent, 10_000L);
                 JSONObject selected = new JSONArray(metadata).getJSONObject(0); int indexInTorrent = selected.getInt("index"); long size = selected.getLong("size");
                 try { call("nativeSelectFile", new Class<?>[]{long.class, long.class, int.class}, engine, torrent, 99); throw new AssertionError("Invalid index accepted"); }

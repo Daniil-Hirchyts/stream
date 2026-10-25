@@ -42,7 +42,7 @@ dependencies {
     implementation project(':torrent')
     implementation 'com.google.zxing:core:3.5.3'
     // Match :playback's Media3 version. Includes native audio + video fallbacks for all app ABIs.
-    implementation 'io.github.anilbeesetti:nextlib-media3ext:1.11.1-0.16.0'
+    implementation project(':codecs')
     implementation 'androidx.recyclerview:recyclerview:1.4.0'
     implementation 'com.github.Dimezis:BlurView:version-3.2.0'
     testImplementation 'junit:junit:4.13.2'

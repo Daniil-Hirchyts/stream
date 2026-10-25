@@ -1,0 +1,431 @@
+--- a/ffmpeg/setup.sh
++++ b/ffmpeg/setup.sh
+@@ -16,9 +16,9 @@
+ MBEDTLS_DIR=$SOURCES_DIR/mbedtls-$MBEDTLS_VERSION
+ 
+ # Configuration
+-ANDROID_ABIS="x86 x86_64 armeabi-v7a arm64-v8a"
++ANDROID_ABIS="arm64-v8a armeabi-v7a x86_64"
+ ANDROID_PLATFORM=21
+-ENABLED_DECODERS="vorbis opus flac alac pcm_mulaw pcm_alaw mp3 amrnb amrwb aac ac3 eac3 dca mlp truehd h264 hevc mpeg2video mpegvideo vp8 vp9 libdav1d"
++ENABLED_DECODERS="vorbis opus flac alac pcm_mulaw pcm_alaw mp1 mp2 mp3 amrnb amrwb aac ac3 eac3 dca mlp truehd h264 hevc mpeg2video mpegvideo vp8 vp9 libdav1d mpeg4 msmpeg4v2 msmpeg4v3 vc1 mjpeg"
+ JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || sysctl -n hw.physicalcpu 2>/dev/null || echo 4)
+ 
+ # Gradle supplies these; standalone callers use the same pinned versions.
+--- a/media3ext/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/FfmpegLibrary.java
++++ b/media3ext/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/FfmpegLibrary.java
+@@ -103,7 +103,9 @@
+     return switch (mimeType) {
+       // Audio codecs
+       case MimeTypes.AUDIO_AAC -> "aac";
+-      case MimeTypes.AUDIO_MPEG, MimeTypes.AUDIO_MPEG_L1, MimeTypes.AUDIO_MPEG_L2 -> "mp3";
++      case MimeTypes.AUDIO_MPEG -> "mp3";
++      case MimeTypes.AUDIO_MPEG_L1 -> "mp1";
++      case MimeTypes.AUDIO_MPEG_L2 -> "mp2";
+       case MimeTypes.AUDIO_AC3 -> "ac3";
+       case MimeTypes.AUDIO_E_AC3, MimeTypes.AUDIO_E_AC3_JOC -> "eac3";
+       case MimeTypes.AUDIO_TRUEHD -> "truehd";
+@@ -123,6 +125,11 @@
+       case MimeTypes.VIDEO_AV1 -> "libdav1d";
+       case MimeTypes.VIDEO_MPEG -> "mpegvideo";
+       case MimeTypes.VIDEO_MPEG2 -> "mpeg2video";
++      case MimeTypes.VIDEO_MP4V -> "mpeg4";
++      case MimeTypes.VIDEO_MP42 -> "msmpeg4v2";
++      case MimeTypes.VIDEO_MP43 -> "msmpeg4";
++      case MimeTypes.VIDEO_VC1 -> "vc1";
++      case MimeTypes.VIDEO_MJPEG -> "mjpeg";
+       case MimeTypes.VIDEO_VP8 -> "vp8";
+       case MimeTypes.VIDEO_VP9 -> "vp9";
+       default -> null;
+--- a/media3ext/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/FfmpegVideoDecoder.java
++++ b/media3ext/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/FfmpegVideoDecoder.java
+@@ -64,7 +64,7 @@
+         // Format uses clockwise degrees. Ignore unsupported non-right-angle rotations.
+         int rotation = format.rotationDegrees % 360;
+         rotationDegrees = rotation % 90 == 0 ? (rotation + 360) % 360 : 0;
+-        nativeContext = ffmpegInitialize(codecName, extraData, threads);
++        nativeContext = ffmpegInitialize(codecName, extraData, threads, format.width, format.height);
+         if (nativeContext == 0) {
+             throw new FfmpegDecoderException("Failed to initialize decoder.");
+         }
+@@ -79,16 +79,13 @@
+     private static byte[] getExtraData(String mimeType, List<byte[]> initializationData) {
+         if (initializationData.isEmpty()) return null;
+         switch (mimeType) {
+-            case MimeTypes.VIDEO_H264 -> {
+-                byte[] sps = initializationData.get(0);
+-                byte[] pps = initializationData.get(1);
+-                byte[] extraData = new byte[sps.length + pps.length];
+-                System.arraycopy(sps, 0, extraData, 0, sps.length);
+-                System.arraycopy(pps, 0, extraData, sps.length, pps.length);
+-                return extraData;
+-            }
+-            case MimeTypes.VIDEO_H265 -> {
+-                return initializationData.get(0);
++            case MimeTypes.VIDEO_H264, MimeTypes.VIDEO_H265, MimeTypes.VIDEO_MP4V,
++                    MimeTypes.VIDEO_MP42, MimeTypes.VIDEO_MP43, MimeTypes.VIDEO_VC1 -> {
++                int length = 0;
++                for (byte[] buffer : initializationData) length = Math.addExact(length, buffer.length);
++                byte[] result = new byte[length]; int offset = 0;
++                for (byte[] buffer : initializationData) { System.arraycopy(buffer, 0, result, offset, buffer.length); offset += buffer.length; }
++                return result;
+             }
+             default -> {
+                 // Other codecs do not require extra data.
+@@ -223,7 +220,7 @@
+         }
+     }
+ 
+-    private native long ffmpegInitialize(String codecName, @Nullable byte[] extraData, int threads);
++    private native long ffmpegInitialize(String codecName, @Nullable byte[] extraData, int threads, int width, int height);
+ 
+     private native long ffmpegReset(long context);
+ 
+--- a/media3ext/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/FfmpegVideoRenderer.java
++++ b/media3ext/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/FfmpegVideoRenderer.java
+@@ -109,6 +109,10 @@
+         String mimeType = format.sampleMimeType;
+         if (!FfmpegLibrary.isAvailable() || !MimeTypes.isVideo(mimeType)) {
+             return C.FORMAT_UNSUPPORTED_TYPE;
++        } else if (format.colorInfo != null && (format.colorInfo.colorTransfer == C.COLOR_TRANSFER_ST2084
++                || format.colorInfo.colorTransfer == C.COLOR_TRANSFER_HLG) || MimeTypes.VIDEO_DOLBY_VISION.equals(mimeType)) {
++            // CPU RGBA8 output has no HDR tone mapper or HDR surface signalling.
++            return RendererCapabilities.create(C.FORMAT_UNSUPPORTED_SUBTYPE);
+         } else if (!FfmpegLibrary.supportsFormat(mimeType)) {
+             return RendererCapabilities.create(C.FORMAT_UNSUPPORTED_SUBTYPE);
+         } else if (format.cryptoType != C.CRYPTO_TYPE_NONE) {
+--- a/media3ext/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/FfmpegAudioDecoder.java
++++ b/media3ext/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/FfmpegAudioDecoder.java
+@@ -46,7 +46,7 @@
+       int numInputBuffers,
+       int numOutputBuffers,
+       int initialInputBufferSize,
+-      boolean outputFloat)
++      boolean outputFloat, boolean forceStereo)
+       throws FfmpegDecoderException {
+     super(new DecoderInputBuffer[numInputBuffers], new SimpleDecoderOutputBuffer[numOutputBuffers]);
+     if (!FfmpegLibrary.isAvailable()) {
+@@ -58,7 +58,7 @@
+     encoding = outputFloat ? C.ENCODING_PCM_FLOAT : C.ENCODING_PCM_16BIT;
+     outputBufferSize = outputFloat ? INITIAL_OUTPUT_BUFFER_SIZE_32BIT : INITIAL_OUTPUT_BUFFER_SIZE_16BIT;
+     nativeContext =
+-        ffmpegInitialize(codecName, extraData, outputFloat, format.sampleRate, format.channelCount);
++        ffmpegInitialize(codecName, extraData, outputFloat, format.sampleRate, format.channelCount, forceStereo);
+     if (nativeContext == 0) {
+       throw new FfmpegDecoderException("Initialization failed.");
+     }
+@@ -218,7 +218,7 @@
+       @Nullable byte[] extraData,
+       boolean outputFloat,
+       int rawSampleRate,
+-      int rawChannelCount);
++      int rawChannelCount, boolean forceStereo);
+ 
+   private native int ffmpegDecode(
+       long context, ByteBuffer inputData, int inputSize, SimpleDecoderOutputBuffer decoderOutputBuffer, ByteBuffer outputData, int outputSize);
+--- a/media3ext/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/FfmpegAudioRenderer.java
++++ b/media3ext/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/FfmpegAudioRenderer.java
+@@ -108,7 +108,7 @@
+         format.maxInputSize != Format.NO_VALUE ? format.maxInputSize : DEFAULT_INPUT_BUFFER_SIZE;
+     FfmpegAudioDecoder decoder =
+         new FfmpegAudioDecoder(
+-            format, NUM_BUFFERS, NUM_BUFFERS, initialInputBufferSize, shouldOutputFloat(format));
++            format, NUM_BUFFERS, NUM_BUFFERS, initialInputBufferSize, !stereo(format) && shouldOutputFloat(format), stereo(format));
+     TraceUtil.endSection();
+     return decoder;
+   }
+@@ -133,9 +133,15 @@
+    * Returns whether the renderer's {@link AudioSink} supports the PCM format that will be output
+    * from the decoder for the given input format and requested output encoding.
+    */
++  private volatile boolean forceStereo;
++  public void setForceStereo(boolean force) { forceStereo = force; }
++  private boolean stereo(Format input) {
++    return forceStereo || input.channelCount > 2
++        && !sinkSupportsFormat(Util.getPcmFormat(C.ENCODING_PCM_16BIT, input.channelCount, input.sampleRate))
++        && !sinkSupportsFormat(Util.getPcmFormat(C.ENCODING_PCM_FLOAT, input.channelCount, input.sampleRate));
++  }
+   private boolean sinkSupportsFormat(Format inputFormat, @C.PcmEncoding int pcmEncoding) {
+-    return sinkSupportsFormat(
+-        Util.getPcmFormat(pcmEncoding, inputFormat.channelCount, inputFormat.sampleRate));
++    return sinkSupportsFormat(Util.getPcmFormat(pcmEncoding, stereo(inputFormat) ? 2 : inputFormat.channelCount, inputFormat.sampleRate));
+   }
+ 
+   private boolean shouldOutputFloat(Format inputFormat) {
+--- a/media3ext/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/NextRenderersFactory.kt
++++ b/media3ext/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/NextRenderersFactory.kt
+@@ -24,9 +24,16 @@
+ @UnstableApi
+ open class NextRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
+     private var decoderManager: DecoderManager? = null
++    private var audioRenderer: FfmpegAudioRenderer? = null
++    private var videoPredicate: java.util.function.Predicate<androidx.media3.common.Format>? = null
++    fun setVideoFormatPredicate(predicate: java.util.function.Predicate<androidx.media3.common.Format>): NextRenderersFactory = apply {
++        videoPredicate = predicate; decoderManager?.controller?.videoFormatPredicate = predicate
++    }
++    fun setForceStereoAudio(force: Boolean) { audioRenderer?.setForceStereo(force) }
+ 
+     fun setDecoderManager(decoderManager: DecoderManager): NextRenderersFactory = this.apply {
+         this.decoderManager = decoderManager
++        decoderManager.controller.videoFormatPredicate = videoPredicate
+         this.setEnableDecoderFallback(true)
+         this.setExtensionRendererMode(EXTENSION_RENDERER_MODE_ON)
+     }
+@@ -79,6 +86,7 @@
+ 
+         try {
+             val renderer = FfmpegAudioRenderer(eventHandler, eventListener, audioSink)
++            audioRenderer = renderer
+             out.add(extensionRendererIndex++, renderer)
+             Log.i(TAG, "Loaded FfmpegAudioRenderer.")
+         } catch (e: Exception) {
+--- a/media3ext/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/DecoderRendererController.kt
++++ b/media3ext/src/main/java/io/github/anilbeesetti/nextlib/media3ext/ffdecoder/DecoderRendererController.kt
+@@ -18,6 +18,7 @@
+     @Volatile var videoMode: DecoderMode,
+     @Volatile var audioMode: DecoderMode,
+ ) {
++    var videoFormatPredicate: java.util.function.Predicate<Format>? = null
+     internal val decoderInfos = ConcurrentHashMap<String, MediaCodecInfo>()
+ 
+     private var renderers: Array<Renderer>? = null
+@@ -47,9 +48,9 @@
+         }
+         return renderers.map { renderer ->
+             when (renderer.trackType) {
+-                C.TRACK_TYPE_VIDEO, C.TRACK_TYPE_AUDIO -> ModeAwareRenderer(renderer) {
++                C.TRACK_TYPE_VIDEO, C.TRACK_TYPE_AUDIO -> ModeAwareRenderer(renderer, {
+                     mode(renderer.trackType).enables(renderer is FfmpegVideoRenderer || renderer is FfmpegAudioRenderer)
+-                }
++                }, { format -> renderer.trackType != C.TRACK_TYPE_VIDEO || videoFormatPredicate?.test(format) != false })
+                 else -> renderer
+             }
+         }.toTypedArray().also { this.renderers = it }
+@@ -103,11 +104,12 @@
+ internal class ModeAwareRenderer(
+     delegate: Renderer,
+     val isEnabled: () -> Boolean,
++    val formatAllowed: (Format) -> Boolean,
+ ) : ForwardingRenderer(delegate) {
+     // MappingTrackSelector maps tracks before considering disabled renderer flags.
+     private val modeAwareCapabilities = object : RendererCapabilities by delegate.capabilities {
+         override fun supportsFormat(format: Format): Int =
+-            if (isEnabled()) delegate.capabilities.supportsFormat(format)
++            if (isEnabled() && formatAllowed(format)) delegate.capabilities.supportsFormat(format)
+             else RendererCapabilities.create(C.FORMAT_UNSUPPORTED_TYPE)
+     }
+ 
+--- a/media3ext/src/main/cpp/ffaudio.cpp
++++ b/media3ext/src/main/cpp/ffaudio.cpp
+@@ -4,6 +4,7 @@
+ #include <cstdlib>
+ #include <android/native_window_jni.h>
+ #include <algorithm>
++#include <new>
+ #include "ffcommon.h"
+ 
+ extern "C" {
+@@ -41,7 +42,7 @@
+  */
+ AVCodecContext *createContext(JNIEnv *env, AVCodec *codec, jbyteArray extraData,
+                               jboolean outputFloat, jint rawSampleRate,
+-                              jint rawChannelCount);
++                              jint rawChannelCount, jboolean forceStereo);
+ 
+ /**
+  * Decodes the packet into the output buffer, returning the number of bytes
+@@ -76,7 +77,7 @@
+ 
+ AVCodecContext *createContext(JNIEnv *env, AVCodec *codec, jbyteArray extraData,
+                               jboolean outputFloat, jint rawSampleRate,
+-                              jint rawChannelCount) {
++                              jint rawChannelCount, jboolean forceStereo) {
+     AVCodecContext *context = avcodec_alloc_context3(codec);
+     if (!context) {
+         LOGE("Failed to allocate context.");
+@@ -88,7 +89,7 @@
+         jsize size = env->GetArrayLength(extraData);
+         context->extradata_size = size;
+         context->extradata =
+-                (uint8_t *) av_malloc(size + AV_INPUT_BUFFER_PADDING_SIZE);
++                (uint8_t *) av_mallocz(size + AV_INPUT_BUFFER_PADDING_SIZE);
+         if (!context->extradata) {
+             LOGE("Failed to allocate extra data.");
+             releaseContext(context);
+@@ -102,6 +103,9 @@
+         context->ch_layout.nb_channels = rawChannelCount;
+         av_channel_layout_default(&context->ch_layout, rawChannelCount);
+     }
++    auto *output = new (std::nothrow) AudioOutputState();
++    if (!output) { releaseContext(context); return nullptr; }
++    output->forceStereo = forceStereo; context->opaque = output;
+     context->err_recognition = AV_EF_IGNORE_ERR;
+     int result = avcodec_open2(context, codec, nullptr);
+     if (result < 0) {
+@@ -142,19 +146,22 @@
+ 
+         // Resample output.
+         AVSampleFormat sampleFormat = context->sample_fmt;
+-        int channelCount = context->ch_layout.nb_channels;
++        bool stereo = static_cast<AudioOutputState *>(context->opaque)->forceStereo;
++        int channelCount = stereo ? 2 : context->ch_layout.nb_channels;
+         AVChannelLayout channelLayout = context->ch_layout;
+         int sampleRate = context->sample_rate;
+         int sampleCount = frame->nb_samples;
+         int dataSize = av_samples_get_buffer_size(nullptr, channelCount, sampleCount,
+                                                   sampleFormat, 1);
+         SwrContext *resampleContext;
+-        if (context->opaque) {
+-            resampleContext = (SwrContext *) context->opaque;
++        auto *output = static_cast<AudioOutputState *>(context->opaque);
++        if (output->resampler) {
++            resampleContext = output->resampler;
+         } else {
+             resampleContext = swr_alloc();
+             av_opt_set_chlayout(resampleContext, "in_chlayout", &channelLayout, 0);
+-            av_opt_set_chlayout(resampleContext, "out_chlayout", &channelLayout, 0);
++            AVChannelLayout outputLayout = AV_CHANNEL_LAYOUT_STEREO;
++            av_opt_set_chlayout(resampleContext, "out_chlayout", stereo ? &outputLayout : &channelLayout, 0);
+             av_opt_set_int(resampleContext, "in_sample_rate", sampleRate, 0);
+             av_opt_set_int(resampleContext, "out_sample_rate", sampleRate, 0);
+             av_opt_set_int(resampleContext, "in_sample_fmt", sampleFormat, 0);
+@@ -167,7 +174,7 @@
+                 av_frame_free(&frame);
+                 return transformError(result);
+             }
+-            context->opaque = resampleContext;
++            output->resampler = resampleContext;
+         }
+         int inSampleSize = av_get_bytes_per_sample(sampleFormat);
+         int outSampleSize = av_get_bytes_per_sample(context->request_sample_fmt);
+@@ -185,8 +192,9 @@
+                 av_frame_free(&frame);
+                 return AUDIO_DECODER_ERROR_OTHER;
+             }
+-        }
+-        result = swr_convert(resampleContext, &outputBuffer, bufferOutSize,
++            outputBuffer += outSize;
++        }
++        result = swr_convert(resampleContext, &outputBuffer, outSamples,
+                              (const uint8_t **) frame->data, frame->nb_samples);
+         av_frame_free(&frame);
+         if (result < 0) {
+@@ -199,8 +207,9 @@
+                  available);
+             return AUDIO_DECODER_ERROR_INVALID_DATA;
+         }
+-        outputBuffer += bufferOutSize;
+-        outSize += bufferOutSize;
++        int produced = result * outSampleSize * channelCount;
++        outputBuffer += produced;
++        outSize += produced;
+     }
+     return outSize;
+ }
+@@ -218,7 +227,7 @@
+                                                                         jbyteArray extra_data,
+                                                                         jboolean output_float,
+                                                                         jint raw_sample_rate,
+-                                                                        jint raw_channel_count) {
++                                                                        jint raw_channel_count, jboolean force_stereo) {
+     AVCodec *codec = getCodecByName(env, codec_name);
+     if (!codec) {
+         LOGE("Codec not found.");
+@@ -227,7 +236,7 @@
+     jclass clazz = env->FindClass("io/github/anilbeesetti/nextlib/media3ext/ffdecoder/FfmpegAudioDecoder");
+     growOutputBufferMethod = env->GetMethodID(clazz, "growOutputBuffer","(Landroidx/media3/decoder/SimpleDecoderOutputBuffer;I)Ljava/nio/ByteBuffer;");
+     return (jlong) createContext(env, codec, extra_data, output_float, raw_sample_rate,
+-                                 raw_channel_count);
++                                 raw_channel_count, force_stereo);
+ }
+ 
+ extern "C"
+@@ -282,7 +291,8 @@
+         LOGE("Context must be non-NULL.");
+         return -1;
+     }
+-    return ((AVCodecContext *) context)->ch_layout.nb_channels;
++    auto *codec = (AVCodecContext *) context;
++    return static_cast<AudioOutputState *>(codec->opaque)->forceStereo ? 2 : codec->ch_layout.nb_channels;
+ }
+ 
+ extern "C"
+@@ -315,6 +325,7 @@
+         // TODO: Figure out why flushing doesn't work for this codec.
+         auto outputFloat =
+                 (jboolean) (context->request_sample_fmt == OUTPUT_FORMAT_PCM_FLOAT);
++        jboolean forceStereo = static_cast<AudioOutputState *>(context->opaque)->forceStereo;
+         releaseContext(context);
+         auto *codec = const_cast<AVCodec *>(avcodec_find_decoder(codecId));
+         if (!codec) {
+@@ -323,7 +334,7 @@
+         }
+         return (jlong) createContext(env, codec, extra_data, outputFloat,
+                 /* rawSampleRate= */ -1,
+-                /* rawChannelCount= */ -1);
++                /* rawChannelCount= */ -1, forceStereo);
+     }
+ 
+     avcodec_flush_buffers(context);
+--- a/media3ext/src/main/cpp/ffcommon.h
++++ b/media3ext/src/main/cpp/ffcommon.h
+@@ -30,4 +30,6 @@
+  */
+ void logError(const char *functionName, int errorNumber);
+ 
++struct AudioOutputState { SwrContext *resampler = nullptr; bool forceStereo = false; };
++
+ #endif //NEXTPLAYER_FFCOMMON_H
+--- a/media3ext/src/main/cpp/ffcommon.cpp
++++ b/media3ext/src/main/cpp/ffcommon.cpp
+@@ -14,9 +14,9 @@
+     if (!context) {
+         return;
+     }
+-    SwrContext *swrContext;
+-    if ((swrContext = (SwrContext *)context->opaque)) {
+-        swr_free(&swrContext);
++    auto *output = static_cast<AudioOutputState *>(context->opaque);
++    if (output) {
++        swr_free(&output->resampler); delete output;
+         context->opaque = nullptr;
+     }
+     av_freep(&context->extradata);
+--- a/media3ext/src/main/cpp/ffvideo.cpp
++++ b/media3ext/src/main/cpp/ffvideo.cpp
+@@ -288,7 +288,7 @@
+ JniContext *createVideoContext(JNIEnv *env,
+                                AVCodec *codec,
+                                jbyteArray extraData,
+-                               jint threads) {
++                               jint threads, jint width, jint height) {
+     auto jniContext = std::make_unique<JniContext>();
+ 
+     AVCodecContext *codecContext = avcodec_alloc_context3(codec);
+@@ -311,6 +311,9 @@
+     }
+ 
+     codecContext->thread_count = threads;
++    // AVI MSMPEG4 stores dimensions in the container, not the compressed packets.
++    codecContext->width = width > 0 ? width : 0;
++    codecContext->height = height > 0 ? height : 0;
+     if (codec->id == AV_CODEC_ID_AV1) {
+         // SimpleDecoder expects a frame per sample and does not drain at EOS.
+         // Disable dav1d's frame delay so each sample yields its output promptly.
+@@ -342,14 +345,14 @@
+                                                                                  jobject thiz,
+                                                                                  jstring codec_name,
+                                                                                  jbyteArray extra_data,
+-                                                                                 jint threads) {
++                                                                                 jint threads, jint width, jint height) {
+     AVCodec *codec = getCodecByName(env, codec_name);
+     if (!codec) {
+         LOGE("Codec not found.");
+         return 0L;
+     }
+ 
+-    return (jlong) createVideoContext(env, codec, extra_data, threads);
++    return (jlong) createVideoContext(env, codec, extra_data, threads, width, height);
+ }
+ 
+ extern "C"

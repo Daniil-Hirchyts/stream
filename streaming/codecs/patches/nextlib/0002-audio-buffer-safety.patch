@@ -1,0 +1,57 @@
+--- a/media3ext/src/main/cpp/ffaudio.cpp
++++ b/media3ext/src/main/cpp/ffaudio.cpp
+@@ -5,6 +5,7 @@
+ #include <android/native_window_jni.h>
+ #include <algorithm>
+ #include <new>
++#include <climits>
+ #include "ffcommon.h"
+ 
+ extern "C" {
+@@ -151,14 +152,15 @@
+         AVChannelLayout channelLayout = context->ch_layout;
+         int sampleRate = context->sample_rate;
+         int sampleCount = frame->nb_samples;
+-        int dataSize = av_samples_get_buffer_size(nullptr, channelCount, sampleCount,
+-                                                  sampleFormat, 1);
+         SwrContext *resampleContext;
+         auto *output = static_cast<AudioOutputState *>(context->opaque);
+         if (output->resampler) {
+             resampleContext = output->resampler;
+         } else {
+             resampleContext = swr_alloc();
++            if (!resampleContext) { av_frame_free(&frame); return AUDIO_DECODER_ERROR_OTHER; }
++            // Own it immediately, including failures during initialization.
++            output->resampler = resampleContext;
+             av_opt_set_chlayout(resampleContext, "in_chlayout", &channelLayout, 0);
+             AVChannelLayout outputLayout = AV_CHANNEL_LAYOUT_STEREO;
+             av_opt_set_chlayout(resampleContext, "out_chlayout", stereo ? &outputLayout : &channelLayout, 0);
+@@ -174,12 +176,15 @@
+                 av_frame_free(&frame);
+                 return transformError(result);
+             }
+-            output->resampler = resampleContext;
+-        }
+-        int inSampleSize = av_get_bytes_per_sample(sampleFormat);
++        }
+         int outSampleSize = av_get_bytes_per_sample(context->request_sample_fmt);
+         int outSamples = swr_get_out_samples(resampleContext, sampleCount);
+-        int bufferOutSize = outSampleSize * channelCount * outSamples;
++        int64_t required = int64_t(outSampleSize) * channelCount * outSamples;
++        if (outSamples < 0 || outSampleSize <= 0 || channelCount <= 0 || required < 0 || required > INT_MAX - outSize) {
++            av_frame_free(&frame);
++            return AUDIO_DECODER_ERROR_INVALID_DATA;
++        }
++        int bufferOutSize = static_cast<int>(required);
+         if (outSize + bufferOutSize > outputSize) {
+             LOGD(
+                     "Output buffer size (%d) too small for output data (%d), "
+@@ -195,7 +200,7 @@
+             outputBuffer += outSize;
+         }
+         result = swr_convert(resampleContext, &outputBuffer, outSamples,
+-                             (const uint8_t **) frame->data, frame->nb_samples);
++                             (const uint8_t **) frame->extended_data, frame->nb_samples);
+         av_frame_free(&frame);
+         if (result < 0) {
+             logError("swr_convert", result);

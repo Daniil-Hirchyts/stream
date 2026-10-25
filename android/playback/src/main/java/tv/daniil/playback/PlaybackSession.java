@@ -80,6 +80,15 @@ public final class PlaybackSession {
     private boolean started, renderedFirstFrame, reportedUnsupported, released;
     @Nullable private PlaybackErrors.Description error;
     private float speed = 1f;
+    private String decoderIdentity;
+    private int subtitleRevision;
+    private String externalChoice;
+    private final Map<String, ExternalSubtitle> externalSubtitles = new java.util.LinkedHashMap<>();
+    private final Runnable cueTick = this::externalCuesChanged;
+    private static final class ExternalSubtitle {
+        final SubtitleTracks.Track track; final Subtitle timeline; final String address;
+        ExternalSubtitle(SubtitleTracks.Track track, Subtitle timeline, String address) { this.track = track; this.timeline = timeline; this.address = address; }
+    }
     /** The voice-over the viewer chose, by name, kept from one episode to the next. */
     @Nullable private String voice;
 
@@ -157,12 +166,12 @@ public final class PlaybackSession {
             }
             @Override public void onIsPlayingChanged(boolean playing) {
                 notifyChanged();
-                for (Listener listener : listeners()) listener.onCuesChanged();
+                externalCuesChanged();
                 if (!playing) reportProgress();
             }
             @Override public void onPositionDiscontinuity(Player.PositionInfo oldPosition,
                     Player.PositionInfo newPosition, int reason) {
-                for (Listener listener : listeners()) listener.onCuesChanged();
+                externalCuesChanged();
                 if (reason == Player.DISCONTINUITY_REASON_SEEK) reportProgress();
             }
             @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
@@ -213,6 +222,7 @@ public final class PlaybackSession {
         int load = ++generation;
         request = next;
         pausedSubtitles = Collections.emptyMap();
+        externalSubtitles.clear(); externalChoice = null; subtitleRevision++; handler.removeCallbacks(cueTick);
         if (!next.continuing) {
             voice = null;
             speed = 1f;
@@ -229,7 +239,8 @@ public final class PlaybackSession {
         cancelSeek();
         player.stop();
         player.clearMediaItems();
-        if (decoders != null) decoders.reset();
+        if (decoders != null && !next.mediaIdentity.equals(decoderIdentity)) decoders.reset();
+        decoderIdentity = next.mediaIdentity;
         SubtitleTracks.reset(player);
         AudioTracks.reset(player);
         VideoQualities.reset(player);
@@ -272,7 +283,7 @@ public final class PlaybackSession {
         player.setMediaSource(SubtitlePlayback.create(sources, data, media.build()));
         player.seekTo(next.positionMs);
         player.prepare();
-        player.play();
+        player.setPlayWhenReady(!next.startPaused);
         notifyChanged();
     }
 
@@ -299,6 +310,7 @@ public final class PlaybackSession {
         generation++;
         request = null;
         pausedSubtitles = Collections.emptyMap();
+        externalSubtitles.clear(); externalChoice = null; subtitleRevision++; handler.removeCallbacks(cueTick);
         error = null;
         started = false;
         renderedFirstFrame = false;
@@ -383,6 +395,7 @@ public final class PlaybackSession {
             SubtitleTracks.select(player, SubtitleTracks.initial(textTracks, wanted,
                     prefs.getBoolean(PREF_SUBTITLES_ON, true), prefs.getString(PREF_LANGUAGE, null)));
         }
+        mergeExternalTracks();
         qualities = VideoQualities.from(tracks);
         if (quality != null) quality = VideoQualities.find(qualities, quality.id);
         for (Listener listener : listeners()) listener.onTracksChanged();
@@ -461,12 +474,81 @@ public final class PlaybackSession {
     }
 
     /** Shows one subtitle track, or none, and remembers for the next media whether and in which language. */
+    public int subtitleSelectionRevision() { return subtitleRevision; }
     public void selectSubtitles(@Nullable SubtitleTracks.Track track) {
-        SubtitleTracks.select(player, track);
+        subtitleRevision++; subtitleRequest = null;
+        externalChoice = track != null && track.external ? track.id : null;
+        SubtitleTracks.select(player, externalChoice == null ? track : null);
+        textTracks = SubtitleTracks.from(context, player.getCurrentTracks()); mergeExternalTracks();
+        for (Listener listener : listeners()) listener.onTracksChanged();
+        externalCuesChanged();
         SharedPreferences.Editor editor = prefs.edit().putBoolean(PREF_SUBTITLES_ON, track != null);
         if (track != null && track.language != null) editor.putString(PREF_LANGUAGE, track.language);
         editor.apply();
         notifyChanged();
+    }
+
+    /** Downloads optional captions without replacing the media, renderer, clock or buffering state. */
+    public void attachExternalSubtitles(List<SubtitleDownloader.Source> sources, Map<String, String> headers, boolean select) {
+        attachExternalSubtitles(sources, headers, select, ignored -> {});
+    }
+    public boolean hasExternalSubtitle(String address) {
+        for (ExternalSubtitle subtitle : externalSubtitles.values()) if (subtitle.address.equals(address)) return true;
+        return false;
+    }
+    public void attachExternalSubtitles(List<SubtitleDownloader.Source> sources, Map<String, String> headers,
+            boolean select, java.util.function.Consumer<Boolean> completion) {
+        if (released || request == null || sources.isEmpty()) { completion.accept(false); return; }
+        List<SubtitleDownloader.Source> batchSources = new ArrayList<>(sources.subList(0, Math.min(8, sources.size())));
+        int load = generation, revision = select ? ++subtitleRevision : subtitleRevision;
+        String batch = java.util.UUID.randomUUID().toString();
+        background.execute(() -> {
+            if (load != generation) return;
+            File directory = new File(subtitleRoot, load + "/" + batch);
+            List<MediaItem.SubtitleConfiguration> files = SubtitleDownloader.download(directory, batchSources, headers);
+            Map<String, Subtitle> timelines = PausedSubtitleCues.read(files);
+            delete(directory);
+            handler.post(() -> {
+                if (load != generation || released) return;
+                String first = null;
+                for (MediaItem.SubtitleConfiguration file : files) {
+                    Subtitle timeline = timelines.get(file.id); if (timeline == null) continue;
+                    String id = "external:" + batch + ":" + file.id;
+                    String label = file.label == null || file.label.isEmpty() ? file.language == null ? "Subtitles" : file.language : file.label;
+                    int index = Integer.parseInt(file.id.substring(SubtitleTracks.SIDELOADED.length()));
+                    externalSubtitles.put(id, new ExternalSubtitle(new SubtitleTracks.Track(id, label, file.language, false), timeline, batchSources.get(index).url));
+                    if (first == null) first = id;
+                }
+                if (select && revision == subtitleRevision && first != null) {
+                    externalChoice = first; subtitleRequest = null; SubtitleTracks.select(player, null);
+                }
+                while (externalSubtitles.size() > 8) {
+                    String oldest = null;
+                    for (String candidate : externalSubtitles.keySet()) if (!candidate.equals(externalChoice)) { oldest = candidate; break; }
+                    if (oldest == null) break;
+                    externalSubtitles.remove(oldest);
+                }
+                textTracks = SubtitleTracks.from(context, player.getCurrentTracks()); mergeExternalTracks();
+                for (Listener listener : listeners()) listener.onTracksChanged();
+                externalCuesChanged(); notifyChanged(); completion.accept(first != null);
+            });
+        });
+    }
+    private void mergeExternalTracks() {
+        List<SubtitleTracks.Track> merged = new ArrayList<>();
+        for (SubtitleTracks.Track track : textTracks) if (!track.external) merged.add(externalChoice == null ? track : new SubtitleTracks.Track(track, false));
+        for (Map.Entry<String, ExternalSubtitle> item : externalSubtitles.entrySet()) merged.add(new SubtitleTracks.Track(item.getValue().track, item.getKey().equals(externalChoice)));
+        textTracks = Collections.unmodifiableList(merged);
+    }
+    private void externalCuesChanged() {
+        handler.removeCallbacks(cueTick);
+        for (Listener listener : listeners()) listener.onCuesChanged();
+        ExternalSubtitle external = externalSubtitles.get(externalChoice);
+        if (released || external == null || !player.isPlaying()) return;
+        long positionUs = player.getCurrentPosition() * 1000;
+        int next = external.timeline.getNextEventTimeIndex(positionUs);
+        if (next >= 0) handler.postDelayed(cueTick, Math.max(10, Math.min(1000,
+                (long) ((external.timeline.getEventTime(next) - positionUs) / 1000.0 / speed))));
     }
 
     /** Fixes the quality, or lets Media3 adapt again when {@code option} is null. */
@@ -479,6 +561,7 @@ public final class PlaybackSession {
     public void setSpeed(float value) {
         speed = Math.max(0.25f, Math.min(4f, value));
         player.setPlaybackSpeed(speed);
+        externalCuesChanged();
         notifyChanged();
     }
 
@@ -556,6 +639,8 @@ public final class PlaybackSession {
      * a paused seek, so while paused they come from the downloaded file's own timeline.
      */
     List<Cue> cues() {
+        ExternalSubtitle external = externalSubtitles.get(externalChoice);
+        if (external != null) return external.timeline.getCues(player.getCurrentPosition() * 1000);
         List<Cue> cues = player.getCurrentCues().cues;
         if (!player.getPlayWhenReady()) {
             Subtitle timeline = PausedSubtitleCues.find(pausedSubtitles, SubtitleTracks.selected(textTracks));

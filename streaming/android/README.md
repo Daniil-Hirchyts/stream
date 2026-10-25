@@ -73,14 +73,17 @@ Shelves scroll horizontally. Page titles scroll with their page.
   manifests, and refreshes Home when they arrive. An add-on already installed
   with the viewer's own configuration is not added again. Each default is installed once (remembered in the encrypted store),
   so one the viewer removes stays removed; one that can't be reached is tried
-  again on the next start. If Home is still empty it offers Get add-ons, the
-  store's starter page. Test databases and local-only instrumentation install
+  again on the next start. If Home is still empty, a quiet text message points to Settings for
+  catalogues and imports. Test databases and local-only instrumentation install
   no defaults, so tests never reach public providers.
-- **Tab bar:** Search, Home, Library and Settings sit in one floating pill. It
-  slides away once content scrolls under it and returns when focus reaches it
+- **Tab bar:** Search, Home, Library and Settings sit in one borderless floating pill.
+  Search and pagination capsules use the same borderless treatment. It slides away once content scrolls under it and returns when focus reaches it
   or the page is back at its top. Content scrolling up fades into the top edge.
-- **Clock:** a small clock sits at the top right of the browse screens and,
-  with the overlay, beside the player's title. Settings → Clock sets its
+- **Clock:** a small clock stays in the same top-right corner on browse pages,
+  paused player controls and player menus. It remains visible through browse
+  reloads and navigation; startup, player loading and active playback keep the
+  screen clear. Toolbar actions sit to its left. Refresh rotates its icon
+  when clicked. Settings → Clock sets its
   format (Automatic, 24-hour, 12-hour or Off) and whether the player shows it.
 - **Settings:** a split view. Seven categories sit on the left: Add-ons,
   Torrents, Languages, Subtitles, Playback, Clock and About.
@@ -89,8 +92,18 @@ Shelves scroll horizontally. Page titles scroll with their page.
     category. The route remembers which category was open.
   - Other lists and forms (Imports, the store, add-on pages, Sources) sit in a
     centred column; shelves and grids use the full width.
-- **Details:** every button is labelled: Play or Resume (with the episode),
-  Sources, Favourite, Mark watched, and More for refresh and removal.
+- **Details:** Play or Resume (with the episode), Sources, and More retain labels.
+  Favourite and Mark watched are circular icon buttons, with state highlights,
+  accessible action names and labels that fade between separate text views on focus.
+  In a series, focusing or hovering a season changes its episodes immediately.
+  Entering seasons or episodes fades and shifts the overview into the show's
+  title artwork, season strip and episode shelf. A text title is the fallback
+  when no logo loads. Episode cards show Episode N, title and a description of
+  at most three lines. Up from the season strip or Back restores the
+  overview. Each season remembers its horizontal shelf position.
+  Home, catalogue and Library cards omit years and type labels; details keep
+  release information. Favourites and completed Watch history cards omit their
+  redundant collection labels and badges.
 - **Sources:** only sources this TV can play. Sort chips order them by Best,
   Quality, Size, Seeds or Played; choosing the lit chip again reverses it
   (the arrow shows which way), and sources that don't advertise a value stay
@@ -112,14 +125,25 @@ Shelves scroll horizontally. Page titles scroll with their page.
   focused key never moves. Results fade out at the column's top and bottom.
 - **Alerts:** choices are filled platters; Cancel or Close sits apart under a
   rule, outlined and grey until focused.
-- **Search keyboard:** a six-column grid with no gaps, on three pages
-  (letters, digits and punctuation, accented letters); Space, Delete, the page
-  switches and Clear each span exactly two keys. Results update as you type,
+- **Search keyboard:** an aligned six-column grid with 4 dp gaps, on three pages
+  (letters, digits and punctuation, language-specific accented letters). Settings
+  → Languages → Keyboard languages selects English, French, German, Spanish,
+  Italian, Portuguese, Russian and Ukrainian layouts. The globe key cycles the
+  enabled languages; with one language it opens their settings. The microphone
+  opens Android's speech-input activity in the selected language; results become
+  editable search text and cancellation preserves the query. An unavailable
+  speech service leaves keyboard input available.
+  Space and Delete fill unused cells in the last character row. A five-character
+  tail spreads evenly across the row and puts Space/Delete on their own full row,
+  so no language or character page adds blank spacer keys. Page switches and Clear
+  span two cells, and language and voice keys span three. Cell and gap widths are rounded
+  to pixels before calculating spans. White focus fill keeps keys aligned without
+  scaling the wide keys. Results update as you type,
   with no heading or count. Before a search, and when nothing matches, a quiet
   line sits centred in the results area.
 - **Corners:** one scale in `res/values/dimens.xml`, on this 960 dp canvas
   (half of tvOS points):
-  - 10 dp for buttons, rows, fields and artwork; 8 dp for keys.
+  - 10 dp for buttons, rows, fields and artwork; 8 dp for keycaps and 6 dp for the search keyboard.
   - 16 dp for cards and 24 dp for sheets.
   - Capsules for floating and filter controls (tab bar, tabs, chips, search
     field); circles for icon buttons.
@@ -135,8 +159,9 @@ Shelves scroll horizontally. Page titles scroll with their page.
   line of text is a bar inside an empty text view of that line's size, so the
   page replaces it without anything moving. Search shows the results grid's
   own columns. The activity indicator is an eight-spoke wheel after Apple's,
-  an animated vector turning at a constant speed on the render thread, so it
-  keeps moving while the main thread is busy.
+  with fixed bars and an opacity trail advancing clockwise in distinct 128 ms
+  steps (1.024 seconds per cycle). Its animated vector stays on the render
+  thread while the main thread is busy.
 - **Sounds:** made, not sampled, by `streaming/sounds/sounds.py` with Rauta's
   method (gym-lib): each moment is a short score rendered by a small synth and
   mastered to one A-weighted loudness scale, then chosen by ear. The app plays
@@ -198,35 +223,53 @@ Artwork is cached on disk (40 MiB, least recently shown evicted) as well as in
 memory. Off-screen shelves keep their views, so scrolling back neither rebuilds
 a row nor reloads its art.
 
-The shared player is restyled only through app resource overrides, so Daniil
-Cast keeps its own look:
+The Seasons view leaves space between the title logo, season selector and cards.
+Episode captions show the episode number, title, a description limited to three
+lines and, when the provider supplies a valid date, its initial air date. Missing
+dates add no empty row. See [the series loading review](SERIES_LOADING_REVIEW.md)
+for metadata/image request timing and remaining optimization opportunities.
+An episode's action sheet uses Play or Resume according to its saved progress,
+and offers only Mark watched or Mark unwatched according to its current state.
+
+The shared player's sources stay unchanged: app resource overrides and app-owned
+presentation adapters give Daniil TV its look, while Daniil Cast keeps its own:
 - **Palette:** `res/values/colors.xml`, `bg_panel`, `pill` and `bg_card_soft`.
+- **Subtitle Box:** `DaniilSubtitleOutput` adds modest side padding and rounded
+  corners per text line in playback and the settings preview. Other edges and
+  bitmap cues retain Media3 rendering. Media3 1.11.1 exposes no public output
+  factory on its final `SubtitleView`; the app keeps one reflective `setView`
+  integration, retained by its R8 rules. Check `SubtitleBoxTest` and the release
+  shrinker whenever updating Media3. The shared library and receiver are unchanged.
 - **Overlay:** `layout/playback_layers.xml`, with the same IDs and the view
   types the library reads:
-  - The title and track details sit at the top, with the clock and two round
-    buttons beside them: Audio and subtitles (the subtitle list, then Audio)
-    and Player settings (quality, speed, subtitle style). Menu on the remote
-    still opens everything. There is no "Now playing" label.
-  - A skip shows its total (+30 s) as plain text between the times, in the
-    times' own row, so nothing moves. The player's buttons grow while focused
-    or under the pointer; the overlay doesn't clip them.
+  - The title and track details sit at the top, with three round
+    buttons beside them: Audio and subtitles (the subtitle list, then Audio),
+    Mark watched and Player settings (quality, speed, subtitle style). Menu on
+    the remote still opens everything. There is no "Now playing" label.
+  - There is no centre play/pause button. Tap the timeline to pause/resume;
+    drag it to preview a position and seek on release. Remote OK and transport
+    keys still play/pause, and left/right still skip. Up reaches the header,
+    Down reaches the timeline, and left/right within the header reach each action.
+  - The timeline follows the proportions of Apple's [tvOS playback example](https://support.apple.com/en-nz/guide/tv/atvb7944597f/26/tvos/26):
+    a 4 dp track, small capsule playhead and close-set, tabular time labels.
+    The digits anchor to the playhead independently of feedback width. A small
+    circled pause badge and transient directional skip feedback share one slot;
+    near the end, the feedback moves before the time to avoid crowding the
+    remaining-time label. The timeline retains its 48 dp touch target and
+    captions remain above the complete toolbar.
+    The player's buttons grow while focused or under the pointer; the overlay
+    doesn't clip them.
   - Subtitles are chosen in the player. With subtitles off, nothing downloads
     before the video starts; the add-ons' subtitles are then fetched. The
     Subtitles list always shows Off, the loaded tracks and every add-on file
     not yet loaded (marked Download), so other choices stay in reach while a
     track shows. A download reloads the video where it was, keeps the loaded
     tracks, shows the new one and remembers its language.
-  - The timeline sits low, with the elapsed and remaining times under its
-    ends. There are no transport buttons: OK plays and pauses, left and right
-    skip, Menu opens the options; a pointer clicks the centre glyph or drags
-    the timeline. The library binds Rewind, Play and Forward, so they stay in
-    the layout, hidden.
-  - The centre play/pause glyph is a small glass disc.
   - Errors are a centred glass alert like the app's, with stacked full-width
     buttons. It opens with its first button focused, and OK presses the
     focused one (`WatchActivity.onKey`); the library alone would retry.
 - **Options menu:** a floating glass sheet (`layout/playback_menu.xml`,
-  `bg_panel`) without Back and Close buttons: Back and Menu close it, and a
+  `bg_panel`) below the clock: Back and Menu close it, and a
   pointer uses the header's chevron or clicks outside. Rows use
   `layout/row_menu.xml`, `bg_option_row`, `option_label` and `menu_icon`; the
   focused row turns white with dark text, as everywhere else.
@@ -240,8 +283,15 @@ Cast keeps its own look:
 
 Screens are built off the main thread as `ui.Page` lists of `ui.Item` blocks
 (`BrowseScreens`, `TitleScreens`, `SetupScreens`), and `ui.PageAdapter` turns
-them into views. Every focusable view is tagged with a stable key. That lets
-Back restore focus and lets the instrumentation find controls by label.
+them into views. Every focusable view is tagged with a stable key. Back restores
+the retained page, focused card, vertical scroll and each shelf's horizontal
+position without another provider request; mutations and returning from playback
+still refresh affected data. The Back button appears on subpages; default Home,
+Library and Settings views omit it. Stable
+keys also let the instrumentation find controls by label. Year ranges use
+`2016 - Present` or `2016 - 2022`. The startup screen uses a light uppercase
+STREAM wordmark and a light sweeping through the play icon's full interior,
+clearing the tip before repeating.
 `MainActivity` only owns the back stack, chrome, dialogs and worker
 generations.
 
@@ -374,8 +424,13 @@ add-ons, catalogue visibility, library/favourites, per-video progress/history,
 preferences, imported descriptors and metadata cache. Call it from workers.
 Continue Watching starts at 30 seconds and excludes watched/completed videos;
 natural completion and explicit watched/unwatched actions are distinct. The
-playback host saves progress periodically and on lifecycle, seek and episode
-transitions.
+player's Mark watched button preserves the saved position and removes that
+video from Continue Watching. Leaving an unwatched video in its final 10%
+(capped at three minutes, after at least 30 seconds of progress) offers Keep
+for later, Mark watched or Continue watching. Keep for later is the default;
+remaining time never automatically marks a video watched. Live streams and
+unknown durations do not offer this choice. The playback host saves progress
+periodically and on lifecycle, seek and episode transitions.
 
 SQLite URL/manifest, metadata, import and preference values are AES-GCM encrypted
 with an Android Keystore key. Row identities are authenticated as additional
@@ -433,21 +488,19 @@ Internet Archive data.
 
 `branding/make_brand.py` regenerates the launcher icon and the TV banner from
 one geometry: a graphite field and a frosted-glass play mark. The icon is an
-adaptive vector with a monochrome layer, plus transparent square PNGs for Fire TV;
-the separate 16:9 banner is PNGs at five densities with the wordmark in Inter
-Display SemiBold. Application, activity and round-icon slots use the square PNGs:
-putting a banner in these slots lets Fire TV squeeze the artwork into a square.
-The square PNGs fit the original horizontal banner inside transparent padding,
-preserving its glass mark, wordmark, background and aspect ratio exactly.
-`branding/make_fonts.sh`
-regenerates the bundled Inter subsets.
+adaptive vector with a monochrome layer; the separate 16:9 banner is PNGs at five
+densities with the wordmark in Inter Display SemiBold. The application declares
+the adaptive icon and TV banner separately; the launcher activity inherits them.
+Do not wrap the banner in a padded square icon: that makes the artwork smaller.
+`branding/make_fonts.sh` regenerates the bundled Inter subsets.
 
 For a separate installation alongside Stream, build with
 `./gradlew :app:assembleDebug -PseparateTvApp=true` from `streaming/android`.
 This uses package `tv.daniil.stream.tvapp` and the launcher label **Stream TV**;
 it has its own data and does not replace `tv.daniil.stream`.
-Fire TV supplies Appstore tiles separately from APK icons, so a sideloaded
-app's tile framing is controlled by its launcher even with a 16:9 banner.
+Fire TV's choice of artwork can involve Appstore assets as well as APK resources.
+Compare a working app on the same device before attributing a tile problem to
+sideloading alone.
 
 `:app:testDebugUnitTest` runs JVM tests of the store protocol, listing rules,
 built-in add-on, torrent discovery and source sorting without a device or network.

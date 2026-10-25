@@ -190,7 +190,7 @@
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="40dp"
-            android:layout_gravity="top|end"
+            android:layout_gravity="top|right"
             android:layout_marginTop="22dp"
             android:layout_marginEnd="48dp"
             android:clipChildren="false"
@@ -198,18 +198,6 @@
             android:elevation="8dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
-        <TextClock
-            android:id="@+id/clock"
-            style="@style/Text.Time"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="16dp"
-            android:importantForAccessibility="no"
-            android:shadowColor="#B3000000"
-            android:shadowDy="1"
-            android:shadowRadius="6"
-            android:textColor="@color/tv_text_secondary"
-            android:visibility="gone" />
         <LinearLayout
             android:id="@+id/home_tools"
             android:layout_width="wrap_content"
@@ -231,6 +219,18 @@
                     android:duplicateParentState="true" android:importantForAccessibility="no" />
             </FrameLayout>
         </LinearLayout>
+        <TextClock
+            android:id="@+id/clock"
+            style="@style/Text.Time"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:importantForAccessibility="no"
+            android:shadowColor="#B3000000"
+            android:shadowDy="1"
+            android:shadowRadius="6"
+            android:textColor="@color/tv_text_secondary"
+            android:visibility="gone" />
         </LinearLayout>
     </FrameLayout>
 </FrameLayout>

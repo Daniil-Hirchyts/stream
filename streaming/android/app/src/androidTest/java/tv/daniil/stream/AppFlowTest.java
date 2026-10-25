@@ -27,7 +27,7 @@ public final class AppFlowTest extends AppHarness {
         context.getSharedPreferences("instrumentation", android.content.Context.MODE_PRIVATE).edit()
                 .putString("starterAddons", origin + "/addon/good/starter/manifest.json " + origin + "/missing-addon/manifest.json").commit();
         app.resetServices(); services = app.services();
-        launch(); tap("Get add-ons", true);
+        launch(); tap("Settings", true); tap("Add-on store", false); tap("Starter add-ons", true);
         waitUntil("starter review", 10_000, () -> visible("Install"));
         assertTrue("Opening the review does not install providers", services.store.addons().isEmpty());
         tap("Install", false);
@@ -50,8 +50,8 @@ public final class AppFlowTest extends AppHarness {
         playFilm();
         waitUntil("native statistics", 5000, () -> diagnostics().has("cache"));
         JSONObject initial = diagnostics(); assertTrue(initial.toString(), initial.getLong("totalDownload") < 68_000_000);
-        // Stream's player has no transport row: a pointer pauses with the centre glyph, the remote skips.
-        control(tv.daniil.playback.R.id.player_view, false); control(tv.daniil.playback.R.id.center_icon, true);
+        // Stream's player has no transport row: a pointer pauses with a timeline tap, the remote skips.
+        control(tv.daniil.playback.R.id.player_view, false); control(tv.daniil.playback.R.id.progress, true);
         waitUntil("paused by mouse", 5000, () -> state() != null && !state().playWhenReady);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
         waitUntil("first remote key seeks after mouse input", 20_000, () -> state().positionMs >= 10_000);

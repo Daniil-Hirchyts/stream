@@ -25,7 +25,14 @@ final class BrowseScreens {
 
     BrowseScreens(Navigator nav, TvApplication.Services services) { this.nav = nav; this.services = services; }
 
-    Page home(Cancellation scope) throws Exception {
+    Page home(Cancellation scope) throws Exception { return home(scope, ignored -> {}); }
+    Page home(Cancellation scope, java.util.function.Consumer<Page> progress) throws Exception {
+        List<AddonRepository.CatalogQuery> catalogues = services.addons.homeCatalogs();
+        progress.accept(homeContent(catalogues, null));
+        AddonRepository.Result<Title> found = services.addons.catalogs(catalogues, scope, partial -> progress.accept(homeContent(catalogues, partial)));
+        return homeContent(catalogues, found);
+    }
+    private Page homeContent(List<AddonRepository.CatalogQuery> catalogues, AddonRepository.Result<Title> found) {
         Page page = new Page();
         List<Item> shelves = new ArrayList<>();
         Map<String, Title> library = new LinkedHashMap<>();
@@ -43,10 +50,8 @@ final class BrowseScreens {
         }
         if (!continuing.isEmpty()) shelves.add(Item.shelf("continue-watching", "Continue Watching", "", Tile.Style.LANDSCAPE, continuing));
         if (!favourites.isEmpty()) shelves.add(Item.shelf("favourites", "Favourites", "", Tile.Style.POSTER, favourites));
-        List<AddonRepository.CatalogQuery> catalogues = services.addons.homeCatalogs();
         boolean failed = false, stale = false;
-        if (!catalogues.isEmpty()) {
-            AddonRepository.Result<Title> found = services.addons.catalogs(catalogues, scope);
+        if (found != null) {
             for (AddonRepository.CatalogQuery query : catalogues) {
                 String key = query.addon.id + ":" + query.catalog.type + ":" + query.catalog.id;
                 List<Tile> tiles = new ArrayList<>();
@@ -55,17 +60,16 @@ final class BrowseScreens {
             }
             failed = !found.failures.isEmpty(); stale = found.stale;
         }
-        if (shelves.isEmpty()) {
-            page.add(Item.message(R.drawable.ic_tv_tv, "Make yourself at home",
-                    catalogues.isEmpty() ? "Add a catalogue to fill this page." : "Your catalogues are empty right now.",
-                    new Item.Action("home-add-addon", Item.Action.Style.PRIMARY, "Get add-ons",
-                            () -> { if (services.starters.isEmpty()) nav.root("Add-ons"); else nav.push(StoreScreens.starters()); }).icon(R.drawable.ic_tv_extension),
-                    new Item.Action("home-import", Item.Action.Style.SECONDARY, "Import a torrent", nav::openImports).icon(R.drawable.ic_tv_download)));
+        if (shelves.isEmpty() && found == null && !catalogues.isEmpty()) page.add(Item.skeleton("Catalogues"));
+        else if (shelves.isEmpty()) {
+            page.add(Item.message(0, "Make yourself at home",
+                    failed ? "Your catalogues are unavailable right now. Manage add-ons in Settings or try refreshing."
+                            : "Films and series will appear here. Add catalogues or import a torrent in Settings."));
         } else {
             page.add(Item.spotlight(null));
             page.addAll(shelves);
         }
-        if (failed) page.add(Item.notice(R.drawable.ic_tv_offline, stale ? "Showing saved catalogues" : "Some providers are unavailable", ""));
+        if (failed && !shelves.isEmpty()) page.add(Item.notice(R.drawable.ic_tv_offline, stale ? "Showing saved catalogues" : "Some providers are unavailable", ""));
         // Browsing and refreshing need a catalogue; an empty Home shows only the way to add one.
         if (!catalogues.isEmpty()) page.tools = java.util.Arrays.asList(
                 new Item.Action("browse", Item.Action.Style.SECONDARY, "Browse catalogues", () -> nav.push(new Route("Catalogues"))).icon(R.drawable.ic_tv_list),
@@ -73,13 +77,25 @@ final class BrowseScreens {
         return page;
     }
 
-    Page search(Route route, Cancellation scope) throws Exception {
+    Page search(Route route, Cancellation scope) throws Exception { return search(route, scope, ignored -> {}); }
+    Page search(Route route, Cancellation scope, java.util.function.Consumer<Page> progress) throws Exception {
+        progress.accept(searchContent(route, null));
+        if (route.value.trim().length() < 2) return searchContent(route, null);
+        AddonRepository.Result<Title> found = services.addons.search(route.value, scope, partial -> {
+            try { progress.accept(searchContent(route, partial)); }
+            catch (Exception error) { throw new IllegalStateException(error); }
+        });
+        return searchContent(route, found);
+    }
+    private Page searchContent(Route route, AddonRepository.Result<Title> found) throws Exception {
+        route.extras.put("keyboardLanguages", services.store.preference("keyboardLanguages", "en"));
+        if (!route.extras.containsKey("keyboardLanguage")) route.extras.put("keyboardLanguage", services.store.preference("keyboardLanguage", "en"));
         Page page = new Page();
         Item search = searchItem(route);
         page.add(search);
-        page.initialFocus = "keyboard:a";
+        page.initialFocus = "keyboard:" + tv.daniil.stream.ui.KeyboardLanguages.alphabet(search.keyboardLanguage).charAt(0);
         if (route.value.trim().length() < 2) return page;
-        AddonRepository.Result<Title> found = services.addons.search(route.value, scope);
+
         List<Tile> tiles = new ArrayList<>();
         String needle = route.value.trim().toLowerCase(Locale.ROOT);
         for (String id : services.store.importIds()) {
@@ -90,10 +106,11 @@ final class BrowseScreens {
                 tiles.add(poster("search-import", imported));
             }
         }
-        for (Title t : found.items) tiles.add(poster("search", t));
+        if (found != null) for (Title t : found.items) tiles.add(poster("search", t));
         search.tiles = tiles;
-        search.detail = tiles.isEmpty() ? "No results" : "";
-        if (!found.failures.isEmpty()) search.meta = "Some providers could not answer";
+        search.loading = found == null;
+        search.detail = found != null && tiles.isEmpty() ? "No results" : "";
+        if (found != null && !found.failures.isEmpty()) search.meta = "Some providers could not answer";
         return page;
     }
 
@@ -104,7 +121,13 @@ final class BrowseScreens {
     }
 
     private Item searchItem(Route route) {
-        return Item.keyboard("keyboard", route.value, text -> { route.value = text; route.scroll = null; nav.searchInput(text); });
+        Item item = Item.keyboard("keyboard", route.value, text -> { route.value = text; route.scroll = null; nav.searchInput(text); });
+        item.keyboardLanguages = tv.daniil.stream.ui.KeyboardLanguages.parse(route.extras.getOrDefault("keyboardLanguages", "en"));
+        String language = route.extras.getOrDefault("keyboardLanguage", "en");
+        item.keyboardLanguage = item.keyboardLanguages.contains(language) ? language : item.keyboardLanguages.get(0);
+        item.keyboardLanguageChanged = nav::keyboardLanguage; item.keyboardVoice = nav::voiceInput;
+        item.action = () -> nav.push(new Route("Keyboard languages"));
+        return item;
     }
 
     Page library() {
@@ -113,8 +136,8 @@ final class BrowseScreens {
         Map<String, Title> titles = new LinkedHashMap<>();
         for (TvStore.LibraryEntry e : services.store.library(false)) {
             titles.put(e.title.key(), e.title);
-            Tile tile = poster("library", e.title, e.favourite ? "Favourite" : subtitle(e.title));
-            (e.favourite ? favourites : others).add(e.favourite ? tile.badge(R.drawable.ic_tv_heart) : tile);
+            Tile tile = poster("library", e.title);
+            (e.favourite ? favourites : others).add(tile);
         }
         List<Tile> history = new ArrayList<>();
         for (TvStore.Progress progress : services.store.history(false)) {
@@ -122,8 +145,8 @@ final class BrowseScreens {
             if (title != null) history.add(progressTile("history", title, progress));
         }
         if (favourites.isEmpty() && others.isEmpty() && history.isEmpty()) {
-            return page.add(Item.message(R.drawable.ic_tv_heart_outline, "Your library is empty", "",
-                    new Item.Action("library-search", Item.Action.Style.PRIMARY, "Find titles", nav::search).icon(R.drawable.ic_tv_search)));
+            return page.add(Item.message(0, "Your library is empty",
+                    "Films and series you play or favourite will appear here."));
         }
         if (!favourites.isEmpty()) { page.add(Item.header("Favourites")); page.addAll(Item.grid("favourites", Tile.Style.POSTER, POSTER_COLUMNS, favourites)); }
         if (!others.isEmpty()) { page.add(Item.header("Recently played")); page.addAll(Item.grid("played", Tile.Style.POSTER, POSTER_COLUMNS, others)); }
@@ -262,24 +285,20 @@ final class BrowseScreens {
     }
 
     // Shared tile builders.
-    Tile poster(String section, Title t) { return poster(section, t, subtitle(t)); }
+    Tile poster(String section, Title t) { return poster(section, t, ""); }
     Tile poster(String section, Title t, String subtitle) {
         return new Tile(section + ":" + t.key(), Tile.Style.POSTER, t.name, subtitle, t.poster, t, () -> nav.openTitle(t, ""));
     }
     private Tile progressTile(String section, Title title, TvStore.Progress p) {
         String episode = TitleScreens.episodeName(title, p.video);
-        String state = p.watched ? "Watched" : p.durationMs > 0 ? minutes(p.durationMs - p.positionMs) + " left" : "Resume at " + minutes(p.positionMs);
+        String state = p.watched ? "" : p.durationMs > 0 ? minutes(p.durationMs - p.positionMs) + " left" : "Resume at " + minutes(p.positionMs);
         String image = title.background != null ? title.background : title.poster;
         for (Title.Episode e : title.episodes) if (e.id.equals(p.video) && e.thumbnail != null) image = e.thumbnail;
         Tile tile = new Tile(section + ":" + title.key() + ":" + p.video, Tile.Style.LANDSCAPE, title.name,
-                title.type.equals("series") ? episode + " · " + state : state, image, title, () -> nav.openTitle(title, p.video));
-        if (p.watched) tile.badge(R.drawable.ic_tv_check);
+                title.type.equals("series") ? episode + (state.isEmpty() ? "" : " · " + state) : state, image, title, () -> nav.openTitle(title, p.video));
+        if (p.watched) { if (!section.equals("history")) tile.badge(R.drawable.ic_tv_check); }
         else if (p.durationMs > 0) tile.progress(Math.min(1f, p.positionMs / (float) p.durationMs));
         return tile;
-    }
-    static String subtitle(Title t) {
-        if (!t.releaseInfo.isEmpty()) return t.releaseInfo;
-        return t.provider.equals("local") ? "Import" : t.type.equals("series") ? "Series" : t.type.equals("movie") ? "Film" : "";
     }
     static String minutes(long ms) {
         long minutes = Math.max(1, Math.round(ms / 60_000.0));

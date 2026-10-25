@@ -89,6 +89,8 @@ struct source
 	// 40 hex digits (v1) or 64 (v2)
 	std::string info_hash;
 	std::vector<std::string> trackers;
+	// Only explicitly public raw info hashes may use these when no trackers exist.
+	std::vector<std::string> fallback_trackers;
 	// "address:port", contacted directly
 	std::vector<std::string> peers;
 };
@@ -115,6 +117,8 @@ struct torrent_stats
 	int num_pieces = 0;
 	int hash_failures = 0;
 	int evictions_requested = 0;
+	int urgent_reservation_failures = 0, obsolete_partials = 0;
+	std::int64_t verified_read_bytes = 0;
 	piece_cache::stats cache;
 	cache_disk_io::stats disk;
 };
@@ -126,6 +130,7 @@ class engine
 public:
 	explicit engine(engine_config cfg);
 	~engine();
+	void request_stop();
 	engine(engine const&) = delete;
 	engine& operator=(engine const&) = delete;
 
@@ -136,6 +141,8 @@ public:
 	// Starts downloading the beginning of this file; other files stay untouched.
 	void select_file(std::uint64_t torrent, int file);
 	void set_bitrate(std::uint64_t torrent, std::int64_t bytes_per_second);
+	void set_demand(std::uint64_t torrent, std::int64_t bytes_per_second, int ahead_seconds);
+	std::string metainfo(std::uint64_t torrent);
 	// More peers to contact, "address:port".
 	void add_peers(std::uint64_t torrent, std::vector<std::string> const& peers);
 	torrent_stats stats(std::uint64_t torrent);
@@ -169,8 +176,12 @@ private:
 		std::string error;
 		error_kind error_type = error_kind::torrent_failed;
 		bool failed = false;
+		bool removed = false;
 		int file = -1;
 		std::int64_t bitrate = 0;
+		int ahead_seconds = 0;
+		std::atomic<std::int64_t> verified_read_bytes{0};
+		std::atomic<int> urgent_reservation_failures{0}, obsolete_partials{0};
 		// Where the read-ahead window starts when no reader is active: the last reading position.
 		std::int64_t anchor = 0;
 		// Only the engine thread touches these two.
@@ -213,13 +224,14 @@ private:
 	// synchronously, so libtorrent's threads never wait for it.
 	std::mutex m_mutex;
 	std::map<std::uint64_t, std::shared_ptr<stream>> m_streams;
+	std::map<std::uint64_t, std::shared_ptr<stream>> m_retiring;
 	std::map<std::uint64_t, std::shared_ptr<reader>> m_readers;
 	std::uint64_t m_next_id = 1;
 
 	std::mutex m_wake_mutex;
 	std::condition_variable m_wake_cv;
 	bool m_woken = false;
-	bool m_stop = false;
+	std::atomic<bool> m_stop{false};
 	std::thread m_thread;
 };
 

@@ -66,55 +66,84 @@ public final class TorrentEngine implements AutoCloseable {
         @Nullable final String infoHash;
         final String[] trackers;
         final String[] peers;
+        final String[] fallbackTrackers;
 
         private Source(@Nullable byte[] metainfo, @Nullable String magnet, @Nullable String infoHash,
-                String[] trackers, String[] peers) {
+                String[] trackers, String[] peers, String[] fallbackTrackers) {
             this.metainfo = metainfo;
             this.magnet = magnet;
             this.infoHash = infoHash;
             this.trackers = trackers;
-            this.peers = peers;
+            this.peers = peers; this.fallbackTrackers = fallbackTrackers;
         }
 
         public static Source metainfo(byte[] torrent) {
-            return new Source(torrent, null, null, new String[0], new String[0]);
+            return new Source(torrent, null, null, new String[0], new String[0], new String[0]);
         }
 
         public static Source magnet(String uri) {
-            return new Source(null, uri, null, new String[0], new String[0]);
+            return new Source(null, uri, null, new String[0], magnetPeers(uri), new String[0]);
+        }
+
+        /** Preserve explicit bootstrap peers when a magnet becomes a cached metadata source. No DNS lookup. */
+        private static String[] magnetPeers(String magnet) {
+            java.util.Set<String> peers = new java.util.LinkedHashSet<>();
+            try {
+                String query = java.net.URI.create(magnet).getRawSchemeSpecificPart();
+                if (!query.startsWith("?")) return new String[0];
+                for (String pair : query.substring(1).split("&")) {
+                    String[] field = pair.split("=", 2);
+                    if (field.length != 2 || !field[0].equals("x.pe")) continue;
+                    String peer = java.net.URLDecoder.decode(field[1], "UTF-8");
+                    try {
+                        java.net.URI endpoint = java.net.URI.create("tcp://" + peer);
+                        String host = endpoint.getHost(); int port = endpoint.getPort();
+                        if (host == null || port < 1 || port > 65535 || endpoint.getRawUserInfo() != null
+                                || !endpoint.getRawPath().isEmpty() || endpoint.getRawQuery() != null || endpoint.getRawFragment() != null) continue;
+                        boolean numeric = host.startsWith("[") && host.endsWith("]");
+                        if (!numeric && host.matches("(?:0|[1-9][0-9]{0,2})(?:\\.(?:0|[1-9][0-9]{0,2})){3}")) {
+                            numeric = true;
+                            for (String part : host.split("\\.")) if (Integer.parseInt(part) > 255) numeric = false;
+                        }
+                        if (numeric) peers.add(peer);
+                    } catch (IllegalArgumentException ignored) { /* Optional malformed peer; libtorrent validates the magnet too. */ }
+                }
+            } catch (IllegalArgumentException | java.io.UnsupportedEncodingException ignored) { /* Invalid magnet is rejected when added. */ }
+            return peers.toArray(new String[0]);
         }
 
         /** 40 hexadecimal digits for a v1 info hash, 64 for v2. */
         public static Source infoHash(String hex) {
-            return new Source(null, null, hex, new String[0], new String[0]);
+            return new Source(null, null, hex, new String[0], new String[0], new String[0]);
         }
 
         public Source withTrackers(String... urls) {
-            return new Source(metainfo, magnet, infoHash, urls.clone(), peers);
+            return new Source(metainfo, magnet, infoHash, urls.clone(), peers, fallbackTrackers);
         }
 
         /** These trackers, only if no others were given: for providers that name a torrent but no way to find its peers. */
         public Source withFallbackTrackers(String... urls) {
-            return trackers.length > 0 ? this : withTrackers(urls);
+            return new Source(metainfo, magnet, infoHash, trackers, peers, urls.clone());
         }
 
         /** "address:port" of peers to contact directly. */
         public Source withPeers(String... addresses) {
-            return new Source(metainfo, magnet, infoHash, trackers, addresses.clone());
+            return new Source(metainfo, magnet, infoHash, trackers, addresses.clone(), fallbackTrackers);
         }
     }
 
     private final long id;
+    private final String cacheDirectory;
     private volatile boolean closed;
 
-    private TorrentEngine(long id) {
-        this.id = id;
+    private TorrentEngine(long id, String directory) {
+        this.id = id; this.cacheDirectory = directory;
     }
 
     public static TorrentEngine create(Config c) throws TorrentException {
         return new TorrentEngine(nativeCreate(c.cacheDirectory, c.cacheBytes, c.reserveBytes, c.listenInterfaces,
                 c.dht, c.localDiscovery, c.upnp, c.natpmp, c.peerExchange, c.multipleConnectionsPerIp, c.publicNetworkOnly,
-                c.trustRootsFile, c.readAheadSeconds));
+                c.trustRootsFile, c.readAheadSeconds), c.cacheDirectory);
     }
 
     /** The libtorrent version and the eviction patch it carries. */
@@ -123,7 +152,7 @@ public final class TorrentEngine implements AutoCloseable {
     }
 
     public long add(Source s) throws TorrentException {
-        return nativeAdd(id, s.metainfo, s.magnet, s.infoHash, s.trackers, s.peers);
+        return nativeAdd(id, s.metainfo, s.magnet, s.infoHash, s.trackers, s.peers, s.fallbackTrackers);
     }
 
     /** Waits for the file list: at once for a .torrent file, from peers for a magnet link or info hash. */
@@ -150,6 +179,12 @@ public final class TorrentEngine implements AutoCloseable {
         nativeSetBitrate(id, torrent, bytesPerSecond);
     }
 
+    public void updateDemand(long torrent, long bytesPerSecond, int aheadSeconds) throws TorrentException {
+        nativeSetDemand(id, torrent, bytesPerSecond, aheadSeconds);
+    }
+    public Source snapshotSource(long torrent, Source original) throws TorrentException {
+        return new Source(nativeMetainfo(id, torrent), null, null, original.trackers, original.peers, new String[0]);
+    }
     public void addPeers(long torrent, String... addresses) throws TorrentException {
         nativeAddPeers(id, torrent, addresses);
     }
@@ -204,10 +239,11 @@ public final class TorrentEngine implements AutoCloseable {
     }
 
     /** Stops the session. Calls still running in other threads finish first, with errors. */
-    @Override public void close() {
+    @Override public synchronized void close() {
         if (closed) return;
         closed = true;
         nativeDestroy(id);
+        new java.io.File(cacheDirectory).delete();
     }
 
     private static List<TorrentFile> parseFiles(String json) throws TorrentException {
@@ -229,10 +265,12 @@ public final class TorrentEngine implements AutoCloseable {
             int readAheadSeconds) throws TorrentException;
     private static native void nativeDestroy(long id);
     private static native long nativeAdd(long id, @Nullable byte[] metainfo, @Nullable String magnet,
-            @Nullable String infoHash, String[] trackers, String[] peers) throws TorrentException;
+            @Nullable String infoHash, String[] trackers, String[] peers, String[] fallbackTrackers) throws TorrentException;
     @Nullable private static native String nativeAwaitMetadata(long id, long torrent, long waitMs) throws TorrentException;
     private static native void nativeSelectFile(long id, long torrent, int file) throws TorrentException;
     private static native void nativeSetBitrate(long id, long torrent, long bytesPerSecond) throws TorrentException;
+    private static native void nativeSetDemand(long id, long torrent, long bytesPerSecond, int seconds) throws TorrentException;
+    private static native byte[] nativeMetainfo(long id, long torrent) throws TorrentException;
     private static native void nativeAddPeers(long id, long torrent, String[] peers) throws TorrentException;
     private static native String nativeStats(long id, long torrent) throws TorrentException;
     private static native void nativeRemove(long id, long torrent) throws TorrentException;

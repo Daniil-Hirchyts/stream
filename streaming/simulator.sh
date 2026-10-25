@@ -239,7 +239,7 @@ case "${1:-up}" in
   services) start_services ;;
   test) run_tests && run_data_tests && run_core_app_tests ;;
   engine-test) run_tests ;;
-  data-test) run_data_tests ;;
+  data-test) shift; run_data_tests "$@" ;;
   smoke) run_data_tests tv.daniil.stream.AppFlowTest#catalogueFavouritesPlaybackControlsAndEvictedRewindWork ;;
   decoder-test) sh "$SIM_DIR/decoder-fixtures.sh" && run_data_tests tv.daniil.stream.DecoderPlaybackTest ;;
   # Not a required suite: public services and swarms change. Uses the internet, never the LAN or a physical TV.

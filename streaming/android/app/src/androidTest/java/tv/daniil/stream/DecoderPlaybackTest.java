@@ -26,7 +26,7 @@ public final class DecoderPlaybackTest extends AppHarness {
     @Test public void bundledNativeDecodersArePresent() {
         for (String mime : new String[]{"audio/eac3", "audio/eac3-joc", "audio/ac3", "audio/vnd.dts", "audio/vnd.dts.hd",
                 "audio/true-hd", "audio/mp4a-latm", "audio/mpeg", "audio/flac", "audio/alac", "audio/opus", "audio/vorbis",
-                "video/avc", "video/hevc", "video/x-vnd.on2.vp8", "video/x-vnd.on2.vp9", "video/av01"}) {
+                "video/avc", "video/hevc", "video/x-vnd.on2.vp8", "video/x-vnd.on2.vp9", "video/av01", "video/mp4v-es", "video/mp42", "video/mp43", "video/wvc1", "video/mjpeg", "audio/mpeg-L1", "audio/mpeg-L2"}) {
             assertTrue("Bundled decoder missing: " + mime, StreamDecoders.supports(mime));
         }
         assertFalse(StreamDecoders.supports("video/unknown"));
@@ -111,6 +111,83 @@ public final class DecoderPlaybackTest extends AppHarness {
         });
         waitUntil("audio output failure retries decoded PCM", 15_000, () -> state().error == null
                 && manager(activity).getAudioMode() == DecoderMode.FFMPEG && state().playing && audioRendered());
+        instrumentation.runOnMainSync(() -> {
+            ExoPlayer player = session.player(); Format format = player.getAudioFormat();
+            player.createMessage((type, payload) -> { throw ExoPlaybackException.createForRenderer(
+                    new IllegalStateException("Injected multichannel PCM output failure"), "FfmpegAudioRenderer", 3,
+                    format, C.FORMAT_HANDLED, null, false, PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED); }).send();
+        });
+        waitUntil("PCM output retries stereo once", 15000, () -> Boolean.TRUE.equals(field(decoders(activity), "retriedStereo"))
+                && state().error == null && state().playing && audioRendered());
+    }
+
+    @Test public void surroundAudioCanBeDownmixedToRealStereoPcm() throws Exception {
+        io.github.anilbeesetti.nextlib.media3ext.ffdecoder.StereoDecoderProbe.check(origin + "/streaming/media/codecs/eac3.ec3");
+    }
+
+    @Test public void legacyAviCodecsAnd1080pVideoRenderFreshFramesAfterSeeking() throws Exception {
+        open("http-mkv");
+        for (String codec : new String[]{"xvid", "mp42", "mp43", "mjpeg", "sdr-1080"}) {
+            load(codec, false, true); controlsAndSeek(true); evidence(codec);
+        }
+    }
+    @Test public void lateSubtitlesKeepTheMediaAndSuccessfulDecoderFallback() throws Exception {
+        open("http-mkv");
+        WatchActivity activity = watch(); PlaybackSession session = AppFlowTest.session(activity);
+        injectFailure(false);
+        waitUntil("FFmpeg audio fallback", 15000, () -> manager(activity).getAudioMode() == DecoderMode.FFMPEG && state().playing);
+        java.util.concurrent.atomic.AtomicInteger generation = new java.util.concurrent.atomic.AtomicInteger();
+        instrumentation.runOnMainSync(() -> {
+            generation.set(session.generation());
+            session.attachExternalSubtitles(Collections.singletonList(new SubtitleDownloader.Source(origin + "/addon/subtitle.vtt", "text/vtt", "en", "Late subtitle")), Collections.emptyMap(), true);
+        });
+        waitUntil("external subtitle attached", 10000, () -> state().subtitles != null && state().subtitles.external);
+        instrumentation.runOnMainSync(() -> {
+            assertEquals("Media was not replaced", generation.get(), session.generation());
+            assertEquals("Working fallback retained", DecoderMode.FFMPEG, manager(activity).getAudioMode());
+            session.pause(); session.seekTo(1500);
+        });
+        waitUntil("paused late cue", 10000, () -> !state().buffering);
+        instrumentation.runOnMainSync(() -> {
+            try {
+                java.lang.reflect.Method cues = PlaybackSession.class.getDeclaredMethod("cues"); cues.setAccessible(true);
+                assertFalse("Cue already active at seek target", ((java.util.List<?>) cues.invoke(session)).isEmpty());
+            } catch (ReflectiveOperationException error) { throw new AssertionError(error); }
+        });
+        String another = origin + "/addon/subtitle.vtt?late=second";
+        instrumentation.runOnMainSync(() -> {
+            session.attachExternalSubtitles(Collections.singletonList(new SubtitleDownloader.Source(another, "text/vtt", "en", "Second late subtitle")), Collections.emptyMap(), true);
+            session.selectSubtitles(null);
+        });
+        waitUntil("second caption download", 10000, () -> {
+            java.util.concurrent.atomic.AtomicBoolean present = new java.util.concurrent.atomic.AtomicBoolean();
+            instrumentation.runOnMainSync(() -> present.set(session.hasExternalSubtitle(another))); return present.get();
+        });
+        assertNull("Late completion respects explicit Off", state().subtitles);
+
+    }
+
+    @Test public void lateSubtitleBatchesKeepSelectionAndTheLatestDownloadIntent() throws Exception {
+        open("http-mkv"); PlaybackSession session = AppFlowTest.session(watch());
+        String initial = origin + "/addon/subtitle.vtt?batch=initial";
+        instrumentation.runOnMainSync(() -> session.attachExternalSubtitles(Collections.singletonList(new SubtitleDownloader.Source(initial, "text/vtt", "en", "Initial")), Collections.emptyMap(), true));
+        waitUntil("initial late track", 10000, () -> state().subtitles != null && state().subtitles.external);
+        java.util.List<SubtitleDownloader.Source> batch = new java.util.ArrayList<>();
+        for (int i = 0; i < 8; i++) batch.add(new SubtitleDownloader.Source(origin + "/addon/subtitle.vtt?batch=" + i, "text/vtt", "en", "Batch " + i));
+        java.util.concurrent.atomic.AtomicBoolean completed = new java.util.concurrent.atomic.AtomicBoolean();
+        instrumentation.runOnMainSync(() -> session.attachExternalSubtitles(batch, Collections.emptyMap(), true, completed::set));
+        waitUntil("batch complete", 10000, completed::get);
+        assertNotNull("Selected timeline survives eviction", state().subtitles); assertEquals("Batch 0", state().subtitles.label);
+        assertEquals(8, state().textTracks.stream().filter(track -> track.external).count());
+        java.util.concurrent.atomic.AtomicBoolean olderSelected = new java.util.concurrent.atomic.AtomicBoolean(), latest = new java.util.concurrent.atomic.AtomicBoolean();
+        instrumentation.runOnMainSync(() -> {
+            session.attachExternalSubtitles(Collections.singletonList(new SubtitleDownloader.Source(origin + "/addon/subtitle.vtt?choice=older", "text/vtt", "en", "Older")), Collections.emptyMap(), true,
+                    loaded -> olderSelected.set(session.snapshot().subtitles != null && session.snapshot().subtitles.label.equals("Older")));
+            session.attachExternalSubtitles(Collections.singletonList(new SubtitleDownloader.Source(origin + "/addon/subtitle.vtt?choice=latest", "text/vtt", "en", "Latest")), Collections.emptyMap(), true, latest::set);
+        });
+        waitUntil("latest download selected", 10000, latest::get);
+        assertFalse("An earlier completion must not change the newer selection intent", olderSelected.get());
+        assertEquals("Latest", state().subtitles.label);
     }
 
     private void open(String configuration) throws Exception {
@@ -123,7 +200,7 @@ public final class DecoderPlaybackTest extends AppHarness {
         WatchActivity activity = watch();
         instrumentation.runOnMainSync(() -> {
             PlaybackSession session = AppFlowTest.session(activity);
-            session.load(new PlaybackRequest.Builder(Uri.parse(origin + "/streaming/media/codecs/" + codec + ".mkv"), codec)
+            session.load(new PlaybackRequest.Builder(Uri.parse(origin + "/streaming/media/codecs/" + codec + (java.util.Arrays.asList("xvid", "mp42", "mp43", "mjpeg").contains(codec) ? ".avi" : ".mkv")), codec)
                     .subtitles(Collections.singletonList(new SubtitleDownloader.Source(origin + "/addon/subtitle.vtt", "text/vtt", "en", "Generated subtitle"))).build());
             DecoderManager manager = manager(activity);
             if (audio) manager.selectAudioDecoder(DecoderMode.FFMPEG);
@@ -138,7 +215,15 @@ public final class DecoderPlaybackTest extends AppHarness {
         waitUntil("paused seek", 10_000, () -> state().error == null && !state().playWhenReady && !state().buffering && state().positionMs >= 6500);
         instrumentation.runOnMainSync(() -> session.seekTo(1500));
         waitUntil("backward seek", 10_000, () -> state().error == null && !state().buffering && state().positionMs >= 1500 && state().positionMs < 4000);
-        instrumentation.runOnMainSync(session::play);
+        java.util.concurrent.atomic.AtomicInteger rendered = new java.util.concurrent.atomic.AtomicInteger();
+        instrumentation.runOnMainSync(() -> { androidx.media3.exoplayer.DecoderCounters counter = session.player().getVideoDecoderCounters();
+            rendered.set(counter == null ? 0 : counter.renderedOutputBufferCount); session.play(); });
+        waitUntil("fresh video frames after seek", 10000, () -> {
+            java.util.concurrent.atomic.AtomicBoolean fresh = new java.util.concurrent.atomic.AtomicBoolean();
+            instrumentation.runOnMainSync(() -> { androidx.media3.exoplayer.DecoderCounters counter = session.player().getVideoDecoderCounters();
+                fresh.set(counter != null && counter.renderedOutputBufferCount > rendered.get()); });
+            return fresh.get();
+        });
         waitUntil("sound and picture after seek", 10_000, () -> state().error == null && state().playing && state().positionMs >= 2200 && audioRendered());
         if (externalSubtitles) assertFalse("External subtitle track retained", state().textTracks.isEmpty());
     }

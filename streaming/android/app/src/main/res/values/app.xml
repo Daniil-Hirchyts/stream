@@ -101,6 +101,14 @@
         <item name="android:fontFamily">@font/inter_medium</item>
         <item name="android:fontFeatureSettings">tnum</item>
     </style>
+    <style name="TvTimelineTime" parent="Text.Time">
+        <item name="android:textSize">13sp</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:shadowColor">#B3000000</item>
+        <item name="android:shadowDy">1</item>
+        <item name="android:shadowRadius">4</item>
+    </style>
     <style name="KeyCap" parent="Text" tools:ignore="UnusedResources">
         <item name="android:layout_height">28dp</item>
         <item name="android:minWidth">34dp</item>

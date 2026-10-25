@@ -31,7 +31,7 @@ import java.util.List;
  * Media3 currently marks this compatibility path deprecated. The playback regression
  * suite must pass before removing it or upgrading past its eventual removal.
  */
-@OptIn(markerClass = UnstableApi.class)
+@OptIn(markerClass = {UnstableApi.class, androidx.media3.common.util.ExperimentalApi.class})
 @SuppressWarnings("deprecation")
 public final class SubtitlePlayback extends DefaultRenderersFactory {
     SubtitlePlayback(Context context) { super(context); }
