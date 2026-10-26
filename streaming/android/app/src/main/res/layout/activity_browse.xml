@@ -152,6 +152,18 @@
                         android:textColor="@color/tv_text_secondary"
                         android:textSize="17sp" />
                     <FrameLayout
+                        android:id="@+id/search_keyboard"
+                        android:layout_width="38dp"
+                        android:layout_height="38dp"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/tv_utility_button"
+                        android:contentDescription="Hide keyboard">
+                        <ImageView android:layout_width="20dp" android:layout_height="20dp"
+                            android:layout_gravity="center" android:duplicateParentState="true"
+                            android:importantForAccessibility="no" android:src="@drawable/ic_tv_keyboard"
+                            android:tint="@color/tv_on_glass" />
+                    </FrameLayout>
+                    <FrameLayout
                         android:id="@+id/search_close"
                         android:layout_width="38dp"
                         android:layout_height="38dp"

@@ -38,13 +38,13 @@ public final class PlayerInteractionTest extends AppHarness {
         waitUntil("speed selected through menu", 5000, () -> state().speed == 1.5f);
         tap("Subtitle style", false); tap("Size", true); tap("Large", false);
         waitUntil("subtitle style persisted", 5000, () -> services.playerPreferences.getString("subtitle_size", "").equals("large"));
-        control(tv.daniil.playback.R.id.menu_back, true);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT);
         WatchActivity menuActivity = watch();
         instrumentation.runOnMainSync(() -> assertFalse("Track changes must not expose controls beneath the menu",
                 menuActivity.findViewById(tv.daniil.playback.R.id.controls).isShown()));
         // The centre of the video lies outside the right-hand menu; clicking it dismisses the sheet.
         control(tv.daniil.playback.R.id.player_view, false);
-        waitUntil("menu closes by pointer", 5000, () -> !shown(tv.daniil.playback.R.id.menu));
+        waitUntil("menu closes by pointer", 5000, () -> !popupOpen());
         assertFalse("Dismissing the menu must leave playback paused", state().playWhenReady);
         control(tv.daniil.playback.R.id.player_view, true);
         WatchActivity activity = watch(); Rect timeline = new Rect();
@@ -68,9 +68,9 @@ public final class PlayerInteractionTest extends AppHarness {
         control(tv.daniil.playback.R.id.progress, true);
         waitUntil("pointer resumes after drag", 10_000, () -> state().playing);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
-        waitUntil("remote opens menu after touch", 5000, () -> shown(tv.daniil.playback.R.id.menu));
+        waitUntil("remote opens menu after touch", 5000, () -> popupOpen());
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
-        waitUntil("remote closes menu", 5000, () -> !shown(tv.daniil.playback.R.id.menu));
+        waitUntil("remote closes menu", 5000, () -> !popupOpen());
         control(tv.daniil.playback.R.id.player_view, false);
         WatchActivity playing = watch();
         instrumentation.runOnMainSync(() -> assertTrue("Back exits from the playback toolbar",
@@ -85,18 +85,25 @@ public final class PlayerInteractionTest extends AppHarness {
         waitUntil("video renders", 30_000, () -> state() != null && state().playing && state().renderedFirstFrame);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
         WatchActivity activity = watch();
-        instrumentation.runOnMainSync(() -> assertTrue("Up focuses Audio & subtitles",
+        instrumentation.runOnMainSync(() -> assertTrue("Up focuses the first action, watched",
+                activity.findViewById(R.id.control_watched).hasFocus()));
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
+        instrumentation.runOnMainSync(() -> assertTrue("Right reaches Audio & subtitles",
                 activity.findViewById(tv.daniil.playback.R.id.control_options).hasFocus()));
         SystemClock.sleep(4500);
         assertTrue("Focused options stay visible", shown(tv.daniil.playback.R.id.controls));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
-        waitUntil("OK opens options", 5000, () -> shown(tv.daniil.playback.R.id.menu));
+        waitUntil("OK opens options", 5000, () -> popupOpen());
         // Subtitle choices are directly on the Audio & subtitles page: Off, then the first track.
         waitUntil("subtitle choices", 5000, () -> visible("Off"));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
         waitUntil("remote subtitle selected", 5000, () -> state().subtitles != null);
-        waitUntil("selection dismisses menu", 5000, () -> !shown(tv.daniil.playback.R.id.menu));
+        waitUntil("selection dismisses menu", 5000, () -> !popupOpen());
+        waitUntil("closing morph returns the player window", 5000, () -> {
+            java.util.concurrent.atomic.AtomicBoolean focus = new java.util.concurrent.atomic.AtomicBoolean();
+            instrumentation.runOnMainSync(() -> focus.set(activity.hasWindowFocus())); return focus.get();
+        });
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
         instrumentation.runOnMainSync(() -> assertTrue("Down focuses the timeline",
@@ -130,6 +137,8 @@ public final class PlayerInteractionTest extends AppHarness {
             assertEquals("Glyph vertical optical centre", 120, yTotal / weight, 2);
         }
     }
+
+    private boolean popupOpen() { return visible("Settings") || visible("Audio & subtitles") || visible("Subtitle style"); }
 
     private boolean shown(int id) {
         java.util.concurrent.atomic.AtomicBoolean shown = new java.util.concurrent.atomic.AtomicBoolean();

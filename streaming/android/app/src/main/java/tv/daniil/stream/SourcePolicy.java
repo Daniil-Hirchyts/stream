@@ -20,7 +20,7 @@ import tv.daniil.torrent.TorrentFile;
 /** Conservative advertised hints, followed by actual Media3 format/decoder validation. No download side effects. */
 @OptIn(markerClass = UnstableApi.class)
 public final class SourcePolicy {
-    private static final Pattern ABOVE_PROFILE = Pattern.compile("\\b(2160p|4k|8k|uhd|4320p)\\b");
+    private static final Pattern ABOVE_PROFILE = Pattern.compile("\\b(1440p|2160p|4k|8k|uhd|4320p)\\b");
     private static final Pattern HDR_HINT = Pattern.compile("\\b(?:hdr(?:10(?:\\+|plus)?)?|hlg|dovi|dolby[ ._-]?vision|dv)\\b");
     private static final Pattern COMMON_AUDIO = Pattern.compile("\\b(?:aac|opus|mp3)(?=[^a-z]|$)");
     private static final Pattern TRUEHD_AUDIO = Pattern.compile("\\btrue[ ._-]?hd\\b");
@@ -55,18 +55,13 @@ public final class SourcePolicy {
                 return new Assessment(false, "Advertised video profile unavailable", -1000);
             boolean hdr = HDR_HINT.matcher(hint).find();
             if (hdr && !DecoderProfile.hdrHintSupported(codec)) return new Assessment(false, "HDR needs a compatible hardware decoder and display", -1000);
-            int rank = hint.contains("1080p") ? 20 : hint.contains("720p") ? 10 : 0;
-            // Automatic Play favours the broadly supported AVC path over less certain high-bit-depth releases.
-            if ("video/avc".equals(codec)) rank += 25;
-            if (COMMON_AUDIO.matcher(hint).find()) rank += 5;
-            SourceSort.Facts facts = SourceSort.facts(source);
-            rank += PlaybackOutcomes.rank(source)
-                    + (facts.seeds > 0 ? 30 : facts.seeds == 0 ? -30 : 0)
-                    - (int) Math.min(200, facts.bytes / (256L << 20));
+            // Compatibility is a gate; it must not outweigh availability, HD quality and transfer size.
+            int rank = AutoSourceRank.score(SourceSort.facts(source), PlaybackOutcomes.rank(source))
+                    + ("video/avc".equals(codec) ? 3 : 0);
             if (codec == null) return new Assessment(true, "Compatibility unknown; checked when opened", rank);
             boolean hardware = MediaCodecUtil.getDecoderInfos(codec, false, false).stream().anyMatch(info -> info.hardwareAccelerated);
-            return new Assessment(true, hardware ? "Supported hardware decoder; format checked when opened" : "Supported decoder; format checked when opened", rank + (hardware ? 2000 : 1000));
-        } catch (Exception e) { return new Assessment(true, "Compatibility unknown; checked when opened", PlaybackOutcomes.rank(source)); }
+            return new Assessment(true, hardware ? "Supported hardware decoder; format checked when opened" : "Supported decoder; format checked when opened", rank + (hardware ? 2 : 0));
+        } catch (Exception e) { return new Assessment(true, "Compatibility unknown; checked when opened", AutoSourceRank.score(SourceSort.facts(source), PlaybackOutcomes.rank(source))); }
     }
     /** Codec labels often touch channel counts: DDP5.1 and DD+5.1 are E-AC-3, not unknown audio. */
     static String advertisedAudio(String hint) {

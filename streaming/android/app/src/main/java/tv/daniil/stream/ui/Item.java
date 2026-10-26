@@ -86,7 +86,8 @@ public final class Item {
     @Nullable public Consumer<String> keyboardInput;
     public List<String> keyboardLanguages = Collections.singletonList("en");
     public String keyboardLanguage = "en";
-    @Nullable public Consumer<String> keyboardLanguageChanged, keyboardVoice;
+    public boolean keyboardVisible = true;
+    @Nullable public Consumer<String> keyboardLanguageChanged;
     public boolean loading;
 
     private Item(Kind kind, String key) { this.kind = kind; this.key = key; }

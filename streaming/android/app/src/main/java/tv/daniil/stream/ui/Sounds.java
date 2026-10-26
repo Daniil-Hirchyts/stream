@@ -10,7 +10,7 @@ import android.view.View;
 import tv.daniil.stream.R;
 
 /**
- * The app's interface sounds (made by streaming/sounds/sounds.py, after Rauta's). Played as sonification beside
+ * The app's Soft interface sounds (made by streaming/sounds/sounds.py and palettes.py). Played as sonification beside
  * whatever else sounds, never taking audio focus from a film or the viewer's music.
  *
  * <p>Three sizes: quiet touches as the viewer navigates (focus, a row's end, typing), controls (OK, Back, tabs,
@@ -31,22 +31,22 @@ import tv.daniil.stream.R;
  */
 public final class Sounds {
     public enum Sound {
-        // The seconds are how long each is heard (sounds.py prints the files' full lengths, quiet tails included).
-        FOCUS(R.raw.sfx_focus, Size.TOUCH, 0.08), EDGE(R.raw.sfx_edge, Size.TOUCH, 0.15),
-        KEY(R.raw.sfx_key, Size.TOUCH, 0.07), DELETE(R.raw.sfx_delete, Size.TOUCH, 0.12),
-        SELECT(R.raw.sfx_select, Size.CONTROL, 0.15), BACK(R.raw.sfx_back, Size.CONTROL, 0.15),
-        TAB(R.raw.sfx_tab, Size.CONTROL, 0.15), OPEN(R.raw.sfx_open, Size.CONTROL, 0.25),
-        CHIP(R.raw.sfx_chip, Size.CONTROL, 0.12), RESULTS(R.raw.sfx_results, Size.CONTROL, 0.2),
-        ALERT(R.raw.sfx_alert, Size.CONTROL, 0.35), CANCEL(R.raw.sfx_cancel, Size.CONTROL, 0.15),
-        PAUSE(R.raw.sfx_pause, Size.CONTROL, 0.14), RESUME(R.raw.sfx_resume, Size.CONTROL, 0.14),
-        SEEK_FORWARD(R.raw.sfx_seek_forward, Size.CONTROL, 0.1), SEEK_BACK(R.raw.sfx_seek_back, Size.CONTROL, 0.1),
-        MENU_OPEN(R.raw.sfx_menu_open, Size.CONTROL, 0.17), MENU_CLOSE(R.raw.sfx_menu_close, Size.CONTROL, 0.17),
-        FAVOURITE_ON(R.raw.sfx_favourite_on, Size.MOMENT, 0.25), FAVOURITE_OFF(R.raw.sfx_favourite_off, Size.MOMENT, 0.2),
-        WATCHED_ON(R.raw.sfx_watched_on, Size.MOMENT, 0.35), WATCHED_OFF(R.raw.sfx_watched_off, Size.MOMENT, 0.2),
-        INSTALLED(R.raw.sfx_installed, Size.MOMENT, 0.5), WARNING(R.raw.sfx_warning, Size.MOMENT, 0.35),
-        UP_NEXT(R.raw.sfx_up_next, Size.MOMENT, 0.5), FINISHED(R.raw.sfx_finished, Size.MOMENT, 0.8),
+        // Full Soft clip durations; the one-voice policy must not outlive a finished cue.
+        FOCUS(R.raw.sfx_focus, Size.TOUCH, 0.058), EDGE(R.raw.sfx_edge, Size.TOUCH, 0.094),
+        KEY(R.raw.sfx_key, Size.TOUCH, 0.045), DELETE(R.raw.sfx_delete, Size.TOUCH, 0.075),
+        SELECT(R.raw.sfx_select, Size.CONTROL, 0.130), BACK(R.raw.sfx_back, Size.CONTROL, 0.112),
+        TAB(R.raw.sfx_tab, Size.CONTROL, 0.082), OPEN(R.raw.sfx_open, Size.CONTROL, 0.198),
+        CHIP(R.raw.sfx_chip, Size.CONTROL, 0.078), RESULTS(R.raw.sfx_results, Size.CONTROL, 0.192),
+        ALERT(R.raw.sfx_alert, Size.CONTROL, 0.193), CANCEL(R.raw.sfx_cancel, Size.CONTROL, 0.100),
+        PAUSE(R.raw.sfx_pause, Size.CONTROL, 0.118), RESUME(R.raw.sfx_resume, Size.CONTROL, 0.118),
+        SEEK_FORWARD(R.raw.sfx_seek_forward, Size.CONTROL, 0.093), SEEK_BACK(R.raw.sfx_seek_back, Size.CONTROL, 0.093),
+        MENU_OPEN(R.raw.sfx_menu_open, Size.CONTROL, 0.143), MENU_CLOSE(R.raw.sfx_menu_close, Size.CONTROL, 0.116),
+        FAVOURITE_ON(R.raw.sfx_favourite_on, Size.MOMENT, 0.272), FAVOURITE_OFF(R.raw.sfx_favourite_off, Size.MOMENT, 0.150),
+        WATCHED_ON(R.raw.sfx_watched_on, Size.MOMENT, 0.298), WATCHED_OFF(R.raw.sfx_watched_off, Size.MOMENT, 0.182),
+        INSTALLED(R.raw.sfx_installed, Size.MOMENT, 0.380), WARNING(R.raw.sfx_warning, Size.MOMENT, 0.263),
+        UP_NEXT(R.raw.sfx_up_next, Size.MOMENT, 0.395), FINISHED(R.raw.sfx_finished, Size.MOMENT, 0.545),
         // The start screen's music, and the swoosh it leaves with, laid over the opening's fading tail.
-        INTRO(R.raw.sfx_intro, Size.MOMENT, 2.6), INTRO_EXIT(R.raw.sfx_intro_exit, Size.MOMENT, 0.6, true);
+        INTRO(R.raw.sfx_intro, Size.MOMENT, 2.050), INTRO_EXIT(R.raw.sfx_intro_exit, Size.MOMENT, 0.320, true);
 
         final int resource; final Size size; final long ms;
         /** Plays over whatever is sounding rather than cutting it. */

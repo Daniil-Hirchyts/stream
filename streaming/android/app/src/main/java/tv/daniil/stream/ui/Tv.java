@@ -4,14 +4,11 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Typeface;
-import android.os.Build;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.Window;
-import android.view.WindowManager;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -37,6 +34,8 @@ public final class Tv {
     public static final float LIFT_TILE = 1.1f, LIFT_BUTTON = 1.05f, LIFT_ROW = 1f;
     /** Small round controls (back, search, page tools and arrows) grow more, so the change reads at their size. */
     public static final float LIFT_ICON = 1.12f;
+    private static final ThreadLocal<View> ACTIVATING = new ThreadLocal<>();
+    static View activatingControl() { return ACTIVATING.get(); }
 
     public static int dp(Context context, float value) { return Math.round(value * context.getResources().getDisplayMetrics().density); }
 
@@ -108,7 +107,10 @@ public final class Tv {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) { Sounds.input(); if (!v.isFocused()) v.requestFocus(); }
             return false;
         });
-        view.setOnClickListener(v -> { focused.accept(key); Sounds.click(); action.run(); });
+        view.setOnClickListener(v -> {
+            focused.accept(key); Sounds.click(); View previous = ACTIVATING.get(); ACTIVATING.set(v);
+            try { action.run(); } finally { if (previous == null) ACTIVATING.remove(); else ACTIVATING.set(previous); }
+        });
         view.setOnFocusChangeListener((v, has) -> { if (has) { focused.accept(key); Sounds.focus(v); } animate(v, has, lift, raise); });
         animate(view, view.isFocused(), lift, raise);
     }
@@ -186,211 +188,195 @@ public final class Tv {
         return button;
     }
 
-    // Alerts, after tvOS: a centred title and message over blurred content, and full-width stacked buttons.
-
-    /** A tvOS alert's body: title, optional message and an empty button stack ({@link Alert#buttons}). */
+    // Context menus stay beside their opener. One surface contains the full navigation stack.
     public static final class Alert {
         public final Dialog dialog;
         public final LinearLayout surface, buttons;
-        Alert(Dialog dialog, LinearLayout surface, LinearLayout buttons) { this.dialog = dialog; this.surface = surface; this.buttons = buttons; }
-
-        /** Adds a full-width button; the first one added takes focus when the alert opens. */
-        public View button(String key, String label, Runnable action) {
-            return button(key, label, action, ignored -> {});
+        final String title;
+        @Nullable View initialFocus;
+        @Nullable Runnable prepare;
+        @Nullable View customBody;
+        View buttonHost;
+        Alert(Dialog dialog, LinearLayout surface, LinearLayout buttons, String title) {
+            this.dialog = dialog; this.surface = surface; this.buttons = buttons; this.title = title; this.buttonHost = buttons;
         }
-
-        public View button(String key, String label, Runnable action, Consumer<String> onFocused) {
-            Context context = dialog.getContext();
-            TextView button = heading(context, label, 16, R.color.tv_on_glass);
-            button.setGravity(Gravity.CENTER); button.setContentDescription(label); button.setSingleLine(true);
-            button.setBackgroundResource(R.drawable.tv_dialog_button);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 46));
-            if (buttons.getChildCount() > 0) params.topMargin = dp(context, 8);
-            buttons.addView(button, params);
-            control(button, key, action, onFocused != null ? onFocused : ignored -> {}, 1.03f, false);
-            return button;
-        }
-        /**
-         * The way out (Cancel, Close): set apart from the choices by a gap and a rule, outlined rather than filled, its
-         * label grey until focused. Add it last.
-         */
-        public View cancelButton(String key, String label, Runnable action) {
-            Context context = dialog.getContext();
-            View rule = new View(context); rule.setBackgroundColor(context.getColor(R.color.tv_hairline));
-            rule.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            LinearLayout.LayoutParams ruleParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(context, 1)));
-            int inset = dp(context, 24); ruleParams.leftMargin = ruleParams.rightMargin = inset; ruleParams.topMargin = dp(context, 16);
-            if (buttons.getChildCount() > 0) buttons.addView(rule, ruleParams);
-            TextView button = heading(context, label, 16, R.color.tv_on_glass_secondary);
-            button.setGravity(Gravity.CENTER); button.setContentDescription(label); button.setSingleLine(true);
-            button.setBackgroundResource(R.drawable.tv_dialog_cancel);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 46));
-            if (buttons.getChildCount() > 0) params.topMargin = dp(context, 16);
-            buttons.addView(button, params);
-            control(button, key, () -> { Sounds.play(Sounds.Sound.CANCEL); action.run(); }, ignored -> {}, 1.03f, false);
-            return button;
-        }
-        /**
-         * Shows the alert over a blurred copy of the screen behind it, on every Android version: one small screenshot,
-         * blurred once off the main thread, rather than a live window blur (Android 12+ only, and often disabled).
-         */
-        public void show() {
-            Context context = dialog.getContext();
-            // Arrows inside the alert are the viewer's (focus ticks follow them); Back cancels with Cancel's sound.
-            dialog.setOnKeyListener((d, code, event) -> {
-                if (event.getAction() == android.view.KeyEvent.ACTION_DOWN && Sounds.arrow(code)) Sounds.input();
-                if (code == android.view.KeyEvent.KEYCODE_BACK && event.getAction() == android.view.KeyEvent.ACTION_UP) Sounds.play(Sounds.Sound.CANCEL);
-                return false;
-            });
-            Sounds.play(Sounds.Sound.ALERT);
-            FrameLayout root = new FrameLayout(context);
-            ImageView behind = new ImageView(context);
-            behind.setScaleType(ImageView.ScaleType.FIT_XY); behind.setAlpha(0f);
-            behind.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            root.addView(behind, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            View tint = new View(context); tint.setBackgroundColor(context.getColor(R.color.tv_alert_tint));
-            root.addView(tint, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            // A press outside the alert dismisses it, as a tap outside a dialog window would.
-            root.setOnClickListener(v -> dialog.cancel());
-            root.setFocusable(false);
-            surface.setBackgroundResource(R.drawable.tv_dialog);
-            // Clickable only to absorb presses on its padding; never a focus stop of its own.
-            surface.setElevation(dp(context, 24)); surface.setClickable(true); surface.setFocusable(false);
-            int width = Math.min(dp(context, 500), context.getResources().getDisplayMetrics().widthPixels - dp(context, 64));
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
-            params.topMargin = params.bottomMargin = dp(context, 32);
-            root.addView(surface, params);
-            dialog.setContentView(root);
-            Window window = dialog.getWindow();
-            if (window != null) {
-                window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
-                window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-                window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-                window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-                window.setWindowAnimations(android.R.style.Animation_Dialog);
+        public Alert onAppear(Runnable prepare) { this.prepare = prepare; return this; }
+        public Alert onClosing(Runnable action) { ((MorphDialog) dialog).beforeClose = action; return this; }
+        public void reset() {
+            initialFocus = null;
+            if (buttonHost != buttons) {
+                ((ViewGroup) buttons.getParent()).removeView(buttons);
+                int index = surface.indexOfChild(buttonHost); ViewGroup.LayoutParams params = buttonHost.getLayoutParams();
+                surface.removeView(buttonHost); surface.addView(buttons, index, params); buttonHost = buttons;
             }
-            blurBehind(context, behind);
-            dialog.show();
-            if (window != null) window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-            View first = buttons.getChildCount() > 0 ? buttons.getChildAt(0) : null;
-            if (first != null && surface.findFocus() == null) first.requestFocus();
+            buttons.removeAllViews(); buttons.setVisibility(View.GONE);
+            body(null);
         }
+        public Alert body(@Nullable View body) {
+            if (customBody != null) surface.removeView(customBody);
+            customBody = body;
+            if (body != null) {
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.topMargin = dp(dialog.getContext(), 10);
+                surface.addView(body, surface.indexOfChild(buttonHost), params);
+            }
+            ((LinearLayout.LayoutParams) buttonHost.getLayoutParams()).topMargin = dp(dialog.getContext(), body == null ? 4 : 16);
+            return this;
+        }
+        public void scrollChoices(int maxHeightDp) {
+            if (buttonHost != buttons) return;
+            Context context = dialog.getContext();
+            ScrollView scroll = new ScrollView(context) {
+                @Override protected void onMeasure(int width, int height) {
+                    super.onMeasure(width, MeasureSpec.makeMeasureSpec(Math.min(dp(context, maxHeightDp), MeasureSpec.getSize(height)), MeasureSpec.AT_MOST));
+                }
+            };
+            scroll.setVerticalScrollBarEnabled(false); scroll.setFocusable(false);
+            scroll.setVerticalFadingEdgeEnabled(true); scroll.setFadingEdgeLength(dp(context, 12));
+            int index = surface.indexOfChild(buttons); ViewGroup.LayoutParams params = buttons.getLayoutParams();
+            surface.removeView(buttons); scroll.addView(buttons, new FrameLayout.LayoutParams(-1, -2));
+            surface.addView(scroll, index, params); buttonHost = scroll;
+        }
+        public View choice(String key, String label, String detail, boolean selected, Runnable action) {
+            return choice(key, label, detail, selected, action, ignored -> {});
+        }
+        public View choice(String key, String label, String detail, boolean selected, Runnable action, Consumer<String> focused) {
+            View row = row(key, label, detail, 0, selected ? R.drawable.ic_tv_check : 0, action, focused);
+            row.setSelected(selected); if (selected) initialFocus = row; return row;
+        }
+        public void refresh() { ((MorphDialog) dialog).refreshCurrent(); }
+        public View button(String key, String label, Runnable action) { return button(key, label, action, ignored -> {}); }
+        public View button(String key, String label, Runnable action, Consumer<String> onFocused) {
+            return row(key, label, "", menuIcon(label), 0, action, onFocused);
+        }
+        private View row(String key, String label, String detail, int glyph, int trailing, Runnable action, Consumer<String> onFocused) {
+            Context context = dialog.getContext();
+            LinearLayout row = new LinearLayout(context); row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setMinimumHeight(dp(context, 44)); row.setPadding(dp(context, 12), dp(context, 11), dp(context, 12), dp(context, 11));
+            row.setContentDescription(detail.isEmpty() ? label : label + ". " + detail); row.setBackgroundResource(R.drawable.tv_dialog_button);
+            if (glyph != 0) {
+                ImageView icon = icon(context, glyph, 20, R.color.tv_on_glass);
+                ((LinearLayout.LayoutParams) icon.getLayoutParams()).rightMargin = dp(context, 12); row.addView(icon);
+            }
+            TextView text = lines(text(context, label, 15, R.color.tv_on_glass), 2);
+            text.setDuplicateParentStateEnabled(true);
+            LinearLayout column = new LinearLayout(context); column.setOrientation(LinearLayout.VERTICAL); column.setDuplicateParentStateEnabled(true);
+            column.addView(text);
+            if (!detail.isEmpty()) {
+                TextView value = oneLine(text(context, detail, 12, R.color.tv_on_glass_secondary)); value.setDuplicateParentStateEnabled(true);
+                LinearLayout.LayoutParams spacing = new LinearLayout.LayoutParams(-1, -2); spacing.topMargin = dp(context, 5); column.addView(value, spacing);
+            }
+            row.addView(column, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            if (trailing != 0) {
+                ImageView mark = icon(context, trailing, 16, R.color.tv_on_glass);
+                ((LinearLayout.LayoutParams) mark.getLayoutParams()).leftMargin = dp(context, 10); row.addView(mark);
+            }
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            if (buttons.getChildCount() > 0) params.topMargin = dp(context, 2);
+            buttons.addView(row, params); buttons.setVisibility(View.VISIBLE);
+            control(row, key, action, onFocused != null ? onFocused : ignored -> {}, 1f, false);
+            return row;
+        }
+        public View submenu(String key, String label, Consumer<Alert> contents) { return submenu(key, label, "", contents); }
+        public View submenu(String key, String label, String detail, Consumer<Alert> contents) {
+            View row = row(key, label, detail, menuIcon(label), R.drawable.ic_tv_chevron, () -> {
+                Alert child = createAlert(dialog.getContext(), label, null, dialog, title);
+                contents.accept(child); child.show();
+            }, ignored -> {});
+            row.setTag(R.id.popup_navigation, "submenu");
+            return row;
+        }
+        public void back() { ((MorphDialog) dialog).back(); }
+        public void show() { ((MorphDialog) dialog).present(this); }
+    }
+
+    /** Icons only where the label names an action; value lists keep their single selected checkmark. */
+    private static int menuIcon(String label) {
+        String text = label.toLowerCase(java.util.Locale.ROOT);
+        if (text.equals("play") || text.equals("resume") || text.equals("playback")) return R.drawable.ic_tv_play;
+        if (text.equals("sources") || text.equals("choose source")) return R.drawable.ic_tv_list;
+        if (text.equals("mark unwatched")) return R.drawable.ic_tv_unwatched;
+        if (text.equals("mark watched")) return R.drawable.ic_tv_check;
+        if (text.equals("keep for later")) return R.drawable.ic_tv_clock;
+        if (text.contains("favourite")) return R.drawable.ic_tv_heart_outline;
+        if (text.startsWith("remove") || text.startsWith("delete")) return R.drawable.ic_tv_delete;
+        if (text.contains("retry") || text.startsWith("refresh")) return R.drawable.ic_tv_refresh;
+        if (text.contains("cache") || text.startsWith("download")) return R.drawable.ic_tv_download;
+        if (text.startsWith("rename")) return R.drawable.ic_tv_edit;
+        if (text.equals("quality") || text.equals("speed") || text.equals("settings")) return R.drawable.ic_tv_settings;
+        if (text.contains("subtitle")) return R.drawable.ic_tv_subtitles;
+        if (text.equals("audio")) return R.drawable.ic_tv_audio;
+        if (text.equals("continue")) return R.drawable.ic_tv_check;
+        if (text.contains("report") || text.contains("diagnostics")) return R.drawable.ic_tv_info;
+        return 0;
     }
 
     public static Alert alert(Context context, String title, CharSequence message) {
-        Dialog dialog = new Dialog(context);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        LinearLayout surface = new LinearLayout(context);
-        surface.setOrientation(LinearLayout.VERTICAL);
-        surface.setGravity(Gravity.CENTER_HORIZONTAL);
-        int side = dp(context, 30);
-        surface.setPadding(side, dp(context, 32), side, dp(context, 24));
-        TextView heading = heading(context, title, 21, R.color.tv_text);
-        heading.setGravity(Gravity.CENTER);
-        surface.addView(heading, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        Alert alert = createAlert(context, title, null, new MorphDialog(context, false), null);
         if (message != null && message.length() > 0) {
-            TextView body = text(context, message.toString(), 15, R.color.tv_text_secondary);
-            body.setGravity(Gravity.CENTER); body.setLineSpacing(dp(context, 3), 1f);
-            // A long message (diagnostics, an add-on's description) shrinks to scroll rather than pushing the buttons off
-            // screen; the weight only takes effect when the alert would be taller than the screen.
-            ScrollView scroll = new ScrollView(context);
-            scroll.setVerticalScrollBarEnabled(false);
-            scroll.addView(body);
-            scroll.post(() -> scroll.setFocusable(scroll.canScrollVertically(1)));
-            LinearLayout.LayoutParams bodyParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-            bodyParams.topMargin = dp(context, 12);
-            surface.addView(clipped(scroll, 0), bodyParams);
+            ((LinearLayout.LayoutParams) alert.buttons.getLayoutParams()).topMargin = dp(context, 12);
+            TextView body = text(context, message.toString(), 14, R.color.tv_text_secondary);
+            body.setLineSpacing(dp(context, 3), 1f); body.setPadding(dp(context, 12), 0, dp(context, 12), 0);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            params.topMargin = dp(context, 10);
+            alert.surface.addView(body, alert.surface.indexOfChild(alert.buttons), params);
         }
-        LinearLayout buttons = new LinearLayout(context);
-        buttons.setOrientation(LinearLayout.VERTICAL);
-        buttons.setClipChildren(false); buttons.setClipToPadding(false);
-        LinearLayout.LayoutParams buttonsParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        buttonsParams.topMargin = dp(context, 24);
-        surface.addView(buttons, buttonsParams);
-        surface.setClipChildren(false); surface.setClipToPadding(false);
-        dialog.setCanceledOnTouchOutside(true);
-        return new Alert(dialog, surface, buttons);
+        return alert;
     }
-
     public static Alert alert(Context context, String title, @Nullable View bodyView) {
-        Dialog dialog = new Dialog(context);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        LinearLayout surface = new LinearLayout(context);
-        surface.setOrientation(LinearLayout.VERTICAL);
-        surface.setGravity(Gravity.CENTER_HORIZONTAL);
-        int side = dp(context, 30);
-        surface.setPadding(side, dp(context, 32), side, dp(context, 24));
-        TextView heading = heading(context, title, 21, R.color.tv_text);
-        heading.setGravity(Gravity.CENTER);
-        surface.addView(heading, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        if (bodyView != null) {
-            ViewGroup.LayoutParams existing = bodyView.getLayoutParams();
-            int height = existing != null && existing.height > 0 ? existing.height : ViewGroup.LayoutParams.WRAP_CONTENT;
-            LinearLayout.LayoutParams bodyParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height);
-            bodyParams.topMargin = dp(context, 14);
-            surface.addView(bodyView, bodyParams);
+        return createAlert(context, title, bodyView, new MorphDialog(context), null);
+    }
+    private static Alert createAlert(Context context, String title, @Nullable View body, Dialog dialog, @Nullable String parent) {
+        LinearLayout surface = new LinearLayout(context); surface.setOrientation(LinearLayout.VERTICAL);
+        surface.setPadding(dp(context, 8), dp(context, 14), dp(context, 8), dp(context, 8));
+        LinearLayout header = new LinearLayout(context); header.setOrientation(LinearLayout.VERTICAL);
+        header.setPadding(dp(context, 12), 0, dp(context, 12), dp(context, 8));
+        if (parent != null) {
+            TextView breadcrumb = oneLine(text(context, parent, 11.5f, R.color.tv_text_tertiary));
+            breadcrumb.setPadding(0, 0, 0, dp(context, 5)); header.addView(breadcrumb);
         }
-        LinearLayout buttons = new LinearLayout(context);
-        buttons.setOrientation(LinearLayout.VERTICAL);
-        buttons.setClipChildren(false); buttons.setClipToPadding(false);
-        LinearLayout.LayoutParams buttonsParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        buttonsParams.topMargin = dp(context, 20);
-        surface.addView(buttons, buttonsParams);
-        surface.setClipChildren(false); surface.setClipToPadding(false);
-        dialog.setCanceledOnTouchOutside(true);
-        return new Alert(dialog, surface, buttons);
+        TextView heading = heading(context, title, 16, R.color.tv_text_secondary);
+        heading.setTag("popup-title"); heading.setMaxLines(2); heading.setEllipsize(TextUtils.TruncateAt.END); heading.setLineSpacing(0, 1.12f);
+        header.addView(heading, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        surface.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        if (body != null) {
+            ViewGroup.LayoutParams existing = body.getLayoutParams();
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    existing != null && existing.height > 0 ? existing.height : ViewGroup.LayoutParams.WRAP_CONTENT);
+            params.topMargin = dp(context, 8); surface.addView(body, params);
+        }
+        LinearLayout buttons = new LinearLayout(context); buttons.setOrientation(LinearLayout.VERTICAL); buttons.setVisibility(View.GONE);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(context, body == null ? 4 : 12); surface.addView(buttons, params);
+        return new Alert(dialog, surface, buttons, title);
     }
 
-    /** A tvOS action sheet: each option is a full-width button, then Cancel set apart. Long lists scroll above Cancel. */
     public static Alert choices(Context context, String title, String[] options, Consumer<Integer> accept, Runnable cancel) {
         return choices(context, title, null, options, -1, accept, null, cancel);
     }
-
     public static Alert choices(Context context, String title, @Nullable View body, String[] options, int initialSelection,
                                 Consumer<Integer> accept, @Nullable Consumer<Integer> onPreview, Runnable cancel) {
         Alert alert = alert(context, title, body);
-        LinearLayout list = alert.buttons;
-        if (options.length > 6 || (body != null && options.length > 4)) {
-            int lift = dp(context, 10);
-            ScrollView scroll = new ScrollView(context);
-            // Fade the composite at the viewport edge, leaving clearance for focused rounded borders.
-            scroll.setVerticalScrollBarEnabled(false); scroll.setPadding(0, dp(context, 8), 0, dp(context, 8));
-            list = new LinearLayout(context);
-            list.setOrientation(LinearLayout.VERTICAL); list.setClipChildren(false); list.setClipToPadding(false);
-            scroll.addView(list);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, body != null ? 4 * 54 : 6 * 54));
-            params.topMargin = dp(context, 14); params.leftMargin = -lift; params.rightMargin = -lift;
-            alert.surface.addView(faded(scroll, lift, 18), alert.surface.indexOfChild(alert.buttons), params);
-            ((LinearLayout.LayoutParams) alert.buttons.getLayoutParams()).topMargin = dp(context, 12);
-        }
-        Alert rows = new Alert(alert.dialog, alert.surface, list);
+        boolean actionIcons = !title.equals("Choose source") && !title.equals("Choose a video file") && initialSelection < 0;
         View[] optionViews = new View[options.length];
+        // Long lists scroll independently so the heading and any preview stay visible.
         for (int i = 0; i < options.length; i++) {
             final int index = i;
-            optionViews[i] = rows.button("choice:" + i, options[i], () -> {
-                alert.dialog.dismiss();
-                accept.accept(index);
+            optionViews[i] = alert.row("choice:" + i, options[i], "", actionIcons ? menuIcon(options[i]) : 0, i == initialSelection ? R.drawable.ic_tv_check : 0, () -> {
+                alert.dialog.dismiss(); accept.accept(index);
             }, key -> {
                 if (onPreview != null) onPreview.accept(index);
-                // ScrollView reveals the layout bounds only; include the focused platter's extra height too.
                 View option = optionViews[index];
-                if (option != null) option.post(() -> {
-                    int clearance = dp(context, 8);
-                    option.requestRectangleOnScreen(new android.graphics.Rect(0, -clearance,
-                            option.getWidth(), option.getHeight() + clearance), false);
-                });
+                if (option != null) option.post(() -> option.requestRectangleOnScreen(
+                        new android.graphics.Rect(0, 0, option.getWidth(), option.getHeight()), false));
             });
         }
         if (initialSelection >= 0 && initialSelection < options.length) {
             if (onPreview != null) onPreview.accept(initialSelection);
-            View chosen = optionViews[initialSelection];
-            if (chosen != null) alert.dialog.setOnShowListener(d -> chosen.requestFocus());
-        } else if (optionViews.length > 0 && optionViews[0] != null) {
-            alert.dialog.setOnShowListener(d -> optionViews[0].requestFocus());
-        }
-        alert.cancelButton("choice:cancel", "Cancel", alert.dialog::cancel);
+            alert.initialFocus = optionViews[initialSelection];
+        } else if (options.length > 0) alert.initialFocus = optionViews[0];
+        if (options.length > (body == null ? 6 : 4)) alert.scrollChoices((body == null ? 6 : 4) * 46);
         alert.dialog.setOnCancelListener(ignored -> { if (cancel != null) cancel.run(); });
-        return rows;
+        return alert;
     }
 
     /**
@@ -454,34 +440,6 @@ public final class Tv {
             }
             canvas.restoreToCount(layer);
         }
-    }
-
-    private static final java.util.concurrent.ExecutorService BLUR = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "alert-blur"); thread.setDaemon(true); return thread;
-    });
-    /**
-     * Copies the activity's window at an eighth of its size, blurs that on a worker and fades it in behind the
-     * alert. Video surfaces aren't part of the copy and stay dark, as under a dimmed alert.
-     */
-    private static void blurBehind(Context context, ImageView target) {
-        // A dialog's context is its activity wrapped in the dialog theme.
-        while (!(context instanceof android.app.Activity) && context instanceof android.content.ContextWrapper) context = ((android.content.ContextWrapper) context).getBaseContext();
-        if (!(context instanceof android.app.Activity)) return;
-        Window window = ((android.app.Activity) context).getWindow();
-        View decor = window.getDecorView();
-        if (decor.getWidth() == 0 || decor.getHeight() == 0) return;
-        android.graphics.Bitmap small = android.graphics.Bitmap.createBitmap(Math.max(1, decor.getWidth() / 8), Math.max(1, decor.getHeight() / 8),
-                android.graphics.Bitmap.Config.ARGB_8888);
-        android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
-        try {
-            android.view.PixelCopy.request(window, small, result -> {
-                if (result != android.view.PixelCopy.SUCCESS) return;
-                BLUR.execute(() -> {
-                    android.graphics.Bitmap blurred = Artwork.blur(small);
-                    main.post(() -> { target.setImageBitmap(blurred); target.animate().alpha(1f).setDuration(220).start(); });
-                });
-            }, main);
-        } catch (IllegalArgumentException noSurface) { /* the tint alone still separates the alert */ }
     }
 
     public static ColorStateList colors(Context context, @ColorRes int color) { return context.getColorStateList(color); }

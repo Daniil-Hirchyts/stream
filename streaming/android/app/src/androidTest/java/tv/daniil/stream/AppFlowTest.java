@@ -1,7 +1,6 @@
 package tv.daniil.stream;
 
 import static org.junit.Assert.*;
-import android.os.SystemClock;
 import android.view.KeyEvent;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.json.JSONObject;
@@ -34,7 +33,7 @@ public final class AppFlowTest extends AppHarness {
         waitUntil("partial starter install is explained", 15_000, () -> visible("Some add-ons weren't added"));
         assertEquals(1, services.store.addons().size());
         assertEquals(origin + "/addon/good/starter/manifest.json", services.store.addons().get(0).address.manifest);
-        tap("Close", true);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
         waitUntil("installed catalogue appears on Home", 10_000, () -> visible("Generated Film"));
     }
 
@@ -65,17 +64,6 @@ public final class AppFlowTest extends AppHarness {
         instrumentation.runOnMainSync(activity::finish);
         tap("Back", false); tap("Add favourite", false);
         waitUntil("favourite persisted", 5000, () -> services.store.library(true).size() == 1);
-    }
-    @Ignore("Never presses Resume or verifies reconstructed playback. StoreTest covers durable progress; process-death verifies actual resumed frames. Background lifecycle coverage needs a replacement.")
-    @Test public void backgroundReleasesPayloadAndResumeReconstructsPlayback() throws Exception {
-        playFilm(); WatchActivity activity = watch();
-        instrumentation.runOnMainSync(() -> session(activity).seekTo(31_000));
-        waitUntil("position for resume", 20_000, () -> state().positionMs >= 31_000 && state().playing);
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_HOME);
-        waitUntil("background history", 10_000, () -> !services.store.history(true).isEmpty());
-        waitUntil("cache released", 10_000, () -> { java.io.File[] f = new java.io.File(context.getCacheDir(), "payload").listFiles(); return f == null || f.length == 0; });
-        context.startActivity(new android.content.Intent(context, MainActivity.class).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
-        tap("Library", false); waitUntil("history row", 10_000, () -> services.store.history(true).size() == 1);
     }
     @Test public void seriesResolvesItsOriginalVideoIdAndNextEpisodeIndependently() throws Exception {
         readyLibrary(); launch(); tap("Generated Series", true); tap("Play", false); chooseFirstSource();

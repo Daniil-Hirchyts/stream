@@ -37,6 +37,7 @@ public final class SubtitlePreviewView extends FrameLayout {
 
     public SubtitlePreviewView(Context context) {
         super(context);
+        setMinimumWidth(Tv.dp(context, 280));
         setFocusable(false);
         setFocusableInTouchMode(false);
 
@@ -119,6 +120,15 @@ public final class SubtitlePreviewView extends FrameLayout {
     public void setFont(int font) { this.fontIndex = font; apply(); }
     public void setColor(int color) { this.colorIndex = color; apply(); }
     public void setEdge(int edge) { this.edgeIndex = edge; apply(); }
+    public void preview(SubtitleStyle.Setting setting, int index) {
+        switch (setting) {
+            case SIZE: setSize(index); break;
+            case FONT: setFont(index); break;
+            case COLOR: setColor(index); break;
+            case EDGE: setEdge(index); break;
+            case POSITION: setPosition(index); break;
+        }
+    }
     public void setPosition(int position) { this.positionIndex = position; apply(); }
 
     private void apply() {

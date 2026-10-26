@@ -117,7 +117,7 @@ final class PlaybackPreparation implements AutoCloseable {
                             : candidates.stream().anyMatch(source -> SourcePolicy.key(source).equals(explicit));
                     long now = SystemClock.elapsedRealtime();
                     if (ready && first == 0) first = now;
-                    if (complete && (metadataReady || ready) || ready && (claimed && created < now - 150 || now - first >= 150 || explicit != null && !explicit.isEmpty())) return candidates;
+                    if (complete && (metadataReady || ready) || ready && (now - first >= 750 || explicit != null && !explicit.isEmpty())) return candidates;
                     wait(50);
                 }
             }

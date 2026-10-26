@@ -78,30 +78,16 @@ final class SetupScreens {
         for (SubtitleStyle.Setting s : SubtitleStyle.Setting.values()) {
             String setting = s.key;
             String[] values = s.values;
-            String current = services.playerPreferences.getString("subtitle_" + setting, "");
-            int currentIndex = current.isEmpty() ? s.fallback : subtitleStyle.get(s);
-            final int chosenIndex = currentIndex;
-            subtitles.add(Item.row("subtitle-" + setting, 0, "Subtitle " + setting, current.isEmpty() ? "Default" : label(current), () -> {
+            int currentIndex = subtitleStyle.get(s);
+            String title = "Subtitle " + context.getString(s.title).toLowerCase(java.util.Locale.ROOT);
+            subtitles.add(Item.row("subtitle-" + setting, 0, title, context.getString(s.labels[currentIndex]), () -> {
                 String[] labels = new String[values.length];
-                for (int i = 0; i < values.length; i++) labels[i] = label(values[i]);
-
-                tv.daniil.stream.ui.SubtitlePreviewView dialogPreview = new tv.daniil.stream.ui.SubtitlePreviewView(context);
-                dialogPreview.setCompact(true);
-                dialogPreview.updateFrom(services.playerPreferences);
-
-                nav.chooseWithPreview("Subtitle " + setting, dialogPreview, labels, chosenIndex, i -> nav.mutate(() -> {
+                for (int i = 0; i < values.length; i++) labels[i] = context.getString(s.labels[i]);
+                nav.chooseWithPreview(title, null, labels, currentIndex, i -> nav.mutate(() -> {
                     services.playerPreferences.edit().putString("subtitle_" + setting, values[i]).apply();
                     services.store.setPreference("subtitle_" + setting, values[i]);
                     return null;
-                }), i -> {
-                    switch (setting) {
-                        case "size": dialogPreview.setSize(i); break;
-                        case "font": dialogPreview.setFont(i); break;
-                        case "color": dialogPreview.setColor(i); break;
-                        case "edge": dialogPreview.setEdge(i); break;
-                        case "position": dialogPreview.setPosition(i); break;
-                    }
-                });
+                }), i -> nav.previewSubtitle(s, i));
             }));
         }
         category(categories, panes, "settings:subtitles", R.drawable.ic_tv_subtitles, "Subtitles", subtitles);
@@ -178,6 +164,7 @@ final class SetupScreens {
     /** Diagnostics are opt-in. Read the encrypted store on an application worker. */
     static boolean developerMode(TvApplication.Services services) { return services.store.preference("developerMode", "false").equals("true"); }
     static void clearCaches(Context context, TvApplication.Services services) {
+        services.addons.cancelRequests();
         services.store.clearMetadata();
         delete(new File(context.getCacheDir(), "payload"));
         delete(new File(context.getCacheDir(), "subtitles"));
@@ -244,11 +231,6 @@ final class SetupScreens {
             for (int i = 0; i < LANGUAGES.length; i++) if (LANGUAGES[i].equals(normalized)) return LANGUAGE_NAMES[i];
         } catch (Exception ignored) { /* unknown provider language */ }
         return code;
-    }
-    private static String label(String value) {
-        if (value.equals("xlarge")) return "Extra large";
-        if (value.equals("smallcaps")) return "Small caps";
-        return BrowseScreens.capitalise(value);
     }
     static void delete(File file) {
         File[] children = file.listFiles();

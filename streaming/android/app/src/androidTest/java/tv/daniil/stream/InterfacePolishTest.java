@@ -1,17 +1,11 @@
 package tv.daniil.stream;
 
 import static org.junit.Assert.*;
-import android.app.Activity;
-import android.app.Instrumentation;
-import android.content.Intent;
 import android.os.SystemClock;
-import android.speech.RecognizerIntent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.widget.TextView;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.json.JSONObject;
@@ -22,39 +16,35 @@ import tv.daniil.stream.ui.Page;
 import tv.daniil.stream.ui.PageAdapter;
 
 public final class InterfacePolishTest extends AppHarness {
-    @Test public void keyboardLanguagesAndVoiceResultsKeepTheQueryEditable() throws Exception {
+    @Test public void keyboardLanguagesKeepTheQueryAndFillEveryRowWithoutVoiceInput() throws Exception {
+        services.store.setPreference("keyboardLanguages", "en,fr,de,es,it,pt,ru,uk");
         launch(); waitUntil("Home", 10000, () -> visible("Make yourself at home"));
-        tap("Settings", true); tap("Languages", false); tap("Keyboard languages", true);
-        tap("Русский", true);
-        waitUntil("language saved", 5000, () -> services.store.preference("keyboardLanguages", "").contains("ru"));
-        tap("Back", false); tap("Search", true); waitUntil("English keys", 5000, () -> visible("Type a"));
+        tap("Search", true); waitUntil("English keys", 5000, () -> visible("Type a"));
         tap("Type a", false); tap("Type b", true);
         waitUntil("typed query", 5000, () -> query().equals("ab"));
-        tap("Change keyboard language", true); waitUntil("Russian keys", 5000, () -> visible("Type я"));
-        tap("Type я", false); waitUntil("language switch preserves query", 5000, () -> query().equals("abя"));
-        AtomicReference<Intent> requested = new AtomicReference<>();
-        AtomicInteger resultCode = new AtomicInteger(Activity.RESULT_OK);
-        Instrumentation.ActivityMonitor monitor = new Instrumentation.ActivityMonitor() {
-            @Override public Instrumentation.ActivityResult onStartActivity(Intent intent) {
-                if (!RecognizerIntent.ACTION_RECOGNIZE_SPEECH.equals(intent.getAction())) return null;
-                requested.set(intent);
-                return new Instrumentation.ActivityResult(resultCode.get(), new Intent().putStringArrayListExtra(
-                        RecognizerIntent.EXTRA_RESULTS, new ArrayList<>(Arrays.asList("Voice phrase"))));
+        for (String code : tv.daniil.stream.ui.KeyboardLanguages.CODES) {
+            waitUntil("language " + code, 5000, () -> visible(tv.daniil.stream.ui.KeyboardLanguages.name(code)));
+            assertFalse("Speech input was removed", visible("Voice input"));
+            for (int page = 0; page < 3; page++) {
+                SystemClock.sleep(150);
+                browse.onActivity(activity -> {
+                    ViewGroup keys = activity.findViewById(R.id.page_rows).findViewWithTag("keyboard-keys");
+                    assertNotNull(keys);
+                    for (int r = 0; r < keys.getChildCount(); r++) {
+                        ViewGroup row = (ViewGroup) keys.getChildAt(r);
+                        assertTrue(row.getChildCount() > 0);
+                        View last = row.getChildAt(row.getChildCount() - 1);
+                        assertEquals("Every language/page fills the row", keys.getWidth(), last.getRight());
+                    }
+                });
+                if (page == 0) tap("Show 123 keys", false);
+                else if (page == 1) tap("Show àéü keys", true);
             }
-        };
-        instrumentation.addMonitor(monitor);
-        try {
-            tap("Voice input", true);
-            waitUntil("speech result becomes search query", 5000, () -> query().equals("Voice phrase"));
-            assertEquals("ru", requested.get().getStringExtra(RecognizerIntent.EXTRA_LANGUAGE));
-            assertEquals(RecognizerIntent.LANGUAGE_MODEL_FREE_FORM, requested.get().getStringExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL));
-            tap("Type я", false); waitUntil("typing appends to voice result", 5000, () -> query().equals("Voice phraseя"));
-            resultCode.set(Activity.RESULT_CANCELED); tap("Voice input", false);
-            SystemClock.sleep(250); assertEquals("Cancelling voice preserves text", "Voice phraseя", query());
-            tap("Change keyboard language", true); tap("Type z", false);
-            waitUntil("Latin keyboard still edits the same query", 5000, () -> query().equals("Voice phraseяz"));
-            screenshot("keyboard-languages-voice.png");
-        } finally { instrumentation.removeMonitor(monitor); }
+            tap("Change keyboard language", true);
+        }
+        assertEquals("Changing layouts preserves the query", "ab", query());
+        tap("Type z", false); waitUntil("still editable", 5000, () -> query().equals("abz"));
+        screenshot("keyboard-languages.png");
     }
 
     @Test public void clockStaysVisibleAndIconCaptionsCrossfade() throws Exception {

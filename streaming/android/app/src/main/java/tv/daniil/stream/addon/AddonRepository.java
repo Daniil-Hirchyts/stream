@@ -48,12 +48,27 @@ public final class AddonRepository implements AutoCloseable {
             this.addon = addon; this.catalog = catalog; this.extras = Collections.unmodifiableMap(new LinkedHashMap<>(extras));
         }
     }
+    /** One category page load, including visible retry progress. Only transient failures are retried. */
+    public static final class CatalogPage {
+        public static final int MAX_ATTEMPTS = 3;
+        public static final int PAGE_SIZE = 24;
+        public final Result<Title> result;
+        public final int attempt;
+        public final boolean loading;
+        CatalogPage(Result<Title> result, int attempt, boolean loading) {
+            this.result = result; this.attempt = attempt; this.loading = loading;
+        }
+    }
     private static final class Part<T> {
         final String key;
         final List<T> items;
         final AddonException.Kind failure;
         final boolean stale;
-        Part(String key, List<T> items, AddonException.Kind failure, boolean stale) { this.key = key; this.items = items; this.failure = failure; this.stale = stale; }
+        final int httpStatus;
+        Part(String key, List<T> items, AddonException.Kind failure, boolean stale) { this(key, items, failure, stale, 0); }
+        Part(String key, List<T> items, AddonException.Kind failure, boolean stale, int httpStatus) {
+            this.key = key; this.items = items; this.failure = failure; this.stale = stale; this.httpStatus = httpStatus;
+        }
     }
     /** Stremio's add-on directory: Cinemeta publishes the Official and Community lists through addon_catalog. */
     public static final String DIRECTORY = AddonUrl.CINEMETA;
@@ -63,6 +78,14 @@ public final class AddonRepository implements AutoCloseable {
     private final AddonClient client = new AddonClient();
     private final ProviderExecutor workers = new ProviderExecutor();
     private volatile long configuration;
+    private static final long CATALOG_FRESH_MS = 5 * 60_000;
+    private static final int CATALOG_CACHE_PAGES = 12;
+    private static final class CachedCatalog {
+        final Part<Title> part;
+        final long saved = SystemClock.elapsedRealtime();
+        CachedCatalog(Part<Title> part) { this.part = part; }
+    }
+    private final Map<String, CachedCatalog> catalogPages = new LinkedHashMap<>(16, .75f, true);
     public long configuration() { return configuration; }
     public void prioritize(Cancellation wanted) {
         wanted.priority(0);
@@ -88,6 +111,7 @@ public final class AddonRepository implements AutoCloseable {
     /** Called before configuration changes and when leaving all provider screens. */
     public void cancelRequests() {
         configuration++;
+        synchronized (catalogPages) { catalogPages.clear(); }
         List<Cancellation> open;
         synchronized (scopeLock) { open = new ArrayList<>(scopes); scopes.clear(); }
         for (Cancellation scope : open) scope.close();
@@ -133,8 +157,120 @@ public final class AddonRepository implements AutoCloseable {
         }
         return new Result<>(new ArrayList<>(deduplicated.values()), remote.failures, remote.stale);
     }
+    /** Home/Search retry only failed resources. Successful shelves survive later attempts. */
+    public CatalogPage searchPage(String text, Cancellation scope, java.util.function.Consumer<CatalogPage> progress) throws AddonException {
+        List<CatalogQuery> queries = new ArrayList<>();
+        for (InstalledAddon a : store.addons()) if (a.enabled) for (AddonManifest.Catalog c : a.manifest.catalogs)
+            if (c.searchable() && a.manifest.handles("catalog", c.type, null))
+                queries.add(new CatalogQuery(a, c, Collections.singletonMap("search", text)));
+        CatalogPage page = catalogsPage(queries, scope, partial -> progress.accept(
+                new CatalogPage(searchResults(text, partial.result), partial.attempt, partial.loading)));
+        return new CatalogPage(searchResults(text, page.result), page.attempt, false);
+    }
+    public CatalogPage catalogsPage(List<CatalogQuery> queries, Cancellation scope,
+                                    java.util.function.Consumer<CatalogPage> progress) throws AddonException {
+        scope.check();
+        Map<Integer, Part<Title>> parts = new java.util.TreeMap<>();
+        Map<String, Integer> positions = new LinkedHashMap<>();
+        List<Integer> pending = new ArrayList<>();
+        for (int i = 0; i < queries.size(); i++) {
+            CatalogQuery query = queries.get(i);
+            String key = query.addon.id + ":" + query.catalog.type + ":" + query.catalog.id;
+            positions.put(key, i); pending.add(i);
+            List<Title> saved = Collections.emptyList();
+            String cached = store.cached(query.addon.address.resource("catalog", query.catalog.type, query.catalog.id, query.extras));
+            if (cached != null) try { saved = Title.catalog(query.addon.id, new JSONObject(cached)); }
+            catch (JSONException | AddonException ignored) { /* A damaged cache is replaced by the provider response. */ }
+            parts.put(i, new Part<>(key, saved, null, !saved.isEmpty()));
+        }
+        if (pending.isEmpty()) return new CatalogPage(snapshot(parts), 1, false);
+        for (int attempt = 1; ; attempt++) {
+            scope.check(); final int current = attempt;
+            progress.accept(new CatalogPage(snapshot(parts), current, true));
+            long deadline = AddonClient.deadline();
+            List<Callable<Part<Part<Title>>>> tasks = new ArrayList<>(); List<String> keys = new ArrayList<>();
+            // Keep each resource's HTTP status through collection, so a 401 is never retried like a 503.
+            for (int index : pending) {
+                CatalogQuery query = queries.get(index); String key = parts.get(index).key; keys.add(key);
+                tasks.add(() -> new Part<>(key, Collections.singletonList(catalog(query, scope, deadline, key)), null, false));
+            }
+            Result<Part<Title>> loaded = collect(tasks, keys, scope, deadline, partial -> {
+                mergeCatalogParts(parts, positions, partial);
+                boolean complete = partial.items.size() + partial.failures.size() == keys.size();
+                boolean retrying = current < CatalogPage.MAX_ATTEMPTS && parts.values().stream().anyMatch(AddonRepository::retryable);
+                progress.accept(new CatalogPage(snapshot(parts), current, !complete || retrying));
+            });
+            mergeCatalogParts(parts, positions, loaded); scope.check();
+            List<Integer> retry = new ArrayList<>();
+            for (int index : pending) if (retryable(parts.get(index))) retry.add(index);
+            if (retry.isEmpty() || attempt == CatalogPage.MAX_ATTEMPTS) return new CatalogPage(snapshot(parts), attempt, false);
+            progress.accept(new CatalogPage(snapshot(parts), attempt, true));
+            backoff(scope, attempt); pending = retry;
+        }
+    }
+    private static void mergeCatalogParts(Map<Integer, Part<Title>> parts, Map<String, Integer> positions, Result<Part<Title>> update) {
+        for (Part<Title> part : update.items) parts.put(positions.get(part.key), part);
+        for (Map.Entry<String, AddonException.Kind> failure : update.failures.entrySet()) {
+            int index = positions.get(failure.getKey()); Part<Title> previous = parts.get(index);
+            parts.put(index, new Part<>(previous.key, previous.items, failure.getValue(), !previous.items.isEmpty()));
+        }
+    }
+    private static void backoff(Cancellation scope, int attempt) throws AddonException {
+        java.util.concurrent.CountDownLatch wake = new java.util.concurrent.CountDownLatch(1);
+        Runnable abort = wake::countDown; scope.add(abort);
+        try { wake.await(attempt * 1000L, TimeUnit.MILLISECONDS); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new AddonException(AddonException.Kind.CANCELLED, "Request cancelled"); }
+        finally { scope.remove(abort); }
+        scope.check();
+    }
     public Result<Title> catalogs(List<CatalogQuery> queries, Cancellation scope) throws AddonException {
         return catalogs(queries, scope, ignored -> {});
+    }
+    /** Bounded, cancellable category retries; recently visited pages do not ask their provider again. */
+    public CatalogPage catalogPage(CatalogQuery query, Cancellation scope, boolean refresh,
+                                   java.util.function.Consumer<CatalogPage> progress) throws AddonException {
+        scope.check();
+        long revision = configuration;
+        String address = query.addon.address.resource("catalog", query.catalog.type, query.catalog.id, query.extras);
+        String key = query.addon.id + ":" + query.catalog.type + ":" + query.catalog.id;
+        CachedCatalog cached;
+        synchronized (catalogPages) { cached = catalogPages.get(address); }
+        if (!refresh && cached != null && SystemClock.elapsedRealtime() - cached.saved < CATALOG_FRESH_MS)
+            return catalogPage(cached.part, 1, false);
+        Part<Title> previous = cached == null ? new Part<>(key, Collections.emptyList(), null, false) : cached.part;
+        for (int attempt = 1; attempt <= CatalogPage.MAX_ATTEMPTS; attempt++) {
+            scope.check(); progress.accept(catalogPage(previous, attempt, true));
+            Part<Title> loaded = catalog(query, scope, AddonClient.deadline(), key);
+            scope.check();
+            if (query.catalog.supports("skip") && loaded.items.size() > CatalogPage.PAGE_SIZE)
+                loaded = new Part<>(loaded.key, new ArrayList<>(loaded.items.subList(0, CatalogPage.PAGE_SIZE)), loaded.failure, loaded.stale, loaded.httpStatus);
+            if (loaded.failure == null) {
+                synchronized (catalogPages) {
+                    scope.check();
+                    if (revision == configuration) {
+                        catalogPages.put(address, new CachedCatalog(loaded));
+                        while (catalogPages.size() > CATALOG_CACHE_PAGES
+                                || catalogPages.values().stream().mapToInt(value -> value.part.items.size()).sum() > CATALOG_CACHE_PAGES * CatalogPage.PAGE_SIZE)
+                            catalogPages.remove(catalogPages.keySet().iterator().next());
+                    }
+                }
+                return catalogPage(loaded, attempt, false);
+            }
+            if (attempt == CatalogPage.MAX_ATTEMPTS || !retryable(loaded)) return catalogPage(loaded, attempt, false);
+            // Keep any saved posters visible during backoff. Cancellation wakes the wait immediately.
+            previous = loaded;
+            progress.accept(catalogPage(loaded, attempt, true));
+            backoff(scope, attempt);
+        }
+        throw new AssertionError("Unreachable catalogue attempt");
+    }
+    private static CatalogPage catalogPage(Part<Title> part, int attempt, boolean loading) {
+        Map<Integer, Part<Title>> parts = Collections.singletonMap(0, part);
+        return new CatalogPage(snapshot(parts), attempt, loading);
+    }
+    private static boolean retryable(Part<?> part) {
+        return part.failure == AddonException.Kind.NETWORK || part.failure == AddonException.Kind.TIMEOUT
+                || part.failure == AddonException.Kind.HTTP && (part.httpStatus == 408 || part.httpStatus == 429 || part.httpStatus >= 500);
     }
     public Result<Title> catalogs(List<CatalogQuery> queries, Cancellation scope, java.util.function.Consumer<Result<Title>> progress) throws AddonException {
         long deadline = AddonClient.deadline();
@@ -159,10 +295,10 @@ public final class AddonRepository implements AutoCloseable {
         } catch (AddonException e) {
             if (e.kind != AddonException.Kind.CANCELLED) {
                 String saved = store.cached(address);
-                if (saved != null) try { return new Part<>(key, Title.catalog(q.addon.id, new JSONObject(saved)), e.kind, true); }
+                if (saved != null) try { return new Part<>(key, Title.catalog(q.addon.id, new JSONObject(saved)), e.kind, true, e.httpStatus); }
                 catch (JSONException | AddonException ignored) { /* fall through to the provider error */ }
             }
-            return new Part<>(key, Collections.emptyList(), e.kind, false);
+            return new Part<>(key, Collections.emptyList(), e.kind, false, e.httpStatus);
         } catch (JSONException e) { return new Part<>(key, Collections.emptyList(), AddonException.Kind.MALFORMED, false); }
     }
     public Result<Title> metadata(String provider, String type, String id, Cancellation scope) throws AddonException {

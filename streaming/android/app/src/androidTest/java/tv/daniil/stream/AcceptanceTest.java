@@ -215,7 +215,7 @@ public final class AcceptanceTest extends AppHarness {
         tap("Playback", false); tap("Playback cache", false); tap("128 MiB", true); waitUntil("cache preference", 5000, () -> services.cacheBytes() == (128L << 20));
         tap("Play next episode", false); waitUntil("autoplay preference", 5000, () -> services.store.preference("autoplay", "true").equals("false"));
         tap("Clear app playback and metadata cache", true); tap("About", false); tap("Developer", false); tap("Open source notices", true); tap("libtorrent", false);
-        waitUntil("license text", 5000, () -> visible("Open source notices")); tap("Close", true);
+        waitUntil("license text", 5000, () -> visible("Open source notices")); instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
         tap("Settings", false); tap("Local fixtures", true); tap("Remove add-on", false);
         waitUntil("addon removed", 5000, () -> services.store.addons().isEmpty());
         assertEquals("rus", services.store.preference("audioLanguage", "")); assertEquals("eng", services.store.preference("subtitleLanguage", ""));
@@ -257,7 +257,7 @@ public final class AcceptanceTest extends AppHarness {
         for (int i = 0; i < 6; i++) instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
         instrumentation.waitForIdleSync();
         captureUi("dialog");
-        tap("Cancel", false);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT);
         waitUntil("dialog dismissed", 5000, () -> visible("Subtitle size"));
     }
     @Test public void searchGridKeepsFocusedCardsInsideVisibleViewport() throws Exception {

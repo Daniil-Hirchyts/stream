@@ -28,6 +28,7 @@ public final class SourcePolicyTest {
         assertTrue(SourcePolicy.assess(first).usable);
         assertTrue(SourcePolicy.assess(first).label.contains("unknown"));
         assertFalse(SourcePolicy.assess(source("4K AVC", "http://127.0.0.1/video")).usable);
+        assertFalse(SourcePolicy.assess(source("1440p AVC", "http://127.0.0.1/video")).usable);
         if (androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getDecoderInfos("video/dolby-vision", false, false).isEmpty())
             assertFalse(SourcePolicy.assess(source("1080p HEVC DOVI", "http://127.0.0.1/dv.mp4")).usable);
         assertEquals(SourcePolicy.key(first), SourcePolicy.key(source("Unknown", "http://127.0.0.1/new?secret=b")));

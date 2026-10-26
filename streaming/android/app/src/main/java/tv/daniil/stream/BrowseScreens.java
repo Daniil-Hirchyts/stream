@@ -19,20 +19,45 @@ import tv.daniil.stream.ui.Page;
 
 /** Home, Search, Library, History and catalogue browsing. Builders run on workers and block on providers. */
 final class BrowseScreens {
-    private static final int POSTER_COLUMNS = 6, LANDSCAPE_COLUMNS = 3, CATALOGUE_COLUMNS = 3, CATALOGUE_PAGE_SIZE = 24;
+    private static final int POSTER_COLUMNS = 6, LANDSCAPE_COLUMNS = 3, CATALOGUE_COLUMNS = 3, CATALOGUE_PAGE_SIZE = AddonRepository.CatalogPage.PAGE_SIZE;
     private final Navigator nav;
     private final TvApplication.Services services;
+    private static final long FRESH_MS = 5 * 60_000;
+    private static final class SavedResults {
+        final AddonRepository.CatalogPage result;
+        final long configuration, saved = android.os.SystemClock.elapsedRealtime();
+        SavedResults(AddonRepository.CatalogPage result, long configuration) { this.result = result; this.configuration = configuration; }
+        boolean fresh(long revision, boolean restoring) {
+            // Returning after a long film updates local progress without replacing the gallery underneath focus.
+            return configuration == revision && (restoring || android.os.SystemClock.elapsedRealtime() - saved < FRESH_MS);
+        }
+    }
+    private SavedResults homeResults;
+    private final Map<String, SavedResults> searches = new LinkedHashMap<>(8, .75f, true);
 
     BrowseScreens(Navigator nav, TvApplication.Services services) { this.nav = nav; this.services = services; }
 
     Page home(Cancellation scope) throws Exception { return home(scope, ignored -> {}); }
     Page home(Cancellation scope, java.util.function.Consumer<Page> progress) throws Exception {
+        return home(scope, progress, false);
+    }
+    Page home(Cancellation scope, java.util.function.Consumer<Page> progress, boolean refresh) throws Exception {
+        return home(scope, progress, refresh, false);
+    }
+    Page home(Cancellation scope, java.util.function.Consumer<Page> progress, boolean refresh, boolean restoring) throws Exception {
         List<AddonRepository.CatalogQuery> catalogues = services.addons.homeCatalogs();
+        long revision = services.addons.configuration();
+        synchronized (this) {
+            if (!refresh && homeResults != null && homeResults.fresh(revision, restoring)) return homeContent(catalogues, homeResults.result);
+        }
         progress.accept(homeContent(catalogues, null));
-        AddonRepository.Result<Title> found = services.addons.catalogs(catalogues, scope, partial -> progress.accept(homeContent(catalogues, partial)));
+        AddonRepository.CatalogPage found = services.addons.catalogsPage(catalogues, scope, partial -> progress.accept(homeContent(catalogues, partial)));
+        scope.check();
+        synchronized (this) { homeResults = new SavedResults(found, revision); }
         return homeContent(catalogues, found);
     }
-    private Page homeContent(List<AddonRepository.CatalogQuery> catalogues, AddonRepository.Result<Title> found) {
+    private Page homeContent(List<AddonRepository.CatalogQuery> catalogues, AddonRepository.CatalogPage load) {
+        AddonRepository.Result<Title> found = load == null ? null : load.result;
         Page page = new Page();
         List<Item> shelves = new ArrayList<>();
         Map<String, Title> library = new LinkedHashMap<>();
@@ -60,16 +85,21 @@ final class BrowseScreens {
             }
             failed = !found.failures.isEmpty(); stale = found.stale;
         }
-        if (shelves.isEmpty() && found == null && !catalogues.isEmpty()) page.add(Item.skeleton("Catalogues"));
-        else if (shelves.isEmpty()) {
-            page.add(Item.message(0, "Make yourself at home",
-                    failed ? "Your catalogues are unavailable right now. Manage add-ons in Settings or try refreshing."
-                            : "Films and series will appear here. Add catalogues or import a torrent in Settings."));
-        } else {
-            page.add(Item.spotlight(null));
+        boolean loading = load == null ? !catalogues.isEmpty() : load.loading;
+        if (!shelves.isEmpty()) page.add(Item.spotlight(null));
+        if (load != null && (failed || loading && load.attempt > 1)) {
+            String heading = loading ? "Retrying Home" : shelves.isEmpty() ? "Unable to load Home" : stale ? "Showing saved catalogues" : "Some providers are unavailable";
+            page.add(Item.notice(failed ? R.drawable.ic_tv_offline : R.drawable.ic_tv_refresh, heading, loadDetail(load),
+                    new Item.Action("reload-home", Item.Action.Style.SECONDARY, "Reload", nav::refresh).icon(R.drawable.ic_tv_refresh)));
+            if (shelves.isEmpty() && !loading) page.initialFocus = "reload-home";
+        }
+        if (shelves.isEmpty() && loading) page.add(Item.skeleton("Home results"));
+        else if (shelves.isEmpty() && !failed) page.add(Item.message(0, "Make yourself at home",
+                "Films and series will appear here. Add catalogues or import a torrent in Settings."));
+        else if (!shelves.isEmpty()) {
             page.addAll(shelves);
         }
-        if (failed && !shelves.isEmpty()) page.add(Item.notice(R.drawable.ic_tv_offline, stale ? "Showing saved catalogues" : "Some providers are unavailable", ""));
+        page.reusable = !loading && !failed;
         // Browsing and refreshing need a catalogue; an empty Home shows only the way to add one.
         if (!catalogues.isEmpty()) page.tools = java.util.Arrays.asList(
                 new Item.Action("browse", Item.Action.Style.SECONDARY, "Browse catalogues", () -> nav.push(new Route("Catalogues"))).icon(R.drawable.ic_tv_list),
@@ -79,15 +109,33 @@ final class BrowseScreens {
 
     Page search(Route route, Cancellation scope) throws Exception { return search(route, scope, ignored -> {}); }
     Page search(Route route, Cancellation scope, java.util.function.Consumer<Page> progress) throws Exception {
+        return search(route, scope, progress, false);
+    }
+    Page search(Route route, Cancellation scope, java.util.function.Consumer<Page> progress, boolean refresh) throws Exception {
+        return search(route, scope, progress, refresh, false);
+    }
+    Page search(Route route, Cancellation scope, java.util.function.Consumer<Page> progress, boolean refresh, boolean restoring) throws Exception {
+        String query = route.value;
+        long revision = services.addons.configuration();
+        synchronized (this) {
+            SavedResults saved = searches.get(query);
+            if (!refresh && saved != null && saved.fresh(revision, restoring)) return searchContent(route, saved.result);
+        }
         progress.accept(searchContent(route, null));
-        if (route.value.trim().length() < 2) return searchContent(route, null);
-        AddonRepository.Result<Title> found = services.addons.search(route.value, scope, partial -> {
+        if (query.trim().length() < 2) return searchContent(route, null);
+        AddonRepository.CatalogPage found = services.addons.searchPage(query, scope, partial -> {
             try { progress.accept(searchContent(route, partial)); }
             catch (Exception error) { throw new IllegalStateException(error); }
         });
+        scope.check();
+        synchronized (this) {
+            searches.put(query, new SavedResults(found, revision));
+            while (searches.size() > 6) searches.remove(searches.keySet().iterator().next());
+        }
         return searchContent(route, found);
     }
-    private Page searchContent(Route route, AddonRepository.Result<Title> found) throws Exception {
+    private Page searchContent(Route route, AddonRepository.CatalogPage load) throws Exception {
+        AddonRepository.Result<Title> found = load == null ? null : load.result;
         route.extras.put("keyboardLanguages", services.store.preference("keyboardLanguages", "en"));
         if (!route.extras.containsKey("keyboardLanguage")) route.extras.put("keyboardLanguage", services.store.preference("keyboardLanguage", "en"));
         Page page = new Page();
@@ -106,11 +154,18 @@ final class BrowseScreens {
                 tiles.add(poster("search-import", imported));
             }
         }
-        if (found != null) for (Title t : found.items) tiles.add(poster("search", t));
+        // Imports above are read afresh; a retained provider snapshot must not reintroduce renamed/removed imports.
+        if (found != null) for (Title t : found.items) if (!t.provider.equals("local")) tiles.add(poster("search", t));
         search.tiles = tiles;
-        search.loading = found == null;
-        search.detail = found != null && tiles.isEmpty() ? "No results" : "";
-        if (found != null && !found.failures.isEmpty()) search.meta = "Some providers could not answer";
+        search.loading = load == null || load.loading;
+        boolean failed = found != null && !found.failures.isEmpty();
+        search.detail = failed && tiles.isEmpty() ? search.loading ? "Retrying search" : "Search unavailable"
+                : !search.loading && tiles.isEmpty() ? "No results" : "";
+        page.reusable = !search.loading && !failed;
+        if (load != null && (failed || search.loading && load.attempt > 1)) {
+            search.meta = (search.loading ? "Retrying search. " : "") + loadDetail(load);
+            search.actions = Collections.singletonList(new Item.Action("reload-search", Item.Action.Style.SECONDARY, "Reload", nav::refresh).icon(R.drawable.ic_tv_refresh));
+        }
         return page;
     }
 
@@ -125,7 +180,8 @@ final class BrowseScreens {
         item.keyboardLanguages = tv.daniil.stream.ui.KeyboardLanguages.parse(route.extras.getOrDefault("keyboardLanguages", "en"));
         String language = route.extras.getOrDefault("keyboardLanguage", "en");
         item.keyboardLanguage = item.keyboardLanguages.contains(language) ? language : item.keyboardLanguages.get(0);
-        item.keyboardLanguageChanged = nav::keyboardLanguage; item.keyboardVoice = nav::voiceInput;
+        item.keyboardVisible = !"false".equals(route.extras.get("searchKeyboard"));
+        item.keyboardLanguageChanged = nav::keyboardLanguage;
         item.action = () -> nav.push(new Route("Keyboard languages"));
         return item;
     }
@@ -207,6 +263,9 @@ final class BrowseScreens {
     private static int typeOrder(String type) { return type.equals("movie") ? 0 : type.equals("series") ? 1 : 2; }
     Page catalogue(Route route, Cancellation scope) throws Exception { return catalogue(route, scope, ignored -> {}); }
     Page catalogue(Route route, Cancellation scope, java.util.function.Consumer<Page> progress) throws Exception {
+        return catalogue(route, scope, progress, false);
+    }
+    Page catalogue(Route route, Cancellation scope, java.util.function.Consumer<Page> progress, boolean refresh) throws Exception {
         JSONArray identity = new JSONArray(route.value);
         InstalledAddon addon = null; AddonManifest.Catalog catalog = null;
         for (InstalledAddon a : services.store.addons()) if (a.id.equals(identity.getString(0))) {
@@ -246,21 +305,51 @@ final class BrowseScreens {
         if (!complete) return page.add(Item.message(R.drawable.ic_tv_list, "Choose the required filters", "Then this catalogue will load."));
         Map<String, String> extras = applied;
         if (catalog.supports("skip")) extras.put("skip", Integer.toString(route.page * CATALOGUE_PAGE_SIZE));
-        progress.accept(page.copy().add(Item.skeleton("Catalogue results")));
-        AddonRepository.Result<Title> found = services.addons.catalogs(Collections.singletonList(new AddonRepository.CatalogQuery(addon, catalog, extras)), scope);
+        AddonRepository.CatalogQuery query = new AddonRepository.CatalogQuery(addon, catalog, extras);
+        boolean paginated = catalog.supports("skip");
+        AddonRepository.CatalogPage loaded = services.addons.catalogPage(query, scope, refresh,
+                partial -> progress.accept(catalogueContent(page, route, paginated, partial)));
+        return catalogueContent(page, route, paginated, loaded);
+    }
+    private Page catalogueContent(Page shell, Route route, boolean paginated, AddonRepository.CatalogPage load) {
+        Page page = shell.copy();
+        AddonRepository.Result<Title> found = load.result;
         List<Tile> tiles = new ArrayList<>();
         // Providers often return 100 items per request. Bound the visible page to the same stride as skip,
         // otherwise advancing one page repeats most of the previous page's posters.
-        int limit = catalog.supports("skip") ? Math.min(CATALOGUE_PAGE_SIZE, found.items.size()) : found.items.size();
+        int limit = paginated ? Math.min(CATALOGUE_PAGE_SIZE, found.items.size()) : found.items.size();
         for (int i = 0; i < limit; i++) tiles.add(poster("catalogue", found.items.get(i)));
-        boolean paginated = catalog.supports("skip");
-        if (tiles.isEmpty()) page.add(Item.message(R.drawable.ic_tv_movie, "No titles on this page",
+        boolean failed = !found.failures.isEmpty();
+        page.reusable = !failed && !load.loading;
+        if (load.loading || failed) {
+            String heading = load.loading ? (failed ? "Retrying catalogue" : tiles.isEmpty() ? "Loading catalogue" : "Updating catalogue") : "Unable to load catalogue";
+            String detail = "Attempt " + load.attempt + " of " + AddonRepository.CatalogPage.MAX_ATTEMPTS;
+            if (failed && !load.loading) detail += ". " + catalogueFailure(found.failures.values().iterator().next());
+            if (!tiles.isEmpty()) detail += ". Showing saved entries.";
+            Item.Action reload = new Item.Action("reload-catalogue", Item.Action.Style.SECONDARY, "Reload", nav::refresh).icon(R.drawable.ic_tv_refresh);
+            page.add(Item.notice(failed ? R.drawable.ic_tv_offline : R.drawable.ic_tv_refresh, heading, detail, failed ? new Item.Action[]{reload} : new Item.Action[0]));
+        }
+        if (tiles.isEmpty() && load.loading) page.add(Item.skeleton("Catalogue results"));
+        else if (tiles.isEmpty() && !failed) page.add(Item.message(R.drawable.ic_tv_movie, "No titles on this page",
                 route.page > 0 ? "Go to the previous page or change the filters." : "Try other filters."));
-        else page.addAll(Item.grid("catalogue-grid", Tile.Style.POSTER, POSTER_COLUMNS, tiles));
-        if (!found.failures.isEmpty()) page.add(Item.notice(R.drawable.ic_tv_offline, "Provider unavailable", found.stale ? "Showing saved entries." : "Try refreshing this catalogue."));
-        if (paginated) page.add(pagination(route, "bottom", !tiles.isEmpty()));
-        page.initialFocus = tiles.isEmpty() ? "refresh-catalogue" : tiles.get(0).key;
+        else if (!tiles.isEmpty()) page.addAll(Item.grid("catalogue-grid", Tile.Style.POSTER, POSTER_COLUMNS, tiles));
+        if (paginated && !load.loading) page.add(pagination(route, "bottom", !tiles.isEmpty()));
+        page.initialFocus = tiles.isEmpty() ? failed ? "reload-catalogue" : "refresh-catalogue" : tiles.get(0).key;
         return page;
+    }
+    private static String loadDetail(AddonRepository.CatalogPage load) {
+        String detail = "Attempt " + load.attempt + " of " + AddonRepository.CatalogPage.MAX_ATTEMPTS;
+        if (!load.loading && !load.result.failures.isEmpty()) detail += ". " + catalogueFailure(load.result.failures.values().iterator().next());
+        if (load.result.stale && !load.result.items.isEmpty()) detail += ". Showing saved entries.";
+        return detail;
+    }
+    private static String catalogueFailure(tv.daniil.stream.addon.AddonException.Kind kind) {
+        switch (kind) {
+            case CERTIFICATE: return "The provider's secure connection could not be verified.";
+            case MALFORMED: return "The provider returned an invalid catalogue.";
+            case HTTP: return "The provider could not serve this page.";
+            default: return "The provider could not be reached. Try again later.";
+        }
     }
     private Item pagination(Route route, String placement, boolean hasNext) {
         List<Item.Action> controls = new ArrayList<>();
@@ -272,7 +361,7 @@ final class BrowseScreens {
     }
     private void changePage(Route route, int delta) {
         route.page = Math.max(0, route.page + delta); route.scroll = null;
-        route.focus = ""; nav.refresh();
+        route.focus = ""; route.childScroll.clear(); nav.changed();
     }
 
     /** A free-text filter (no listed values). */
@@ -281,7 +370,7 @@ final class BrowseScreens {
     }
     private void choose(Route route, String name, String value) {
         if (value.isEmpty()) route.extras.remove(name); else route.extras.put(name, value);
-        route.page = 0; route.scroll = null; route.focus = ""; nav.refresh();
+        route.page = 0; route.scroll = null; route.focus = ""; route.childScroll.clear(); nav.changed();
     }
 
     // Shared tile builders.

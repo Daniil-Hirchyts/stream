@@ -21,6 +21,8 @@ public final class Page {
     public boolean narrow;
     /** The key that receives focus when no earlier focus is being restored. */
     @Nullable public String initialFocus;
+    /** Failed data remains visible on Back, but should get another bounded load when revisited. */
+    public boolean reusable = true;
 
     public Page add(Item item) { items.add(item); return this; }
     public Page addAll(Collection<Item> more) { items.addAll(more); return this; }
@@ -29,7 +31,8 @@ public final class Page {
     /** A snapshot for progress delivery while a worker continues adding result blocks. */
     public Page copy() {
         Page copy = new Page(); copy.items.addAll(items); copy.title = title; copy.backdrop = backdrop;
-        copy.tools = tools; copy.blurBackdrop = blurBackdrop; copy.narrow = narrow; copy.initialFocus = initialFocus; return copy;
+        copy.tools = tools; copy.blurBackdrop = blurBackdrop; copy.narrow = narrow; copy.initialFocus = initialFocus;
+        copy.reusable = reusable; return copy;
     }
     /** Home starts on its first card so the spotlight and artwork describe something. */
     @Nullable public String firstTile() {

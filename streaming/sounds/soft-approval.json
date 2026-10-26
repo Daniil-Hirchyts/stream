@@ -1,0 +1,146 @@
+{
+  "pack": "soft",
+  "sample_rate": 44100,
+  "events": {
+    "intro": {
+      "reference_loudness_db": -21.000258495323383,
+      "frames": 90405,
+      "sha256": "4f0bda8500822ce667071e0ca243e5be81f82df0bc46d563e6e24d1c09b14422"
+    },
+    "intro-exit": {
+      "reference_loudness_db": -29.000228904551566,
+      "frames": 14112,
+      "sha256": "e51da34d12315d7788d913ab2ba38e3a895e6acfe97ed9398b3fd774f6f88dc7"
+    },
+    "focus": {
+      "reference_loudness_db": -36.00030631974942,
+      "frames": 2558,
+      "sha256": "ea0ca434fb342bf60dcf66b51e62fd509ca736401d6ee505f39ff86998a9d79c"
+    },
+    "edge": {
+      "reference_loudness_db": -32.000286117107706,
+      "frames": 4145,
+      "sha256": "a0bb920fa0dab9c07f77d958694e0b5125e2c8aace32db44a5e969b687d3dfad"
+    },
+    "select": {
+      "reference_loudness_db": -26.00026818310631,
+      "frames": 5733,
+      "sha256": "dacf8624e259b803e1632ae9cedc507e93b67bed4f0c10370ad069eb21358c02"
+    },
+    "back": {
+      "reference_loudness_db": -26.00027739601059,
+      "frames": 4939,
+      "sha256": "a5666c3292b369eec48959701178bf553a2fc3b5308ded0209a28a2cefbcaa90"
+    },
+    "tab": {
+      "reference_loudness_db": -28.00025506654459,
+      "frames": 3616,
+      "sha256": "717cae1fc7982e013efc0dcc78512727ef61543177c9fff6f9f4780bc2ed616f"
+    },
+    "open": {
+      "reference_loudness_db": -26.000278528554134,
+      "frames": 8732,
+      "sha256": "11fbbc443cb58d324cab6c5148721a0b8fd0bb64fb2e010b6097a9c70266dcb1"
+    },
+    "key": {
+      "reference_loudness_db": -33.00025944298721,
+      "frames": 1984,
+      "sha256": "aaeb8990628441baa7bba91339d80dc891a4376c8a0b6492bf73cfc65dbdb182"
+    },
+    "delete": {
+      "reference_loudness_db": -32.000285173824196,
+      "frames": 3308,
+      "sha256": "d1ca5b0b1492687a708c28f259549c3de07f5c855cb1c3a8916da8e79af46cbd"
+    },
+    "results": {
+      "reference_loudness_db": -31.000215091129792,
+      "frames": 8468,
+      "sha256": "7bad9d70760e48c07ce05ad0a9c3cdaa859da2507b2d68165d2ad6b04779ccbe"
+    },
+    "chip": {
+      "reference_loudness_db": -28.000273625752197,
+      "frames": 3440,
+      "sha256": "4c12944761a1f20498f0abb15c8742272e3cbf568e5df3e6404d61c3c09ced32"
+    },
+    "favourite-on": {
+      "reference_loudness_db": -22.000266552027842,
+      "frames": 11995,
+      "sha256": "b7224eba1f5e2a3f6ffcf85d12b3626f7cb1b5a923e4b6889bc9603402469974"
+    },
+    "favourite-off": {
+      "reference_loudness_db": -24.000266423342488,
+      "frames": 6615,
+      "sha256": "bd5b021b731a5a112e3dea0d674f0568a28796aa64b2e5a8cb29db1c9a316a2d"
+    },
+    "watched-on": {
+      "reference_loudness_db": -21.000273135925937,
+      "frames": 13142,
+      "sha256": "6a34b04d072171f68ea9da58cf882dc87ec05659931b3b1e67c33ef0a272d0eb"
+    },
+    "watched-off": {
+      "reference_loudness_db": -24.000260833056526,
+      "frames": 8026,
+      "sha256": "6a6228c4938e47674e4757ac83cce23bb01d2006a5acf8f1e6585c2b187df5e5"
+    },
+    "alert": {
+      "reference_loudness_db": -27.00025758718254,
+      "frames": 8511,
+      "sha256": "2661aac6c58310d425f19eacdac2eeb9b65cae27dc9de775889e14a656ec8d2d"
+    },
+    "cancel": {
+      "reference_loudness_db": -26.000256427059245,
+      "frames": 4410,
+      "sha256": "4432a461dfeb71b10130713e36647dc64009c23f6ba1772500180fb44ee6ff27"
+    },
+    "installed": {
+      "reference_loudness_db": -19.000270125489433,
+      "frames": 16758,
+      "sha256": "9f88afa53543d55c7d33a9e3f7d3df7894124d262d06936f822db619ca0746e5"
+    },
+    "warning": {
+      "reference_loudness_db": -21.821855259718973,
+      "frames": 11599,
+      "sha256": "e619b6d8beb38bec7e7e036f0133528d6dadda75c44acdbc4f4a3ea77f346902"
+    },
+    "pause": {
+      "reference_loudness_db": -25.00027917942342,
+      "frames": 5204,
+      "sha256": "0c2137f71dac3b61655da73254b598b625708a0efa42ce5ef3fdaadce3392195"
+    },
+    "resume": {
+      "reference_loudness_db": -25.000265123722507,
+      "frames": 5204,
+      "sha256": "e063c5920479a00ef93cabb595d7a0ec2094ad70eebddf884fdecc919f901745"
+    },
+    "seek-forward": {
+      "reference_loudness_db": -30.000230934189265,
+      "frames": 4101,
+      "sha256": "76602de3e5452a88f0aaabd2875fd29d0fb07c1405abc1ba1a056334e5c81000"
+    },
+    "seek-back": {
+      "reference_loudness_db": -30.000240332766307,
+      "frames": 4101,
+      "sha256": "8649542b9b830d83c6a4ceb618e7b70c0df343e2688d69116b882425a233ba74"
+    },
+    "menu-open": {
+      "reference_loudness_db": -27.00024326418539,
+      "frames": 6306,
+      "sha256": "d19afcb781ab7b4f384fbb98b298e433719e0734df87034c72a7135bcfcb233a"
+    },
+    "menu-close": {
+      "reference_loudness_db": -28.00028923583509,
+      "frames": 5116,
+      "sha256": "91b810fb9ff0f1684125576557a524d32f386cb8c6c910c0fa10b3c54677969a"
+    },
+    "up-next": {
+      "reference_loudness_db": -20.000272240662476,
+      "frames": 17419,
+      "sha256": "7036765db36866ea9defcdf5578aac30c8b3ac573425b4a9d310e57dc9e1107d"
+    },
+    "finished": {
+      "reference_loudness_db": -17.000268668465523,
+      "frames": 24034,
+      "sha256": "50ea81ef57e431033622e34a4decf05d259d1dd8be4fa79d3a633c0230934ff9"
+    }
+  }
+}

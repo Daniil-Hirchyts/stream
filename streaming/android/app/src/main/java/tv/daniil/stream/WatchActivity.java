@@ -34,7 +34,7 @@ import tv.daniil.stream.ui.Sounds;
 import tv.daniil.stream.ui.Tv;
 import tv.daniil.torrent.*;
 
-/** Owns playback only while visible. A single serial loader owns native create/select/destroy operations. */
+/** Retains paused playback across temporary hiding. The serial loader owns native create/select/destroy operations. */
 @OptIn(markerClass = UnstableApi.class)
 public final class WatchActivity extends Activity implements PlaybackHost {
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -43,6 +43,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private TvApplication.Services services;
     private PlaybackSession session;
     private PlayerScreen screen;
+    private tv.daniil.stream.ui.PlayerTitles playerTitles;
     private String playerClockFormat = "off";
     private boolean playerClockEnabled;
     private final PlaybackCoordinator coordinator = new PlaybackCoordinator();
@@ -51,6 +52,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private Cancellation scope;
     private volatile int generation;
     private boolean visible, releasing, automatic, switching, failureQueued, waitingSources;
+    private boolean retainedWhileStopped;
     private Title title;
     private String video, explicitKey;
     private List<MediaSource> candidates = Collections.emptyList();
@@ -69,13 +71,16 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private final StartupWatchdog startupWatchdog = new StartupWatchdog();
     private String audioChoice = "", subtitleChoice = "";
     private Dialog choiceDialog;
-    private boolean episodeWatched, exitChoiceOpen;
+    private PlayerMenus playerMenus;
+    private boolean episodeWatched, exitChoiceOpen, completionRecorded;
     /** The media now loaded, used to avoid offering its subtitles for download twice. */
     private PlaybackRequest playing;
     /** Every subtitle the add-ons offer for this source, the preferred language first; the player lists them. */
     private List<SubtitleSource> subtitleOffers = Collections.emptyList();
     private static final int MAX_OFFERS = 40;
     private boolean autoplay = true;
+    private String nextOfferVideo = "";
+    private boolean nextOfferDismissed;
     private int preferredSubtitleRevision;
     private final java.util.Set<String> refreshedSources = new java.util.HashSet<>();
     private boolean developerMode;
@@ -108,7 +113,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
 
     public static Intent intent(Context context, Title title, String video, String sourceKey) {
         return new Intent(context, WatchActivity.class).putExtra("provider", title.provider).putExtra("titleId", title.id)
-                .putExtra("type", title.type).putExtra("name", title.name).putExtra("video", video).putExtra("source", sourceKey);
+                .putExtra("type", title.type).putExtra("name", title.name).putExtra("logo", title.logo).putExtra("video", video).putExtra("source", sourceKey);
     }
     @Override public void onCreate(Bundle state) {
         super.onCreate(state); app = (TvApplication) getApplication(); loader = app.playbackLoader; Sounds.get(this);
@@ -120,8 +125,28 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackPressed);
     }
     @Override protected void onStart() {
-        super.onStart(); visible = true; releasing = false; developerMode = false; Sounds.get(this).refresh(this);
+        super.onStart(); visible = true; releasing = false; Sounds.get(this).refresh(this);
+        if (retainedWhileStopped && session != null) {
+            retainedWhileStopped = false;
+            // Keep Media3, its source scope and the native cache together; rebuilding any of them reloads the film.
+            session.pause();
+            PlaybackSnapshot state = session.snapshot();
+            rememberViewerState(state);
+            polling = ranking = failureQueued = false;
+            long now = SystemClock.elapsedRealtime();
+            heardPlay = false; heardAt = now; heardPosition = previousPosition = state.positionMs;
+            lastAdvanceMs = now; seekStarted = 0; bufferingStarted = state.buffering ? now : 0;
+            androidx.media3.exoplayer.DecoderCounters counters = session.player().getVideoDecoderCounters();
+            videoWatchdog.reset(now, counters == null ? 0 : counters.renderedOutputBufferCount, counters == null ? 0 : counters.droppedBufferCount);
+            onPlaybackChanged(state);
+            screen.render(); screen.showControls(); updatePlayerClock();
+            main.removeCallbacks(tick); main.post(tick);
+            return;
+        }
+        developerMode = false;
         setContentView(R.layout.activity_watch);
+        completionRecorded = false;
+        playerTitles = new tv.daniil.stream.ui.PlayerTitles(this);
         int mine = ++generation;
         preparation = loader.submit(() -> {
             try {
@@ -132,11 +157,13 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 Title saved = null;
                 String id = getIntent().getStringExtra("titleId"), provider = getIntent().getStringExtra("provider");
                 for (TvStore.LibraryEntry e : data.store.library(false)) if (e.title.id.equals(id) && e.title.provider.equals(provider)) saved = e.title;
-                if (saved == null) saved = Title.parse(provider, new JSONObject().put("id", id).put("type", getIntent().getStringExtra("type")).put("name", getIntent().getStringExtra("name")));
+                if (saved == null) saved = Title.parse(provider, new JSONObject().put("id", id).put("type", getIntent().getStringExtra("type")).put("name", getIntent().getStringExtra("name")).put("logo", getIntent().getStringExtra("logo")));
                 Title chosen = saved;
                 main.post(() -> {
                     if (!current(mine)) return;
                     services = data; title = chosen; developerMode = diagnosticsEnabled;
+                    findViewById(R.id.loading_diagnostics).setVisibility(developerMode ? View.VISIBLE : View.GONE);
+                    playerTitles.bind(title);
                     playerClockFormat = clockFormat; playerClockEnabled = clockShown;
                     session = new PlaybackSession(this, data.playerPreferences, getString(R.string.app_name), "DaniilTV/0.1", this, 24 << 20, new StreamDecoders());
                     session.player().setTrackSelectionParameters(session.player().getTrackSelectionParameters().buildUpon().setMaxVideoSize(1920, 1080).build());
@@ -167,7 +194,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                         qr.dialog.setOnDismissListener(d -> finish()); choiceDialog = show(qr);
                     });
                 }
-                alert.cancelButton("close", "Close", this::finish); alert.dialog.setOnCancelListener(d -> finish()); choiceDialog = show(alert);
+                alert.dialog.setOnCancelListener(d -> finish()); choiceDialog = show(alert);
             } }); }
         });
     }
@@ -186,9 +213,32 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         clock.addOnLayoutChangeListener((view, l, t, r, b, ol, ot, or, ob) -> updatePlayerHeaderInset());
         clock.post(this::updatePlayerHeaderInset);
         // Two buttons replace the shared single Options button: audio and subtitles, and the player's settings.
-        tv.daniil.playback.Ui.action(findViewById(R.id.control_options), screen::openTracksMenu);
-        tv.daniil.playback.Ui.action(findViewById(R.id.control_settings), screen::openSettingsMenu);
-        tv.daniil.playback.Ui.action(findViewById(R.id.control_watched), this::markWatched);
+        playerMenus = new PlayerMenus(this, session, screen, services.playerPreferences, new PlayerMenus.Host() {
+            @Override public boolean hasEpisode(int direction) { return neighbour(direction) != null; }
+            @Override public void episode(int direction) { WatchActivity.this.episode(neighbour(direction)); }
+            @Override public boolean canChooseSource() { return WatchActivity.this.canChooseSource(); }
+            @Override public void sources(Tv.Alert page) { populateSources(page, true); }
+            @Override public List<PlayerMenus.SubtitleOffer> offers() {
+                List<PlayerMenus.SubtitleOffer> result = new ArrayList<>();
+                for (SubtitleSource offer : unloadedOffers()) result.add(new PlayerMenus.SubtitleOffer(languageName(offer.language), () -> attachSubtitles(offer, true)));
+                return result;
+            }
+            @Override public void saveStyle(SubtitleStyle.Setting setting, int index) {
+                app.persistence.execute(() -> services.store.setPreference("subtitle_" + setting.key, setting.values[index]));
+            }
+            @Override public void visibilityChanged() { updatePlayerClock(); if (session != null) updateNextEpisode(session.snapshot()); }
+            @Override public boolean developerMode() { return developerMode; }
+            @Override public void diagnostics(Tv.Alert page) {
+                android.widget.TextView body = Tv.text(WatchActivity.this, diagnosticSnapshot().toString(), 12, R.color.tv_text_secondary);
+                body.setPadding(Tv.dp(WatchActivity.this, 12), 0, Tv.dp(WatchActivity.this, 12), Tv.dp(WatchActivity.this, 12));
+                body.setLineSpacing(Tv.dp(WatchActivity.this, 3), 1f);
+                page.body(body);
+            }
+        });
+        tv.daniil.playback.Ui.action(findViewById(R.id.control_options), () -> playerMenus.open(true, findViewById(R.id.control_options)));
+        tv.daniil.playback.Ui.action(findViewById(R.id.control_settings), () -> playerMenus.open(false, findViewById(R.id.control_settings)));
+        findViewById(R.id.error).setOnClickListener(view -> onExit());
+        tv.daniil.playback.Ui.action(findViewById(R.id.control_watched), () -> setWatched(!episodeWatched));
         findViewById(R.id.center_icon).setFocusable(false);
         findViewById(R.id.center_icon).setClickable(false);
         View timeline = findViewById(R.id.progress);
@@ -197,6 +247,12 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             session.togglePlay(); screen.showControls();
         });
         timeline.setOnHoverListener((view, event) -> { screen.showControls(); return false; });
+        tv.daniil.playback.Ui.action(findViewById(R.id.next_episode_play), () -> {
+            hideNextEpisode(); onNextEpisode();
+        });
+        tv.daniil.playback.Ui.action(findViewById(R.id.next_episode_dismiss), () -> {
+            nextOfferDismissed = true; hideNextEpisode();
+        });
         for (int id : LIFTED) {
             View button = findViewById(id);
             button.setOnFocusChangeListener((view, has) -> lift(view, has || view.isHovered()));
@@ -229,9 +285,9 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         }
     }
     /** The player's buttons, which grow while focused or under the pointer, like the app's own controls. */
-    static final int[] LIFTED = {R.id.control_stop, R.id.control_options, R.id.control_watched, R.id.control_settings};
+    static final int[] LIFTED = {R.id.control_stop, R.id.control_watched, R.id.control_options, R.id.control_settings};
     /** Left and right move along the top row in this order. */
-    private static final int[] HEADER = {R.id.control_stop, R.id.control_options, R.id.control_watched, R.id.control_settings};
+    private static final int[] HEADER = {R.id.control_stop, R.id.control_watched, R.id.control_options, R.id.control_settings};
     private final Map<View, android.animation.Animator> lifts = new java.util.HashMap<>();
     /** Scales with its own animator: the overlay's fades cancel a view's property animation on every tick. */
     private void lift(View view, boolean on) {
@@ -286,7 +342,8 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 request.check(); Title resolved = metadata; List<MediaSource> sources = choices; Availability why = empty;
                 main.post(() -> {
                     if (!current(mine)) return;
-                    title = resolved; episodeWatched = progress != null && progress.watched; updateWatchedButton(); coordinator.mark("FIRST_SOURCE"); resumePosition = resume; candidates = sources; marks = history; sourceResolution = resolution;
+                    title = resolved; playerTitles.bind(title); screen.setTitle(title.name);
+                    episodeWatched = progress != null && progress.watched; updateWatchedButton(); coordinator.mark("FIRST_SOURCE"); resumePosition = resume; candidates = sources; marks = history; sourceResolution = resolution;
                     automatic = explicitKey == null || explicitKey.isEmpty();
                     if (title.provider.equals("local")) { open(null, -1); return; }
                     if (candidates.isEmpty()) { failure(why.heading, why.detail, "no-sources"); return; }
@@ -435,7 +492,6 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             services.store.setPreference("cacheMiB", "128");
             main.post(() -> { if (visible && !releasing) onRetry(); });
         }); });
-        alert.cancelButton("close", "Close", alert.dialog::dismiss);
         choiceDialog = show(alert);
     }
     private static boolean sameLanguage(String one, String two) {
@@ -497,40 +553,50 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         session.attachExternalSubtitles(Collections.singletonList(new SubtitleDownloader.Source(chosen.url, mime(chosen.url), chosen.language,
                 languageName(chosen.language))), Collections.emptyMap(), manual || session.subtitleSelectionRevision() == preferredSubtitleRevision,
                 loaded -> attachedSubtitles.remove(chosen.url));
-        if (manual) screen.menu().close();
+        if (manual) { if (playerMenus != null) playerMenus.close(); else screen.menu().close(); }
     }
     private static String mime(String url) { String lower = Uri.parse(url).getPath(); lower = lower == null ? "" : lower.toLowerCase(java.util.Locale.ROOT); return lower.endsWith(".srt") ? "application/x-subrip" : lower.endsWith(".ass") || lower.endsWith(".ssa") ? "text/x-ssa" : "text/vtt"; }
     private String episodeLabel() { for (Title.Episode e : title.episodes) if (e.id.equals(video)) return "S" + e.season + " E" + e.number + " · " + e.name; return ""; }
-    /** Viewing context stays separate from the shared audio/subtitle summary. */
-    private void updateWatchingInfo(PlaybackSnapshot snapshot) {
+    /** The show logo needs only episode context; film facts already belong to the title page. */
+    private void updateWatchingInfo() {
         if (title == null) return;
-        List<String> info = new ArrayList<>();
-        if (!title.releaseInfo.isEmpty()) info.add(title.releaseInfo);
-        if (!title.genres.isEmpty()) info.add(String.join(" / ", title.genres.subList(0, Math.min(2, title.genres.size()))));
-        if (!title.rating.isEmpty()) info.add("★ " + title.rating);
-        if (snapshot.durationMs > 0) info.add(((snapshot.durationMs + 59_999) / 60_000) + " min");
+        String info = title.type.equals("series") ? episodeLabel() : "";
         android.widget.TextView view = findViewById(R.id.watching_info);
-        view.setText(String.join("  ·  ", info));
+        view.setText(info);
         view.setVisibility(info.isEmpty() ? View.GONE : View.VISIBLE);
     }
     private void chooseFile(MediaSource source, List<TorrentFile> files) {
         String[] names = new String[files.size()]; for (int i = 0; i < names.length; i++) names[i] = files.get(i).name() + " · " + files.get(i).size / (1 << 20) + " MiB";
         choiceDialog = show(Tv.choices(this, "Choose a video file", names, which -> open(source, files.get(which).index), this::finish));
     }
+    private void populateSources(Tv.Alert page, boolean remember) {
+        List<MediaSource> offered = new ArrayList<>(candidates);
+        for (int i = 0; i < offered.size(); i++) {
+            MediaSource source = offered.get(i); final int index = i;
+            SourceSort.Facts facts = SourceSort.facts(source);
+            String detail = facts.quality();
+            if (facts.bytes > 0) detail += (detail.isEmpty() ? "" : " · ") + TitleScreens.size(facts.bytes);
+            if (facts.seeds >= 0) detail += (detail.isEmpty() ? "" : " · ") + facts.seeds + " peers";
+            page.choice("source:" + i, source.name.replace('\n', ' '), detail, source == selected, () -> {
+                if (remember) rememberViewerState(session.snapshot());
+                page.dialog.dismiss(); automatic = false; explicitKey = SourcePolicy.key(source);
+                candidate = index; attempts = 0; recoveryStarted = 0; coordinator.begin(SystemClock.elapsedRealtime()); open(source, -1);
+            });
+        }
+        page.scrollChoices(276);
+    }
     private void chooseSources() {
         if (session == null) return;
-        rememberViewerState(session.snapshot());
-        save(session.snapshot()); session.stop(); cancelPreparation(); loader.execute(this::closeNative);
+        PlaybackSnapshot previous = session.snapshot();
+        rememberViewerState(previous); save(previous); session.pause();
         if (candidates.isEmpty()) { failure("No sources available", "Refresh sources on the title page.", "no-sources"); return; }
-        String[] names = new String[candidates.size()];
-        for (int i = 0; i < names.length; i++) {
-            MediaSource c = candidates.get(i); TvStore.SourceMark mark = marks.get(SourcePolicy.key(c));
-            String state = mark == null ? "" : mark.state.equals(TvStore.SourceMark.PLAYED) ? "✓ Played  ·  " : "✕ Didn't play  ·  ";
-            names[i] = state + c.name.replace('\n', ' ') + "  ·  " + SourcePolicy.assess(c).label;
-        }
-        choiceDialog = show(Tv.choices(this, "Choose source", names, which -> {
-            automatic = false; explicitKey = SourcePolicy.key(candidates.get(which)); candidate = which; attempts = 0; recoveryStarted = 0; coordinator.begin(SystemClock.elapsedRealtime()); open(candidates.get(which), -1);
-        }, this::finish));
+        Tv.Alert page = Tv.alert(this, "Choose source", (View) null); populateSources(page, false);
+        page.dialog.setOnCancelListener(d -> {
+            if (session == null || releasing) return;
+            if (previous.started || previous.error != null) { if (previous.playWhenReady && previous.error == null) session.play(); screen.showControls(); }
+            else finish();
+        });
+        choiceDialog = show(page);
     }
     private void attemptFailed(String message, String code) {
         if (!visible || releasing) return;
@@ -647,7 +713,10 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     @Override public void onUnsupportedFormat(String format) { queueFailure("This TV can't decode " + format + ".", "unsupported"); }
     @Override public void onPlaybackChanged(PlaybackSnapshot snapshot) {
         if (releasing || session == null || switching) return;
-        updateWatchingInfo(snapshot);
+        // Media-session play commands must not start sound behind the screensaver or lock screen.
+        if (!visible) { if (snapshot.playWhenReady) session.pause(); return; }
+        updateWatchingInfo();
+        if (playerMenus != null) playerMenus.changed();
         ((tv.daniil.stream.ui.PlayerTimeline) findViewById(R.id.progress)).setPaused(!snapshot.playWhenReady && !snapshot.ended);
         if (keepPausedOnRecovery && snapshot.error == null) {
             if (snapshot.playWhenReady) { session.pause(); return; }
@@ -688,7 +757,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         if (error.code.equals("format")) return "No readable video in this source.";
         return error.message;
     }
-    @Override public void onProgress(PlaybackSnapshot snapshot) { if (!releasing) { hearSeek(snapshot); save(snapshot); } }
+    @Override public void onProgress(PlaybackSnapshot snapshot) { if (visible && !releasing) { hearSeek(snapshot); save(snapshot); } }
     /** A skip, however it was made (remote, timeline, menu), sounds by its direction: the position jumped from where time had it. */
     private void hearSeek(PlaybackSnapshot snapshot) {
         long now = SystemClock.elapsedRealtime();
@@ -700,13 +769,17 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         heardAt = now; heardPosition = snapshot.positionMs;
     }
     @Override public void onMenuToggled(boolean open) {
-        Sounds.play(open ? Sounds.Sound.MENU_OPEN : Sounds.Sound.MENU_CLOSE);
+        if (playerMenus == null || !playerMenus.isOpen()) Sounds.play(open ? Sounds.Sound.MENU_OPEN : Sounds.Sound.MENU_CLOSE);
+        if (!open && screen != null && session != null && !session.player().getPlayWhenReady()) screen.showControls();
         updatePlayerClock();
+        if (session != null) updateNextEpisode(session.snapshot());
     }
     private void save(PlaybackSnapshot snapshot) {
         if (services == null || title == null || snapshot == null || !snapshot.loaded) return;
-        if (snapshot.ended) { episodeWatched = true; updateWatchedButton(); }
-        Title outgoing = title; String outgoingVideo = video; long position = snapshot.positionMs, duration = snapshot.durationMs; boolean ended = snapshot.ended;
+        boolean ended = snapshot.ended && !completionRecorded;
+        if (ended) { completionRecorded = true; episodeWatched = true; updateWatchedButton(); }
+        else if (!snapshot.ended && snapshot.started) completionRecorded = false;
+        Title outgoing = title; String outgoingVideo = video; long position = snapshot.positionMs, duration = snapshot.durationMs;
         String audio = snapshot.audio == null ? "" : snapshot.audio.id;
         String text = snapshot.subtitles == null ? "off" : snapshot.subtitles.id;
         String audioLanguage = snapshot.audio == null ? null : snapshot.audio.language;
@@ -721,13 +794,38 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     }
     @Override public void onEnded() {
         if (!visible || releasing || screen == null) return;
-        Title.Episode next = autoplay ? neighbour(1) : null;
+        hideNextEpisode();
+        Title.Episode next = autoplay && !nextOfferDismissed ? neighbour(1) : null;
         Sounds.play(next != null ? Sounds.Sound.UP_NEXT : Sounds.Sound.FINISHED);
         if (next != null) screen.offerUpNext(next.name, "Season " + next.season, () -> episode(next));
     }
+    private void updateNextEpisode(PlaybackSnapshot state) {
+        if (!video.equals(nextOfferVideo)) { nextOfferVideo = video; nextOfferDismissed = false; }
+        Title.Episode next = neighbour(1);
+        boolean show = visible && !releasing && !switching && state.started && state.error == null
+                && !state.ended && screen.loading() == null && !screen.isMenuOpen() && (playerMenus == null || !playerMenus.isOpen()) && !screen.hasUpNext()
+                && next != null && !nextOfferDismissed && NextEpisodeOffer.nearEnd(state.positionMs, state.durationMs);
+        View offer = findViewById(R.id.next_episode_offer);
+        if (show) {
+            ((android.widget.TextView) findViewById(R.id.next_episode_name)).setText(next.name);
+            ((android.widget.TextView) findViewById(R.id.next_episode_context)).setText("Season " + next.season + " · Episode " + next.number);
+        }
+        if (show == (offer.getVisibility() == View.VISIBLE)) return;
+        offer.animate().cancel();
+        if (show) {
+            offer.setAlpha(0); offer.setTranslationY(Tv.dp(this, 12)); offer.setVisibility(View.VISIBLE);
+            offer.animate().alpha(1).translationY(0).setDuration(240).start();
+        } else hideNextEpisode();
+    }
+    private void hideNextEpisode() {
+        View offer = findViewById(R.id.next_episode_offer);
+        if (offer == null) return;
+        if (offer.hasFocus()) { findViewById(R.id.player_root).requestFocus(); if (screen != null) screen.showControls(); }
+        offer.animate().cancel(); offer.setVisibility(View.GONE);
+    }
     private Title.Episode neighbour(int offset) { if (title == null) return null; for (int i = 0; i < title.episodes.size(); i++) if (title.episodes.get(i).id.equals(video)) { int next = i + offset; return next < 0 || next >= title.episodes.size() ? null : title.episodes.get(next); } return null; }
     private void episode(Title.Episode next) {
-        rememberViewerState(session.snapshot()); save(session.snapshot()); session.stop(); video = next.id; resumePosition = 0; explicitKey = ""; resolve(true);
+        rememberViewerState(session.snapshot()); save(session.snapshot()); session.stop(); keepPausedOnRecovery = false; video = next.id; completionRecorded = false; resumePosition = 0; explicitKey = ""; resolve(true);
     }
     @Override public boolean onNextEpisode() { Title.Episode next = neighbour(1); if (next == null) return false; episode(next); return true; }
     @Override public boolean onPreviousEpisode() { Title.Episode previous = neighbour(-1); if (previous == null) return false; episode(previous); return true; }
@@ -738,21 +836,28 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private void updateWatchedButton() {
         View button = findViewById(R.id.control_watched);
         button.setActivated(episodeWatched);
-        button.setAlpha(episodeWatched ? 0.6f : 1f);
-        button.setContentDescription(episodeWatched ? "Watched" : "Mark watched");
+        ((android.widget.ImageView) button).setImageResource(episodeWatched ? R.drawable.ic_tv_unwatched : R.drawable.ic_tv_check);
+        button.setContentDescription(episodeWatched ? "Mark unwatched" : "Mark watched");
+        button.setTooltipText(episodeWatched ? "Mark unwatched" : "Mark watched");
     }
-    private void markWatched() {
+    private void setWatched(boolean watched) {
         if (session == null || services == null || title == null || !session.snapshot().started) return;
-        if (episodeWatched) { screen.notice("Watched"); return; }
+        if (episodeWatched == watched) return;
         PlaybackSnapshot state = session.snapshot();
+        if (state.ended) completionRecorded = true;
         Title markedTitle = title; String markedVideo = video;
-        episodeWatched = true; updateWatchedButton();
+        episodeWatched = watched; updateWatchedButton();
         // Use the same ordered persistence queue as progress; later saves preserve the watched flag.
-        app.persistence.execute(() -> services.store.progress(markedTitle, markedVideo, state.positionMs, state.durationMs, true));
-        Sounds.play(Sounds.Sound.WATCHED_ON); screen.notice("Marked watched");
+        app.persistence.execute(() -> {
+            services.store.progress(markedTitle, markedVideo, state.positionMs, state.durationMs, watched);
+            if (!watched) services.store.watched(markedTitle, markedVideo, false);
+        });
+        Sounds.play(watched ? Sounds.Sound.WATCHED_ON : Sounds.Sound.WATCHED_OFF);
+        screen.notice(watched ? "Marked watched" : "Marked unwatched");
     }
     @Override public void onExit() {
         if (exitChoiceOpen) return;
+        hideNextEpisode();
         PlaybackSnapshot state = session == null ? null : session.snapshot();
         if (state == null || !state.started || state.error != null || state.ended || session.player().isCurrentMediaItemLive()
                 || !WatchCompletion.offerOnExit(state.positionMs, state.durationMs, episodeWatched)) { finish(); return; }
@@ -762,8 +867,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         Tv.Alert alert = Tv.alert(this, "Finished watching?", "Mark this " + (title.type.equals("series") ? "episode" : "film") + " watched, or keep your place for later.");
         // Keeping the place is the default; time remaining alone never marks an episode watched.
         alert.button("keep-progress", "Keep for later", () -> { alert.dialog.dismiss(); finish(); });
-        alert.button("mark-watched", "Mark watched", () -> { markWatched(); alert.dialog.dismiss(); finish(); });
-        alert.cancelButton("continue-watching", "Continue watching", alert.dialog::cancel);
+        alert.button("mark-watched", "Mark watched", () -> { setWatched(true); alert.dialog.dismiss(); finish(); });
         alert.dialog.setOnCancelListener(dialog -> {
             exitChoiceOpen = false;
             if (resume && session != null && !releasing) session.play();
@@ -777,6 +881,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         View focused = getCurrentFocus();
         if (session == null) return false;
         if (session.error() != null) {
+            if (code == KeyEvent.KEYCODE_DPAD_LEFT) { onExit(); return true; }
             if (ok && focused != null && (focused.getId() == R.id.error_qr_previous || focused.getId() == R.id.error_qr_next)) {
                 focused.performClick(); return true;
             }
@@ -791,6 +896,18 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             findViewById(R.id.player_root).requestFocus();
         if ((ok && !header) || code == KeyEvent.KEYCODE_MEDIA_PLAY
                 || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) keepPausedOnRecovery = false;
+        if (findViewById(R.id.next_episode_offer).isShown()) {
+            if (focus == R.id.next_episode_play || focus == R.id.next_episode_dismiss) {
+                if (ok) { focused.performClick(); return true; }
+                if (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                    findViewById(focus == R.id.next_episode_play ? R.id.next_episode_dismiss : R.id.next_episode_play).requestFocus(); return true;
+                }
+                if (code == KeyEvent.KEYCODE_DPAD_UP) { screen.showControls(); findViewById(R.id.progress).requestFocus(); return true; }
+                if (code == KeyEvent.KEYCODE_BACK) { nextOfferDismissed = true; hideNextEpisode(); return true; }
+            } else if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                findViewById(R.id.next_episode_play).requestFocus(); return true;
+            }
+        }
         if (ok && header) { focused.performClick(); return true; }
         if (header && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
             screen.showControls();
@@ -801,7 +918,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         }
         if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) {
             screen.showControls();
-            int target = code == KeyEvent.KEYCODE_DPAD_UP ? R.id.control_options : R.id.progress;
+            int target = code == KeyEvent.KEYCODE_DPAD_UP ? R.id.control_watched : R.id.progress;
             View destination = findViewById(target);
             if (!destination.isShown()) destination = findViewById(code == KeyEvent.KEYCODE_DPAD_UP ? R.id.control_stop : R.id.progress);
             destination.setFocusableInTouchMode(true);
@@ -823,7 +940,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         View clock = findViewById(R.id.player_clock);
         if (clock == null) return;
         boolean shown = screen != null && session != null && session.started() && screen.loading() == null
-                && session.error() == null && (screen.isMenuOpen()
+                && session.error() == null && (screen.isMenuOpen() || playerMenus != null && playerMenus.isOpen()
                 || !session.player().getPlayWhenReady() && session.player().getPlaybackState() == Player.STATE_READY);
         int previous = clock.getVisibility();
         tv.daniil.stream.ui.Clock.apply((android.widget.TextClock) clock, playerClockFormat, playerClockEnabled && shown);
@@ -848,6 +965,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         @Override public void run() {
             if (!visible || releasing || session == null) return;
             PlaybackSnapshot state = session.snapshot(); long now = SystemClock.elapsedRealtime();
+            updateNextEpisode(state);
             View focused = getCurrentFocus();
             if (findViewById(R.id.controls).isShown() && focused != null
                     && (headerIndex(focused.getId()) >= 0 || focused.getId() == R.id.progress)) screen.showControls();
@@ -939,12 +1057,16 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     PlaybackSnapshot playbackSnapshot() { return session == null ? null : session.snapshot(); }
     private void diagnostics() {
         Tv.Alert alert = Tv.alert(this, "Playback diagnostics", diagnosticSnapshot().toString().replace(",\"", ", \""));
-        alert.cancelButton("close", "Close", alert.dialog::dismiss); choiceDialog = show(alert);
+        choiceDialog = show(alert);
     }
     /** The player's controls and menu belong to the shared player: an arrow that moves its focus ticks here. */
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         boolean move = event.getAction() == KeyEvent.ACTION_DOWN && Sounds.arrow(event.getKeyCode());
         if (move) Sounds.input();
+        if (playerMenus != null && (event.getKeyCode() == KeyEvent.KEYCODE_MENU || event.getKeyCode() == KeyEvent.KEYCODE_CAPTIONS)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) playerMenus.open(false, findViewById(R.id.control_settings));
+            return true;
+        }
         View before = getCurrentFocus();
         boolean handled = screen != null && screen.dispatchKeyEvent(event) || super.dispatchKeyEvent(event);
         View after = getCurrentFocus();
@@ -953,16 +1075,41 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     }
     @Override public void onBackPressed() { if (screen != null && screen.onRemoteKey(KeyEvent.KEYCODE_BACK)) return; Sounds.play(Sounds.Sound.BACK); onExit(); }
     @Override protected void onStop() {
-        visible = false; releasing = true;
+        visible = false;
+        PlaybackSnapshot state = session == null ? null : session.snapshot();
+        if (!isFinishing() && !isChangingConfigurations() && !switching && state != null
+                && state.loaded && state.started && state.error == null) {
+            retainedWhileStopped = true;
+            session.pause();
+            state = session.snapshot(); rememberViewerState(state); save(state);
+            long now = SystemClock.elapsedRealtime();
+            coordinator.paused(true, now); startupWatchdog.setPaused(true, now);
+            // A completed episode must not start another episode while the viewer is away.
+            hideNextEpisode(); if (playerMenus != null) playerMenus.close(); screen.cancelUpNext(); screen.menu().close();
+            if (choiceDialog != null) { choiceDialog.dismiss(); choiceDialog = null; }
+            exitChoiceOpen = false;
+            main.removeCallbacks(tick);
+        } else releasePlayback();
+        super.onStop();
+    }
+    @Override protected void onDestroy() {
+        // Also covers a stopped activity being finished or destroyed instead of brought back to the foreground.
+        releasePlayback();
+        super.onDestroy();
+    }
+    private void releasePlayback() {
+        if (releasing) return;
+        releasing = true; retainedWhileStopped = false;
         if (session != null) { PlaybackSnapshot state = session.snapshot(); rememberViewerState(state); save(state); }
         cancelPreparation(); if (discovery != null) { discovery.close(); discovery = null; } main.removeCallbacksAndMessages(null);
         for (android.animation.Animator animator : lifts.values()) animator.cancel();
         lifts.clear();
+        if (playerMenus != null) { playerMenus.close(); playerMenus = null; }
         if (screen != null) screen.release();
+        if (playerTitles != null) { playerTitles.close(); playerTitles = null; }
         if (session != null) session.release();
         screen = null; session = null;
         loader.execute(this::closeNative);
-        super.onStop();
     }
     private void rememberViewerState(PlaybackSnapshot state) {
         if (!state.loaded) return;

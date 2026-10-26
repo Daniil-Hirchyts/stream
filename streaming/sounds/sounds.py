@@ -7,9 +7,9 @@ sampled. Each moment is a short score of notes, rendered by a small synth,
 mastered to one loudness scale weighted as the ear hears it, and chosen by ear
 from the same moments played on different instruments. Rauta's listening test
 kept two: Pure (soft sines with a trace of harmonics) and Marimba. For the TV
-the owner chose Glass by ear, then asked for it darker, less ringing and without
-melodies: the app now plays low, damped single tones with a felt tap (TV_SCORES).
-Pure, Marimba and the first, brighter Glass stay on the listening page.
+the owner selected Soft from the second audition: rounded electronic plucks,
+brief confirmations and a new startup arrangement (palettes.py). Glass,
+Felt, Pure and Marimba remain available on the listening page.
 
     python3 streaming/sounds/sounds.py            the app's sounds
     python3 streaming/sounds/sounds.py audition   every moment on every instrument
@@ -105,7 +105,7 @@ SCORES = {
     "finished": [(0, "G5", 0.8, 0.1), (0.075, "A5", 0.85, 0.1), (0.15, "B5", 0.9, 0.1), (0.225, "D6", 1, 0.3)],
 }
 
-# The app's set, chosen by ear: Glass, made darker and plainer, like a TV's own interface. No melodies: each
+# The previous app set: Glass, made darker and plainer, like a TV's own interface. No melodies: each
 # moment is one low, damped tone with a felt tap, or the same tone tapped twice; a small slide up or down says
 # which way something went. The scores above stay for the other instruments on the listening page.
 TV_SCORES = {
@@ -224,13 +224,15 @@ def bright_glass(f, decay, bend):
 
 
 INSTRUMENTS = {
-    "glass": ("Glass", "The app's set: low, damped tones with a felt tap, no melodies, like a TV's own interface."),
+    "soft": ("Soft", "The selected app set: rounded electronic plucks, warm confirmations and a new startup cue."),
+    "felt": ("Felt", "Dry, cushioned taps with less musical tone and separate event scores."),
+    "glass": ("Glass", "The previous app set: low, damped tones with a felt tap, no melodies."),
     "bright-glass": ("Bright glass", "The first Glass: a small ringing bell, playing the melodic scores."),
     "pure": ("Pure", "Soft sines with a trace of harmonics: Rauta's favourite, melodic scores."),
     "marimba": ("Marimba", "A rosewood bar: Rauta's sound for things completed, melodic scores."),
 }
 # The app plays this instrument for every moment.
-CHOSEN = "glass"
+CHOSEN = "soft"
 
 
 # ------------------------------------------------------------------ the start screen
@@ -286,6 +288,9 @@ PIECES = {"intro": intro, "intro-exit": intro_exit}
 
 
 def render(instrument, name):
+    if instrument in ("soft", "felt"):
+        from palettes import render as render_palette
+        return render_palette(instrument, name)
     if name in PIECES:
         return PIECES[name]()
     seed = zlib.crc32(name.encode())
@@ -355,11 +360,19 @@ def write_wav(path, x):
         w.writeframes((np.clip(x, -1, 1) * 32767).round().astype("<i2").tobytes())
 
 
+def event_audio(instrument, name, level):
+    x = render(instrument, name)
+    if instrument in ("soft", "felt"):
+        from palettes import finish
+        return finish(name, x)
+    return master(x, level)
+
+
 def app():
     os.makedirs(RAW, exist_ok=True)
     for name, _, _, _, level in EVENTS:
         instrument = CHOSEN
-        x = master(render(instrument, name), level)
+        x = event_audio(instrument, name, level)
         write_wav(os.path.join(RAW, "sfx_" + name.replace("-", "_") + ".wav"), x)
         print(f"sfx_{name.replace('-', '_'):16s} {instrument:12s} {len(x) / SR * 1000:4.0f} ms")
 
@@ -371,7 +384,7 @@ def audition():
         manifest["instruments"].append({"id": key, "name": title, "about": about})
         for name, *_rest in EVENTS:
             level = _rest[-1]
-            write_wav(os.path.join(BUILD, key, name + ".wav"), master(render(key, name), level))
+            write_wav(os.path.join(BUILD, key, name + ".wav"), event_audio(key, name, level))
     for name, label, when, group, _ in EVENTS:
         manifest["events"].append({"id": name, "name": label, "when": when, "group": group})
         manifest["chosen"][name] = CHOSEN
@@ -383,4 +396,6 @@ def audition():
 
 
 if __name__ == "__main__":
+    # palettes shares these DSP helpers when this file is used as the CLI entry point.
+    sys.modules.setdefault("sounds", sys.modules[__name__])
     audition() if sys.argv[1:] == ["audition"] else app()

@@ -32,7 +32,7 @@ Developer views.
 ### Error QR reports
 
 Turn on **Settings → About → Developer mode** before reproducing a problem.
-Playback errors then show a QR panel beside Retry/Sources/Close. Browse and
+Playback errors then show a QR panel beside Retry/Sources. Back or Left exits playback failures. Browse and
 settings failures offer **Error report**. **Settings → Developer → Last error
 report** reopens the most recent report while this app process is alive.
 Turning Developer mode off clears it and hides report controls.
@@ -93,7 +93,7 @@ Shelves scroll horizontally. Page titles scroll with their page.
   - Other lists and forms (Imports, the store, add-on pages, Sources) sit in a
     centred column; shelves and grids use the full width.
 - **Details:** Play or Resume (with the episode), Sources, and More retain labels.
-  Favourite and Mark watched are circular icon buttons, with state highlights,
+  Favourite and a film's Mark watched are circular icon buttons, with state highlights,
   accessible action names and labels that fade between separate text views on focus.
   In a series, focusing or hovering a season changes its episodes immediately.
   Entering seasons or episodes fades and shifts the overview into the show's
@@ -101,6 +101,10 @@ Shelves scroll horizontally. Page titles scroll with their page.
   when no logo loads. Episode cards show Episode N, title and a description of
   at most three lines. Up from the season strip or Back restores the
   overview. Each season remembers its horizontal shelf position.
+  Episode cards have no child option buttons. Selecting a card opens its attached
+  menu with Play/Resume, Choose source and a single Mark watched/Mark unwatched
+  action. Watched state is a small artwork checkmark; descriptions stay free of
+  controls. Up returns to the season strip. Only the chosen episode is changed.
   Home, catalogue and Library cards omit years and type labels; details keep
   release information. Favourites and completed Watch history cards omit their
   redundant collection labels and badges.
@@ -112,6 +116,23 @@ Shelves scroll horizontally. Page titles scroll with their page.
   as "Last played") or didn't play on this TV. The marks hold only hashed source
   keys, never addresses. When none can play, the page says how many were found
   and why.
+- **Automatic Play:** filters unsupported sources first, then favours 720–1080p. Within
+  that range a weighted score combines advertised peers/seeds (logarithmic, the
+  largest influence), a modest 1080p preference and a diminishing file-size penalty.
+  A compact encode can beat a huge remux with slightly more peers. Zero peers and
+  recent failures lose priority; missing metadata stays a fallback rather than an
+  invented speed estimate. If quality and availability are both absent, provider
+  order is retained. Structured seed counts and common textual labels are supported.
+  No torrent is opened just to rank it. Parallel discovery gets at most 750 ms after
+  the first usable result to improve the initial choice; complete results and an
+  explicitly chosen source proceed immediately. Recovery remains bounded.
+- **Next Episode:** appears during the final 10%, capped at 90 seconds. It is a manual
+  shortcut, also available with automatic next-episode playback disabled. It never
+  skips the current ending on a timer. Dismissing it suppresses the end-of-episode
+  autoplay countdown for that episode; otherwise that existing countdown starts only
+  after completion. Last episodes have no successor prompt. Choosing another episode
+  starts it playing while retaining speed and track preferences.
+
 - **Browse:** plain blocks with each catalogue's name inside, no artwork and
   nothing beneath, grouped Films, Series, then other kinds. A block names its
   add-on only when several add-ons supply catalogues, and says when it needs a
@@ -123,20 +144,25 @@ Shelves scroll horizontally. Page titles scroll with their page.
   scrolls inside itself and never moves the page.
 - **Search:** typing replaces only the results beside the keyboard, so the
   focused key never moves. Results fade out at the column's top and bottom.
-- **Alerts:** choices are filled platters; Cancel or Close sits apart under a
-  rule, outlined and grey until focused.
+  Moving Right into results fades the keyboard out and expands the grid to six
+  columns. Left from the leading column restores the editing layout; Right
+  returns to the selected result. The header's keyboard icon also switches modes
+  by mouse/touch. The 260 ms bounds/fade transition preserves the query and
+  selection without another provider request, and Back retains the active mode.
+- **Alerts:** compact action rows use meaningful icons and an inset white focus
+  fill. There is no Close/Cancel footer; Back or Left pops a nested level or closes
+  the root. A click outside also dismisses it. Text-entry cancellation keeps edits
+  unsaved; cancellation of the exit prompt returns to the current playback state.
 - **Search keyboard:** an aligned six-column grid with 4 dp gaps, on three pages
   (letters, digits and punctuation, language-specific accented letters). Settings
   → Languages → Keyboard languages selects English, French, German, Spanish,
   Italian, Portuguese, Russian and Ukrainian layouts. The globe key cycles the
-  enabled languages; with one language it opens their settings. The microphone
-  opens Android's speech-input activity in the selected language; results become
-  editable search text and cancellation preserves the query. An unavailable
-  speech service leaves keyboard input available.
+  enabled languages; with one language it opens their settings. Its key fills the
+  bottom row and shows the language name. Search uses typed input; there is no voice mode.
   Space and Delete fill unused cells in the last character row. A five-character
   tail spreads evenly across the row and puts Space/Delete on their own full row,
   so no language or character page adds blank spacer keys. Page switches and Clear
-  span two cells, and language and voice keys span three. Cell and gap widths are rounded
+  span two cells; the language key spans all six. Cell and gap widths are rounded
   to pixels before calculating spans. White focus fill keeps keys aligned without
   scaling the wide keys. Results update as you type,
   with no heading or count. Before a search, and when nothing matches, a quiet
@@ -153,12 +179,11 @@ Shelves scroll horizontally. Page titles scroll with their page.
   headings and controls, SemiBold for emphasis, and the Display cut for
   titles from 24 sp. The player's type scale (`Text.*` styles) is overridden
   by name to use it, and its times use tabular figures.
-- **Loading:** each screen's skeleton is built from the blocks of its page:
-  title, rows, two-line rows, buttons, chips, shelves, grids, the details
-  header and the Settings split view, at the same sizes and spacing. Each
-  line of text is a bar inside an empty text view of that line's size, so the
-  page replaces it without anything moving. Search shows the results grid's
-  own columns. The activity indicator is an eight-spoke wheel after Apple's,
+- **Loading:** skeletons cover unknown remote content after a 160 ms delay;
+  local pages and cached returns have no ghost forms/grids. Known title headers
+  and existing results remain visible. Poster placeholders use the current
+  one-line captions and Search's active column count. See the complete
+  [loading-surface audit](LOADING_UI_REVIEW.md). The activity indicator is an eight-spoke wheel after Apple's,
   with fixed bars and an opacity trail advancing clockwise in distinct 128 ms
   steps (1.024 seconds per cycle). Its animated vector stays on the render
   thread while the main thread is busy.
@@ -196,17 +221,37 @@ Shelves scroll horizontally. Page titles scroll with their page.
   gains a white rim and a deep shadow while its caption keeps its size; buttons
   grow slightly; list rows and tabs don't grow, so their text never shifts.
   Left and right never leave the content, and shelves hold focus at their ends.
-- **Alerts:** `Tv.Alert` sheets of translucent glass over a blurred copy of
-  the screen, with a centred title and stacked full-width buttons. A long
-  choice list or message scrolls, clipped, above the buttons.
+- **Popups:** `Tv.Alert` uses one opaque panel with 22 dp corners. Menus attach
+  below/above small controls, or beside episode artwork, clamped to the screen's
+  safe margins. Each level measures its own content width: short lists contract,
+  longer labels/forms expand within readable screen bounds. Their bounds start at the actual opener, using a small copy of
+  that control for the transition; only menu content fades/slides, never stretched
+  text or a screenshot of the whole page. Content appears after the shell expands.
+  Automatic messages without an actual opening action fade at the centre instead
+  of inventing a source on the tab bar. Empty action containers add no footer gap.
+  Nested pages retain the same attachment edge, window, parent selection and scroll
+  position. Back/Left returns one level; at the root either closes the popup.
+  Short secondary headers and icon rows share aligned insets, with no redundant
+  footer or Back header button. Long value lists scroll below a pinned header and
+  preview; message-only panels scroll their content. Popups leave the clock header clear.
+  Outside presses dismiss; no blur, tint or dim layer changes the background.
+  Reduced motion follows Android's animator setting. Playback failures share the
+  compact surface and Back/Left exit, retaining Retry and Choose source.
+  More → Remove from library demonstrates a nested confirmation. The shared
+  player's visible menus use this same app-owned popup stack for tracks, audio,
+  sources, quality, speed and subtitle style. The shared player menu stays invisible
+  as a transport/caption guard. Focusing a style previews it without saving; selection
+  commits to both player preferences and Settings. Subtitle Settings uses the
+  preview already on its page, with no duplicate preview inside the choice popup.
+  Both entry points share the same labels and name effective default values. Cancelling source choices retains
+  the active player and downloaded cache; selecting a source preserves pause, speed
+  and position. See `UI_CONSISTENCY_REVIEW.md` for evidence and remaining findings.
 
 Glass comes from cheap blurs:
 - **Artwork:** each title's artwork also has a softened layer, blurred and
   fading in towards the bottom where text, buttons and shelves sit, so
   translucent controls over it read as glass. Sources shows the artwork fully
   blurred.
-- **Alerts:** an alert copies the screen at an eighth of its size, blurs that
-  once on a worker and fades it in.
 - **Live, on Android 12+ only:** the tab bar and search field, and the
   buttons, chips and notices on a page, blur what is behind them
   (`GlassView`: a small RenderEffect GPU pass per surface while the picture
@@ -216,8 +261,7 @@ Glass comes from cheap blurs:
   frame, which is what made the UI stall. Rows, tiles and keys never blur:
   they are many, and rows and keys sit on the plain canvas.
 - **Player:** the video plays on a SurfaceView, which the system composites
-  outside the view tree, so nothing in the app can blur it. The options sheet
-  and the error alert are denser glass over the darkened frame instead.
+  outside the view tree. Options and error panels use opaque surfaces.
 
 Artwork is cached on disk (40 MiB, least recently shown evicted) as well as in
 memory. Off-screen shelves keep their views, so scrolling back neither rebuilds
@@ -229,7 +273,8 @@ lines and, when the provider supplies a valid date, its initial air date. Missin
 dates add no empty row. See [the series loading review](SERIES_LOADING_REVIEW.md)
 for metadata/image request timing and remaining optimization opportunities.
 An episode's action sheet uses Play or Resume according to its saved progress,
-and offers only Mark watched or Mark unwatched according to its current state.
+and offers Choose source. Its on-card completion toggle reads Mark watched or
+Watched, with a season/episode-specific accessible action and no redundant badge.
 
 The shared player's sources stay unchanged: app resource overrides and app-owned
 presentation adapters give Daniil TV its look, while Daniil Cast keeps its own:
@@ -242,10 +287,17 @@ presentation adapters give Daniil TV its look, while Daniil Cast keeps its own:
   shrinker whenever updating Media3. The shared library and receiver are unchanged.
 - **Overlay:** `layout/playback_layers.xml`, with the same IDs and the view
   types the library reads:
-  - The title and track details sit at the top, with three round
-    buttons beside them: Audio and subtitles (the subtitle list, then Audio),
-    Mark watched and Player settings (quality, speed, subtitle style). Menu on
-    the remote still opens everything. There is no "Now playing" label.
+  - The title logo sits at the top, followed only by the season/episode context
+    for series. Film facts and the selected-track summary stay off the overlay.
+    Three round buttons follow: Mark watched / Mark unwatched, Audio and subtitles
+    (the subtitle list, then Audio), and Player settings (quality, speed, subtitle
+    style). Up focuses the watched toggle; Right reaches audio/subtitles. Menu on
+    the remote still opens everything. The toggle preserves progress and works
+    after natural completion too, without later saves undoing the viewer's choice.
+  - Loading uses the same logo and a spinner. Stage names and technical messages
+    appear only in Developer mode. One cached artwork request supplies both logo
+    views; a missing or failed image keeps a readable text fallback and never
+    delays playback.
   - There is no centre play/pause button. Tap the timeline to pause/resume;
     drag it to preview a position and seek on release. Remote OK and transport
     keys still play/pause, and left/right still skip. Up reaches the header,
@@ -285,8 +337,11 @@ Screens are built off the main thread as `ui.Page` lists of `ui.Item` blocks
 (`BrowseScreens`, `TitleScreens`, `SetupScreens`), and `ui.PageAdapter` turns
 them into views. Every focusable view is tagged with a stable key. Back restores
 the retained page, focused card, vertical scroll and each shelf's horizontal
-position without another provider request; mutations and returning from playback
-still refresh affected data. The Back button appears on subpages; default Home,
+position without another provider request. Tab roots retain their own focus and
+viewports too, including Search's nested grid and both Settings columns. Returning
+from playback or changing favourites updates local data while keeping the prior
+Home/Search provider snapshot, even after a long film. Provider configuration
+changes invalidate snapshots; explicit Refresh fetches new data. The Back button appears on subpages; default Home,
 Library and Settings views omit it. Stable
 keys also let the instrumentation find controls by label. Year ranges use
 `2016 - Present` or `2016 - 2022`. The startup screen uses a light uppercase
@@ -294,6 +349,18 @@ STREAM wordmark and a light sweeping through the play icon's full interior,
 clearing the tip before repeating.
 `MainActivity` only owns the back stack, chrome, dialogs and worker
 generations.
+
+Browse category requests retry transient network, timeout, rate-limit and server
+errors up to three attempts, with cancellable 1/2 second backoff and a visible
+attempt counter. The failure panel includes Reload; it starts a fresh attempt
+budget and bypasses the fresh-page cache. Certificate, authentication, invalid
+response and ordinary client errors are shown immediately. A genuine empty
+catalogue stays an empty state. Existing saved posters remain usable during a
+failed refresh. The repository retains at most 12 recent category pages / 288
+titles for five minutes, keyed by the full category/filter/page request; add-on
+configuration changes and Clear app caches invalidate it. Search retains at most
+six query snapshots. Provider requests and retry waits stay off the UI thread;
+navigation cancels the old scope and its sockets/backoff before starting another.
 
 Catalogue add-ons such as Cinemeta describe titles but supply no video.
 Details and Sources say so ("No source add-on installed") and open the store on
@@ -308,9 +375,15 @@ DTS, TrueHD and common 10-bit video. See [DECODERS.md](DECODERS.md) for decoder
 selection, recovery, limits, licensing and the focused `decoder-test` command.
 Automatic failover is limited to three candidates before first frame; explicit
 choices are preserved. Ambiguous multi-file torrents require a file choice.
-Leaving/backgrounding playback saves progress and releases Media3, native
-sessions and payload files. Restart reconstructs playback from descriptors;
-startup recovers disposable payload/subtitle files left by a killed process.
+Screensaver, sleep and Home transitions pause an already started film and save
+progress while retaining Media3, its source scope and the bounded native
+download cache. Returning to the player keeps the same position, speed and
+downloaded data, without resolving the source again; playback stays paused
+until the viewer resumes. Background time does not count toward stall/recovery
+timeouts, and pending next-episode playback is cancelled. Closing the player
+or destroying its activity releases these resources. After process death or
+activity recreation, playback is reconstructed from saved progress; startup
+recovers disposable payload/subtitle files left by a killed process.
 When the cache and the 512 MiB free-space reserve don't fit, the player offers
 two fixes and retries the same source: clearing this app's own payload,
 subtitle and metadata caches, or switching to a 128 MiB cache.
@@ -478,7 +551,7 @@ Internet Archive data.
 - **Screens:** the empty Home and the starter install, Home, details,
   Sources, Library, the store, Settings with an alert, Search, Imports, and
   the player overlay, error alert and options menu.
-- **Skeletons and branding:** every screen's loading skeleton (`sk-*`), to
+- **Skeletons and branding:** remaining full-page loading skeletons (`sk-*`), to
   compare with its page, and the launcher icon and banner as Android draws
   them (`00-*`).
 - **Remote check:** on each page it walks D-pad focus from the focused
@@ -600,3 +673,9 @@ final release symbol stripping uses the intended toolchain.
 
 See the [validation record](../../docs/streaming-validation.md) and the
 [complete application specification](../../docs/STREAMING_APP_PLAN.md).
+
+Home and Search now share the catalogue retry policy (at most three attempts for
+transient errors, cancellable backoff). Successful provider resources are retained
+while only failed resources retry. Inline Reload and attempt status are visible
+when recovery is needed; Search distinguishes provider failure from an empty
+success. These calls remain on application workers.

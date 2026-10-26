@@ -63,9 +63,15 @@ public final class WatchCompletionInteractionTest extends AppHarness {
         waitUntil("near end", 5000, () -> state().positionMs > state().durationMs * 0.9);
         control(R.id.control_stop, true);
         waitUntil("exit offers completion choice", 5000, () -> visible("Finished watching?"));
+        android.os.SystemClock.sleep(350);
         screenshot("validation-player-exit.png");
-        tap("Continue watching", false);
-        waitUntil("cancel keeps the paused player", 5000, () -> watch() != null && !visible("Finished watching?"));
+        assertFalse("No cancellation row in the popup", visible("Continue watching"));
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT);
+        waitUntil("cancel returns input to the paused player", 5000, () -> {
+            WatchActivity activity = watch(); if (activity == null || visible("Finished watching?")) return false;
+            java.util.concurrent.atomic.AtomicBoolean focused = new java.util.concurrent.atomic.AtomicBoolean();
+            instrumentation.runOnMainSync(() -> focused.set(activity.hasWindowFocus())); return focused.get();
+        });
         assertFalse(state().playWhenReady);
         control(R.id.control_stop, true);
         tap("Keep for later", true);
@@ -85,6 +91,24 @@ public final class WatchCompletionInteractionTest extends AppHarness {
         app.persistence.submit(() -> {}).get();
         assertTrue(services.store.history(false).get(0).watched);
         assertTrue(services.store.history(true).isEmpty());
+    }
+
+    @Test public void naturalCompletionCanBeMarkedUnwatchedAndStaysUnwatchedOnExit() throws Exception {
+        playFilm();
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PAUSE);
+        waitUntil("paused", 5000, () -> !state().playWhenReady);
+        dragTo(0.99f);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PLAY);
+        waitUntil("natural completion", 15000, () -> state().ended);
+        waitUntil("automatic watched state saved", 5000, () -> services.store.history(false).get(0).watched);
+        control(R.id.control_watched, true);
+        waitUntil("finished film unmarked", 5000, () -> !services.store.history(false).get(0).watched);
+        SystemClock.sleep(1500);
+        assertFalse("Repeated ended snapshots must not undo the manual choice", services.store.history(false).get(0).watched);
+        control(R.id.control_stop, false);
+        waitUntil("exit", 5000, () -> watch() == null);
+        app.persistence.submit(() -> {}).get();
+        assertFalse("Final progress save keeps it unwatched", services.store.history(false).get(0).watched);
     }
 
     private void dragTo(float fraction) {

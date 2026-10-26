@@ -41,16 +41,7 @@ final class ErrorQrPanel extends LinearLayout {
     static Tv.Alert alert(Context context, DiagnosticReport report) {
         Tv.Alert alert = Tv.alert(context, "Error report", (CharSequence) null);
         alert.surface.removeAllViews(); alert.surface.setPadding(0, 0, 0, 0);
-        ImageView close = icon(context, "Close", View.generateViewId(), R.drawable.ic_tv_close, () -> {
-            Sounds.play(Sounds.Sound.CANCEL); alert.dialog.dismiss();
-        });
-        alert.buttons.addView(close, new LayoutParams(Tv.dp(context, 40), Tv.dp(context, 40)));
-        alert.surface.addView(new ErrorQrPanel(context, report, alert.buttons));
-        alert.dialog.setOnShowListener(ignored -> {
-            ViewGroup.LayoutParams size = alert.surface.getLayoutParams();
-            size.width = Math.min(Tv.dp(context, 360), context.getResources().getDisplayMetrics().widthPixels - Tv.dp(context, 64));
-            alert.surface.setLayoutParams(size);
-        });
+        alert.surface.addView(new ErrorQrPanel(context, report, null));
         return alert;
     }
 

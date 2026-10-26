@@ -59,14 +59,18 @@
     <!-- The player's error buttons: full width, one above the other, as Tv.Alert builds them. -->
     <style name="TvPlayerAlertButton">
         <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">46dp</item>
-        <item name="android:layout_marginTop">8dp</item>
+        <item name="android:layout_height">44dp</item>
+        <item name="android:layout_marginTop">2dp</item>
         <item name="android:background">@drawable/tv_dialog_button</item>
-        <item name="android:fontFamily">@font/inter_medium</item>
-        <item name="android:gravity">center</item>
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:gravity">center_vertical</item>
         <item name="android:singleLine">true</item>
         <item name="android:textColor">@color/tv_on_glass</item>
-        <item name="android:textSize">16sp</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:drawablePadding">12dp</item>
+        <item name="android:drawableTint">@color/tv_on_glass</item>
     </style>
     <style name="TvDialogPrimaryButton" parent="TvDialogSecondaryButton">
         <item name="android:background">@drawable/tv_dialog_primary</item>

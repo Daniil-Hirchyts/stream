@@ -153,6 +153,7 @@ public final class SubtitleSettingsTest {
     }
 
     private static final class NavigatorStub implements Navigator {
+        @Override public void options(String title, java.util.function.Consumer<tv.daniil.stream.ui.Tv.Alert> contents) {}
         @Override public void push(Route next) {}
         @Override public void root(String screen) {}
         @Override public void search() {}

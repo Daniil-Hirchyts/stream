@@ -87,9 +87,17 @@ public final class SeriesBrowseTest extends AppHarness {
         });
         screenshot("series-episode-layout.png");
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
-        waitUntil("episode actions", 5000, () -> visible("Play") && visible("Mark watched"));
-        assertFalse("Only the available watched-state action is offered", visible("Mark unwatched"));
-        tap("Mark watched", false); waitUntil("episode marked", 5000, () -> {
+        waitUntil("episode actions", 5000, () -> visible("Play") && visible("Choose source"));
+        assertTrue("Completion is an episode menu action", visible("Mark watched"));
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+        waitUntil("episode card receives the window after the menu closes", 5000, () -> {
+            AtomicBoolean ready = new AtomicBoolean();
+            browse.onActivity(activity -> ready.set(activity.hasWindowFocus()));
+            return ready.get() && focused("episode:sample:s1e1");
+        });
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+        tap("Mark watched", true);
+        waitUntil("episode marked", 5000, () -> {
             AtomicBoolean marked = new AtomicBoolean();
             browse.onActivity(activity -> {
                 View episode = activity.findViewById(R.id.page_rows).findViewWithTag("episode:sample:s1e1");
@@ -97,7 +105,10 @@ public final class SeriesBrowseTest extends AppHarness {
             });
             return marked.get();
         });
-        waitUntil("episode focus restored after marking", 5000, () -> focused("episode:sample:s1e1"));
+        waitUntil("episode card receives input after marking", 5000, () -> {
+            AtomicBoolean ready = new AtomicBoolean(); browse.onActivity(activity -> ready.set(activity.hasWindowFocus()));
+            return ready.get() && focused("episode:sample:s1e1");
+        });
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
         waitUntil("Up returns to selected season", 5000, () -> focused("season:1"));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
@@ -121,32 +132,36 @@ public final class SeriesBrowseTest extends AppHarness {
         launch(); waitUntil("Home", 10000, () -> visible("Make yourself at home"));
         browse.onActivity(activity -> activity.openTitle(series, ""));
         waitUntil("overview", 5000, () -> focused("play"));
+        assertFalse("The series overview has no film-style completion toggle", shown("watched"));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
         waitUntil("seasons", 5000, () -> focused("season:1") && !visible("Resume"));
-        tap("Episode menu 1", false); waitUntil("fresh episode actions", 5000, () -> visible("Choose source"));
-        assertTrue(visible("Play")); assertTrue(visible("Mark watched"));
-        assertFalse(visible("Resume")); assertFalse(visible("Play / Resume")); assertFalse(visible("Mark unwatched"));
+        tap("Episode menu 2", true); waitUntil("episode playback menu", 5000, () -> visible("Choose source"));
+        assertTrue(visible("Resume")); assertFalse(visible("Play"));
+        assertTrue("Completion lives in episode options", visible("Mark watched"));
+        assertFalse(visible("Mark unwatched"));
+        tap("Mark watched", true);
+        waitUntil("only this episode marked", 5000, () -> services.store.progress(series.key(), "menu:episode:2").watched);
+        assertNull("Episode one was not changed", services.store.progress(series.key(), "menu:episode:1"));
+        assertTrue("Episode three stays watched", services.store.progress(series.key(), "menu:episode:3").watched);
+        assertFalse("No option button on the episode artwork", visible("Episode 2 options"));
+        browse.onActivity(activity -> assertEquals("The episode has no child action buttons", 0,
+                childActions(activity.findViewById(R.id.page_rows).findViewWithTag("episode:menu:episode:2"))));
+        tap("Episode menu 2", false);
+        waitUntil("single state-specific action", 5000, () -> visible("Mark unwatched"));
+        assertFalse(visible("Mark watched"));
+        SystemClock.sleep(350); // Capture the final panel, after its expansion.
+        screenshot("validation-episode-options.png");
+        tap("Mark unwatched", false);
+        waitUntil("episode unmarked", 5000, () -> !services.store.progress(series.key(), "menu:episode:2").watched);
+        tap("Episode menu 2", false); waitUntil("resume preserved", 5000, () -> visible("Resume") && visible("Choose source"));
+        assertFalse(visible("Play")); assertTrue(visible("Mark watched"));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
-        tap("Episode menu 2", true); waitUntil("resume episode actions", 5000, () -> visible("Choose source"));
-        assertTrue(visible("Resume")); assertTrue(visible("Mark watched"));
-        assertFalse(visible("Play")); assertFalse(visible("Mark unwatched"));
+        waitUntil("episode menu closes", 5000, () -> !visible("Choose source"));
+        Title film = Title.parse("local", new JSONObject().put("id", "test:film-toggle").put("type", "movie").put("name", "Film completion"));
+        browse.onActivity(activity -> activity.openTitle(film, ""));
+        waitUntil("film keeps its own watched control", 5000, () -> shown("watched") && visible("Mark watched"));
         tap("Mark watched", false);
-        waitUntil("marking saved", 5000, () -> services.store.progress(series.key(), "menu:episode:2").watched);
-        waitUntil("episode focus restored", 5000, () -> focused("episode:menu:episode:2"));
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
-        waitUntil("changed episode actions", 5000, () -> visible("Choose source"));
-        assertTrue(visible("Play")); assertTrue(visible("Mark unwatched"));
-        assertFalse(visible("Resume")); assertFalse(visible("Mark watched"));
-        tap("Mark unwatched", true);
-        waitUntil("unmarking saved", 5000, () -> !services.store.progress(series.key(), "menu:episode:2").watched);
-        waitUntil("updated focus restored", 5000, () -> focused("episode:menu:episode:2"));
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
-        waitUntil("resume restored after unmarking", 5000, () -> visible("Resume") && visible("Mark watched"));
-        assertFalse(visible("Play")); assertFalse(visible("Mark unwatched"));
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
-        tap("Episode menu 3", false); waitUntil("finished episode actions", 5000, () -> visible("Choose source"));
-        assertTrue(visible("Play")); assertTrue(visible("Mark unwatched"));
-        assertFalse(visible("Resume")); assertFalse(visible("Mark watched"));
+        waitUntil("film marked watched", 5000, () -> services.store.progress(film.key(), film.id) != null && services.store.progress(film.key(), film.id).watched);
     }
 
     @Test public void seriesArtworkLoadsForTheVisibleSeasonRatherThanTheWholeShow() throws Exception {
@@ -217,6 +232,15 @@ public final class SeriesBrowseTest extends AppHarness {
             }, "series-logo-loopback"); thread.start();
         }
         @Override public void close() throws Exception { server.close(); thread.join(3000); }
+    }
+    private static int childActions(View view) {
+        int result = 0;
+        if (view instanceof android.view.ViewGroup) for (int i = 0; i < ((android.view.ViewGroup) view).getChildCount(); i++) {
+            View child = ((android.view.ViewGroup) view).getChildAt(i);
+            if (child.isClickable() || child.isFocusable()) result++;
+            result += childActions(child);
+        }
+        return result;
     }
     private boolean focused(String key) {
         AtomicBoolean result = new AtomicBoolean();

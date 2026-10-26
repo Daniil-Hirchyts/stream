@@ -65,9 +65,9 @@ final class TitleScreens {
         actions.add(new Action("favourite", Action.Style.ICON, isFavourite ? "Remove favourite" : "Add favourite",
                 () -> { Sounds.play(isFavourite ? Sounds.Sound.FAVOURITE_OFF : Sounds.Sound.FAVOURITE_ON); nav.mutate(() -> { services.store.favourite(chosen, !isFavourite); return null; }); })
                 .icon(isFavourite ? R.drawable.ic_tv_heart : R.drawable.ic_tv_heart_outline).selected(isFavourite));
-        actions.add(new Action("watched", Action.Style.ICON, watched ? "Mark unwatched" : "Mark watched",
+        if (!title.type.equals("series")) actions.add(new Action("watched", Action.Style.ICON, watched ? "Mark unwatched" : "Mark watched",
                 () -> { Sounds.play(watched ? Sounds.Sound.WATCHED_OFF : Sounds.Sound.WATCHED_ON); nav.mutate(() -> { services.store.watched(chosen, selected, !watched); return null; }); })
-                .icon(R.drawable.ic_tv_check).selected(watched));
+                .icon(watched ? R.drawable.ic_tv_unwatched : R.drawable.ic_tv_check).selected(watched));
         if (local) {
             actions.add(new Action("rename", Action.Style.SECONDARY, "Rename import", () -> nav.edit("Rename import", "Title", chosen.name, name -> nav.mutate(() -> {
                 services.imports.rename(chosen.id, name);
@@ -77,8 +77,13 @@ final class TitleScreens {
             actions.add(new Action("remove-import", Action.Style.SECONDARY, "Remove import", () -> nav.then(() -> { services.imports.remove(chosen.id); return null; }, nav::back))
                     .icon(R.drawable.ic_tv_delete));
         } else {
-            actions.add(new Action("more", Action.Style.ICON, "More", () -> nav.choose(chosen.name, new String[]{"Remove from library"}, which -> {
-                nav.then(() -> { services.store.removeLibrary(chosen.key()); return null; }, () -> nav.root("Library"));
+            actions.add(new Action("more", Action.Style.ICON, "More", () -> nav.options(chosen.name, menu -> {
+                menu.submenu("remove-library", "Remove from library", confirmation -> {
+                    confirmation.button("confirm-remove", "Remove", () -> {
+                        confirmation.dialog.dismiss();
+                        nav.then(() -> { services.store.removeLibrary(chosen.key()); return null; }, () -> nav.root("Library"));
+                    });
+                });
             })).icon(R.drawable.ic_tv_more));
         }
         page.add(Item.actions("title-actions", actions));
@@ -117,18 +122,24 @@ final class TitleScreens {
                 TvStore.Progress p = saved.get(e.id);
                 boolean watched = p != null && p.watched;
                 boolean resume = p != null && !watched && p.positionMs > 0;
-                Tile tile = new Tile("episode:" + e.id, Tile.Style.LANDSCAPE, e.name, "",
-                        e.thumbnail != null ? e.thumbnail : title.background, null, () -> nav.choose(e.name,
+                Runnable options = () -> nav.choose("Episode " + e.number + " · " + e.name,
                         new String[]{resume ? "Resume" : "Play", "Choose source", watched ? "Mark unwatched" : "Mark watched"}, which -> {
+                            if (which == 2) {
+                                Sounds.play(watched ? Sounds.Sound.WATCHED_OFF : Sounds.Sound.WATCHED_ON);
+                                nav.mutate(() -> { services.store.watched(title, e.id, !watched); return null; });
+                                return;
+                            }
                             if (!route.video.equals(e.id)) route.cache = null;
                             route.video = e.id;
                             if (which == 0) nav.play(title, e.id, "");
-                            else if (which == 1) nav.sources(title, e.id);
-                            else { Sounds.play(watched ? Sounds.Sound.WATCHED_OFF : Sounds.Sound.WATCHED_ON); nav.mutate(() -> { services.store.watched(title, e.id, !watched); return null; }); }
-                        })).episode(e.number, e.overview).released(episodeDate(e.released)).description("Episode " + e.number + ". " + e.name
-                                + (watched ? ". Watched" : ""));
+                            else nav.sources(title, e.id);
+                        });
+                Tile tile = new Tile("episode:" + e.id, Tile.Style.LANDSCAPE, e.name, "",
+                        e.thumbnail != null ? e.thumbnail : title.background, null, options)
+                        .episode(e.number, e.overview).released(episodeDate(e.released))
+                        .description("Episode " + e.number + ". " + e.name + (watched ? ". Watched" : ""));
                 if (watched) tile.badge(R.drawable.ic_tv_check);
-                else if (p != null && p.durationMs > 0) tile.progress(p.positionMs / (float) p.durationMs);
+                if (!watched && p != null && p.durationMs > 0) tile.progress(p.positionMs / (float) p.durationMs);
                 tiles.add(tile);
             }
             panes.put(key, java.util.Collections.singletonList(Item.shelf("episodes:" + season, "", "", Tile.Style.LANDSCAPE, tiles)));
@@ -205,7 +216,7 @@ final class TitleScreens {
         List<InstalledAddon> installed = services.store.addons();
         // Only what this TV can play. The rest is counted, not listed.
         List<MediaSource> playable = SourcePolicy.ranked(sources);
-        if (playable.isEmpty() && !complete) return page.add(Item.skeleton("Finding sources"));
+        if (playable.isEmpty() && !complete) return page.add(Item.skeleton("Source results"));
         if (!playable.isEmpty()) {
             Map<String, TvStore.SourceMark> marks = services.store.sourceMarks(title.key(), route.video);
             // "SIZE" or "SIZE:reverse". Choosing the current order again turns it around.

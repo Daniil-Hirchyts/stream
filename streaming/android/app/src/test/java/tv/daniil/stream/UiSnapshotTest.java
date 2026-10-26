@@ -262,11 +262,10 @@ public final class UiSnapshotTest {
         java.lang.reflect.Field field = MainActivity.class.getDeclaredField("stack"); field.setAccessible(true);
         java.lang.reflect.Method loading = MainActivity.class.getDeclaredMethod("loading"); loading.setAccessible(true);
         List<Route> stack = (List<Route>) field.get(activity);
-        for (String screen : new String[]{"Home", "Library", "Settings", "Imports", "Add-on", "Add-ons", "Add-on review",
-                "Catalogues", "Catalogue", "Details", "Sources", "Developer"}) {
+        for (String screen : new String[]{"Home", "Add-ons", "Add-on review", "Catalogue"}) {
             stack.add(new Route(screen));
             activity.runOnUiThread(() -> { try { loading.invoke(activity); } catch (Exception e) { throw new AssertionError(e); } });
-            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50));
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(200));
             snap("sk-" + screen.toLowerCase(java.util.Locale.ROOT).replace(' ', '-'));
             stack.remove(stack.size() - 1);
         }

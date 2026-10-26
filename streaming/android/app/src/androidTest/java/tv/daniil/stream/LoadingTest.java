@@ -33,6 +33,11 @@ public final class LoadingTest extends AppHarness {
         }
         tap("Sources", false);
         waitUntil("source header", 5000, () -> visible("Back") && visible("Generated Film"));
+        waitUntil("slow source rows need placeholders", 5000, () -> {
+            AtomicBoolean skeleton = new AtomicBoolean();
+            browse.onActivity(activity -> skeleton.set(items(activity).stream().anyMatch(item -> item.kind == Item.Kind.SKELETON)));
+            return skeleton.get();
+        });
         browse.onActivity(activity -> {
             boolean partial = false;
             for (Item item : items(activity)) if (item.kind == Item.Kind.SKELETON) {

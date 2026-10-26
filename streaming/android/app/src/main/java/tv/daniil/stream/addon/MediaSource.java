@@ -29,6 +29,8 @@ public final class MediaSource {
     /** -1 means absent; zero is an explicit first file. Invalid values make the candidate unsupported. */
     public final int fileIndex;
     public final long videoSize;
+    /** Optional advertised availability; -1 is unknown, zero is explicitly no peers. */
+    public final int seeders;
     public final List<String> discovery;
     public final Map<String, String> requestHeaders;
     public final List<SubtitleSource> subtitles;
@@ -46,6 +48,8 @@ public final class MediaSource {
         filename = Json.string(hints, "filename");
         videoHash = Json.string(hints, "videoHash");
         videoSize = Math.max(0, Json.number(hints, "videoSize", 0));
+        long availability = Json.number(o, "seeders", Json.number(o, "seeds", Json.number(o, "peers", -1)));
+        seeders = availability < 0 ? -1 : (int) Math.min(Integer.MAX_VALUE, availability);
         bingeGroup = Json.string(hints, "bingeGroup");
         discovery = Json.strings(o, "sources");
         subtitles = SubtitleSource.list(provider, o);

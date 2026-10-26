@@ -32,7 +32,7 @@ final class SourceSort {
 
     private static final Pattern LINES = Pattern.compile("(?i)\\b(4320|2160|1440|1080|720|576|480|360)p\\b|\\b(4k|uhd)\\b");
     private static final Pattern SIZE = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*(tb|tib|gb|gib|mb|mib)\\b");
-    private static final Pattern SEEDS = Pattern.compile("(?i)(?:👤|👥|🌱|⬆️?|\\bseed(?:er)?s?\\b\\s*[:=]?)\\s*(\\d+)");
+    private static final Pattern SEEDS = Pattern.compile("(?i)(?:👤|👥|🌱|⬆️?|\\b(?:seed(?:er)?s?|peers?)\\b\\s*[:=]?)\\s*(\\d+)");
 
     static Facts facts(String name, String description, String filename, long advertisedBytes) {
         String text = name + "\n" + description + "\n" + (filename == null ? "" : filename);
@@ -50,10 +50,14 @@ final class SourceSort {
             }
         }
         m = SEEDS.matcher(text);
-        int seeds = m.find() ? (int) Math.min(Integer.MAX_VALUE, Long.parseLong(m.group(1))) : -1;
+        int seeds = -1;
+        if (m.find()) { try { seeds = (int) Math.min(Integer.MAX_VALUE, Long.parseLong(m.group(1))); } catch (NumberFormatException overflow) { seeds = Integer.MAX_VALUE; } }
         return new Facts(lines, bytes, seeds);
     }
-    static Facts facts(MediaSource s) { return facts(s.name, s.description, s.filename, s.videoSize); }
+    static Facts facts(MediaSource s) {
+        Facts text = facts(s.name, s.description, s.filename, s.videoSize);
+        return new Facts(text.lines, text.bytes, s.seeders >= 0 ? s.seeders : text.seeds);
+    }
 
     /**
      * {@code ranked} is the policy's best-first list. {@code reverse} flips an order (worst, smallest, fewest or oldest
