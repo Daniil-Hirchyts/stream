@@ -29,7 +29,7 @@ import java.util.ArrayList;
 import java.util.List;
 import tv.daniil.stream.R;
 
-/** A compact menu attached to its real opener. Only that control is copied for the morph; never the page behind it. */
+/** A compact menu attached to its opener. Morph snapshots contain only the control or popup, never the page behind it. */
 final class MorphDialog extends Dialog {
     private static final int BELOW = 0, ABOVE = 1, RIGHT = 2, LEFT = 3, OVER = 4;
     private static final PathInterpolator EASE = new PathInterpolator(.2f, .7f, .15f, 1f);
@@ -55,8 +55,10 @@ final class MorphDialog extends Dialog {
     private final Rect original = new Rect(), visual = new Rect();
     private Bitmap openingImage;
     private ValueAnimator motion;
+    private Runnable motionCleanup;
+    private Page displayed;
     private int attachment = -1;
-    private boolean closing, closed, cancelAfterClose, leftPressed;
+    private boolean closing, closed, cancelAfterClose, leftPressed, refreshPending;
     private Object backCallback;
     Runnable beforeClose;
 
@@ -139,10 +141,6 @@ final class MorphDialog extends Dialog {
         if (pages.size() <= 1) { cancel(); return; }
         pages.remove(pages.size() - 1); Page parent = top();
         display(parent, false, true);
-        if (parent.focus != null) {
-            Object tag = parent.focus.getTag(); View replacement = tag == null ? null : parent.alert.surface.findViewWithTag(tag);
-            if (replacement != null) replacement.requestFocus();
-        }
     }
     @Override public void onBackPressed() { back(); }
     @Override protected void onStart() {
@@ -230,48 +228,60 @@ final class MorphDialog extends Dialog {
 
     private void display(Page page, boolean opening, boolean returning) {
         if (!isShowing() || closing || closed) return;
+        boolean changing = displayed != null && displayed != page;
+        boolean animate = ValueAnimator.areAnimatorsEnabled();
+        View focused = returning ? page.focus : displayed == page ? getCurrentFocus() : null;
+        Object focusedKey = focused == null ? null : focused.getTag();
+        Rect start = opening && !original.isEmpty() ? source() : currentBounds();
+        // Capture the actual composite before cancelling or rebuilding anything. An
+        // interrupted transition must continue from the pixels currently on screen.
+        Bitmap previous = changing && animate ? copyView(panel, 1024) : null;
         stopMotion();
-        Object focusedKey = getCurrentFocus() == null ? null : getCurrentFocus().getTag();
         if (page.alert.prepare != null) page.alert.prepare.run();
-        Rect end = measure(page), start = opening && !original.isEmpty() ? source() : new Rect(visual);
+        Rect end = measure(page);
         if (start.isEmpty()) start.set(end);
-        View previous = panel.getChildCount() > 0 ? panel.getChildAt(panel.getChildCount() - 1) : null;
-        panel.removeAllViews();
-        View incoming = page.content, outgoing = previous == incoming ? null : previous;
-        if (outgoing != null) {
-            int previousWidth = outgoing.getWidth();
-            detach(outgoing); panel.addView(outgoing, new FrameLayout.LayoutParams(previousWidth, outgoing.getMeasuredHeight()));
-            outgoing.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-            ((ViewGroup) outgoing).setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        animate = animate && (opening || changing || !start.equals(end));
+        View incoming = page.content;
+        if (incoming.getParent() != panel) {
+            panel.removeAllViews(); detach(incoming);
+            panel.addView(incoming, new FrameLayout.LayoutParams(end.width(), end.height()));
+        } else {
+            incoming.setLayoutParams(new FrameLayout.LayoutParams(end.width(), end.height()));
         }
-        detach(incoming); panel.addView(incoming, new FrameLayout.LayoutParams(end.width(), end.height()));
+        displayed = page;
         ((ViewGroup) incoming).setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
         incoming.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
-        ImageView ghost = opening ? ghost(openingImage) : null;
-        boolean animate = ValueAnimator.areAnimatorsEnabled();
-        incoming.setAlpha(animate ? 0 : 1); incoming.setTranslationX(opening || !animate ? 0 : dp(returning ? -10 : 10));
+        ImageView ghost = ghost(opening ? openingImage : previous, start.width(), start.height());
+        boolean reveal = changing || opening && !original.isEmpty();
+        if (ghost != null) {
+            // Cover the union of both surfaces, but keep the captured pixels at
+            // their original size. Fade this one opaque layer over the new page:
+            // fading both layers would darken the content twice at the midpoint.
+            ghost.setBackgroundColor(getContext().getColor(R.color.tv_material_dialog));
+            ghost.setLayoutParams(new FrameLayout.LayoutParams(Math.max(start.width(), end.width()), Math.max(start.height(), end.height())));
+        }
+        incoming.setAlpha(animate && reveal && ghost == null ? 0 : 1);
+        incoming.setTranslationX(changing && animate ? dp(returning ? -8 : 8) : 0);
         panel.setAlpha(1); setBounds(animate ? start : end); panel.setVisibility(View.VISIBLE);
         float fromRadius = artwork ? dp(10) : Math.min(dp(22), start.height() / 2f);
         if (animate) {
-            motion = ValueAnimator.ofFloat(0, 1); motion.setDuration(opening ? 280 : 220); motion.setInterpolator(EASE);
+            ValueAnimator animation = ValueAnimator.ofFloat(0, 1);
+            animation.setDuration(opening ? 280 : 240); animation.setInterpolator(null);
             Rect from = start;
-            motion.addUpdateListener(value -> {
-                float f = (float) value.getAnimatedValue(); setBounds(interpolate(from, end, f));
+            animation.addUpdateListener(value -> {
+                float progress = (float) value.getAnimatedValue();
+                float f = EASE.getInterpolation(progress), blend = smooth(progress);
+                setBounds(interpolate(from, end, f));
                 shape.setCornerRadius(opening ? fromRadius + (dp(22) - fromRadius) * f : dp(22));
-                incoming.setAlpha(opening ? original.isEmpty() ? f : clamp((f - .6f) / .4f) : clamp((f - .2f) / .8f));
-                panel.setAlpha(opening && original.isEmpty() ? f : 1);
-                incoming.setTranslationX(opening ? 0 : dp((returning ? -10 : 10) * (1 - f)));
-                if (ghost != null) ghost.setAlpha(clamp(1 - f * 3));
-                if (outgoing != null) outgoing.setAlpha(clamp(1 - f * 2));
+                // Geometry eases quickly into place; the single covering layer
+                // dissolves over the full duration without a blank midpoint.
+                incoming.setAlpha(reveal && ghost == null ? blend : 1);
+                panel.setAlpha(opening && original.isEmpty() ? blend : 1);
+                incoming.setTranslationX(changing ? dp((returning ? -8 : 8) * (1 - blend)) : 0);
+                if (ghost != null) ghost.setAlpha(1 - blend);
             });
-            motion.addListener(new android.animation.AnimatorListenerAdapter() {
-                @Override public void onAnimationEnd(android.animation.Animator animator) {
-                    if (outgoing != null) panel.removeView(outgoing);
-                    if (ghost != null) { ghost.setImageDrawable(null); panel.removeView(ghost); }
-                    recycleOpening();
-                }
-            }); motion.start();
-        } else { if (outgoing != null) panel.removeView(outgoing); if (ghost != null) panel.removeView(ghost); recycleOpening(); }
+            startMotion(animation, () -> { removeGhost(ghost); recycleOpening(); });
+        } else { removeGhost(ghost); shape.setCornerRadius(dp(22)); recycleOpening(); }
         View restored = focusedKey == null ? null : page.alert.surface.findViewWithTag(focusedKey);
         if (restored != null) restored.requestFocus();
         else if (page.alert.initialFocus != null) page.alert.initialFocus.requestFocus();
@@ -280,10 +290,11 @@ final class MorphDialog extends Dialog {
             if (first != null) first.requestFocus();
             else { page.content.setFocusableInTouchMode(true); page.content.requestFocus(); }
         }
+        if (!animate && refreshPending) { refreshPending = false; root.post(this::refreshCurrent); }
     }
     void refreshCurrent() {
         if (!closed && !closing && !pages.isEmpty()) {
-            if (running()) { root.postDelayed(this::refreshCurrent, 100); return; }
+            if (running()) { refreshPending = true; return; }
             display(top(), false, false);
         }
     }
@@ -293,30 +304,62 @@ final class MorphDialog extends Dialog {
         stopMotion(); page.content.setLayoutParams(new FrameLayout.LayoutParams(end.width(), end.height()));
         page.content.setAlpha(1); page.content.setTranslationX(0);
         if (!animate || !ValueAnimator.areAnimatorsEnabled()) { setBounds(end); return; }
-        Rect start = new Rect(visual); motion = ValueAnimator.ofFloat(0, 1); motion.setDuration(180); motion.setInterpolator(EASE);
-        motion.addUpdateListener(value -> setBounds(interpolate(start, end, (float) value.getAnimatedValue()))); motion.start();
+        Rect start = currentBounds(); ValueAnimator animation = ValueAnimator.ofFloat(0, 1); animation.setDuration(180); animation.setInterpolator(EASE);
+        animation.addUpdateListener(value -> setBounds(interpolate(start, end, (float) value.getAnimatedValue())));
+        startMotion(animation, null);
     }
     private Bitmap copyControl() {
-        if (anchor == null || anchor.getWidth() <= 0 || anchor.getHeight() <= 0) return null;
-        float scale = Math.min(1f, 512f / Math.max(anchor.getWidth(), anchor.getHeight()));
-        Bitmap image = Bitmap.createBitmap(Math.max(1, Math.round(anchor.getWidth() * scale)), Math.max(1, Math.round(anchor.getHeight() * scale)), Bitmap.Config.ARGB_8888);
-        try { Canvas canvas = new Canvas(image); canvas.scale(scale, scale); anchor.draw(canvas); return image; }
+        return copyView(anchor, 512);
+    }
+    private Bitmap copyView(View view, int maxEdge) {
+        if (view == null || view.getWidth() <= 0 || view.getHeight() <= 0) return null;
+        float scale = Math.min(1f, (float) maxEdge / Math.max(view.getWidth(), view.getHeight()));
+        Bitmap image = Bitmap.createBitmap(Math.max(1, Math.round(view.getWidth() * scale)), Math.max(1, Math.round(view.getHeight() * scale)), Bitmap.Config.ARGB_8888);
+        try { Canvas canvas = new Canvas(image); canvas.scale(scale, scale); view.draw(canvas); return image; }
         catch (RuntimeException unsupportedSurface) { image.recycle(); return null; }
     }
-    private ImageView ghost(Bitmap image) {
+    private ImageView ghost(Bitmap image, int width, int height) {
         if (image == null) return null;
         ImageView ghost = new ImageView(getContext()); ghost.setTag("popup-origin"); ghost.setImageBitmap(image);
-        ghost.setScaleType(ImageView.ScaleType.FIT_CENTER); ghost.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        panel.addView(ghost, new FrameLayout.LayoutParams(-1, -1)); return ghost;
+        ghost.setScaleType(ImageView.ScaleType.MATRIX);
+        android.graphics.Matrix matrix = new android.graphics.Matrix(); matrix.setScale((float) width / image.getWidth(), (float) height / image.getHeight());
+        ghost.setImageMatrix(matrix); ghost.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        // Keep captured text/icon pixels at their original size while only the
+        // enclosing surface changes shape. MATCH_PARENT would stretch them each frame.
+        panel.addView(ghost, new FrameLayout.LayoutParams(width, height)); return ghost;
     }
+    private void removeGhost(ImageView ghost) { if (ghost != null) { ghost.setImageDrawable(null); panel.removeView(ghost); } }
     private void recycleOpening() { openingImage = null; }
     private Page top() { return pages.get(pages.size() - 1); }
     private boolean running() { return motion != null && motion.isRunning(); }
-    private void stopMotion() { if (motion != null) { motion.cancel(); motion = null; } }
+    private void startMotion(ValueAnimator animation, Runnable cleanup) {
+        motion = animation; motionCleanup = cleanup;
+        animation.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator animator) {
+                if (motion != animation) return;
+                motion = null; cleanupMotion();
+                if (refreshPending) { refreshPending = false; root.post(MorphDialog.this::refreshCurrent); }
+            }
+        }); animation.start();
+    }
+    private void cleanupMotion() { Runnable cleanup = motionCleanup; motionCleanup = null; if (cleanup != null) cleanup.run(); }
+    private void stopMotion() {
+        if (motion != null) {
+            ValueAnimator previous = motion; motion = null;
+            previous.removeAllUpdateListeners(); previous.removeAllListeners(); previous.cancel();
+        }
+        cleanupMotion();
+    }
     private int dp(float value) { return Tv.dp(getContext(), value); }
     private static float clamp(float value) { return Math.max(0, Math.min(1, value)); }
+    private static float smooth(float value) { float t = clamp(value); return t * t * (3 - 2 * t); }
     private static Rect rect(int x, int y, int width, int height) { return new Rect(x, y, x + width, y + height); }
+    private Rect currentBounds() {
+        return panel.isLaidOut() && panel.getWidth() > 1 && panel.getHeight() > 1
+                ? new Rect(panel.getLeft(), panel.getTop(), panel.getRight(), panel.getBottom()) : new Rect(visual);
+    }
     private void setBounds(Rect rect) {
+        if (visual.equals(rect)) return;
         visual.set(rect); FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) panel.getLayoutParams();
         p.width = Math.max(1, rect.width()); p.height = Math.max(1, rect.height()); p.leftMargin = rect.left; p.topMargin = rect.top; panel.setLayoutParams(p);
     }
@@ -346,33 +389,33 @@ final class MorphDialog extends Dialog {
         if (closed) return;
         boolean finishing = owner != null && (owner.isFinishing() || owner.isDestroyed());
         if (closing) { if (finishing) closeNow(); return; }
-        closing = true; stopMotion();
+        Rect start = currentBounds();
+        boolean animate = !finishing && isShowing() && panel.isAttachedToWindow() && ValueAnimator.areAnimatorsEnabled();
+        Bitmap visibleContent = animate ? copyView(panel, 1024) : null; float initialAlpha = panel.getAlpha();
+        closing = true; refreshPending = false; stopMotion();
         if (beforeClose != null) beforeClose.run();
-        if (finishing || !isShowing() || !panel.isAttachedToWindow() || !ValueAnimator.areAnimatorsEnabled()) { closeNow(); return; }
-        Rect start = new Rect(visual), end = new Rect();
+        if (!animate) { closeNow(); return; }
+        Rect end = new Rect();
         if (anchor != null && anchor.isAttachedToWindow() && anchor.getGlobalVisibleRect(end)) {
             int[] position = new int[2]; root.getLocationOnScreen(position); end.offset(-position[0], -position[1]);
         } else end.set(start);
         Bitmap image = original.isEmpty() || anchor == null || !anchor.isAttachedToWindow() ? null : copyControl();
-        ImageView ghost = ghost(image); if (ghost != null) ghost.setAlpha(0);
+        panel.removeAllViews();
+        ImageView ghost = ghost(image, end.width(), end.height());
+        ImageView outgoing = ghost(visibleContent, start.width(), start.height());
         Rect destination = end;
-        motion = ValueAnimator.ofFloat(0, 1); motion.setDuration(180); motion.setInterpolator(EASE);
-        motion.addUpdateListener(value -> {
-            float f = (float) value.getAnimatedValue(); setBounds(interpolate(start, destination, f));
-            for (int i = 0; i < panel.getChildCount(); i++) if (panel.getChildAt(i) != ghost) panel.getChildAt(i).setAlpha(clamp(1 - f * 3));
-            if (ghost != null) ghost.setAlpha(clamp((f - .5f) * 2));
-            panel.setAlpha(original.isEmpty() ? 1 - f : clamp((1 - f) * 3));
+        ValueAnimator animation = ValueAnimator.ofFloat(0, 1); animation.setDuration(200); animation.setInterpolator(null);
+        animation.addUpdateListener(value -> {
+            float progress = (float) value.getAnimatedValue(), blend = smooth(progress);
+            setBounds(interpolate(start, destination, EASE.getInterpolation(progress)));
+            if (outgoing != null) outgoing.setAlpha(1 - blend);
+            panel.setAlpha(initialAlpha * (original.isEmpty() ? 1 - blend : 1 - smooth((progress - .65f) / .35f)));
         });
-        motion.addListener(new android.animation.AnimatorListenerAdapter() {
-            @Override public void onAnimationEnd(android.animation.Animator animation) {
-                if (ghost != null) { ghost.setImageDrawable(null); panel.removeView(ghost); }
-                closeNow();
-            }
-        }); motion.start();
+        startMotion(animation, () -> { removeGhost(outgoing); removeGhost(ghost); closeNow(); });
     }
     private void closeNow() {
         if (closed) return; closed = true;
-        if (motion != null) { motion.removeAllListeners(); motion.cancel(); motion = null; }
+        refreshPending = false; stopMotion();
         recycleOpening();
         if (cancelAfterClose) { cancelAfterClose = false; super.cancel(); }
         super.dismiss(); pages.clear();

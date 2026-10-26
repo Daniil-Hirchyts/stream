@@ -209,3 +209,24 @@ activities, owner database, providers or preferences. Build the debug app and
 test APK, then run **only this class** through `device` after sourcing
 `streaming/simulator/emulator.sh` and passing `require_emulator`. Require the
 runner's `OK (1 test)` result; a zero ADB exit code alone is insufficient.
+
+## Popup motion
+
+`PopupMotionTest` checks actual painted frames: refreshing an unchanged menu
+must keep its focused action visible, and rapid submenu/Back/reopen input must
+settle on the right page with restored focus and no leftover transition layers.
+The refresh regression failed before the fix (white focus briefly became the
+dark panel colour); all sampled frames stay white after it. Its frame colours
+and transition contact sheet are written to app-private `validation-popup-*`
+files, exported locally under `streaming/simulator/.cache/evidence/popup-motion/`.
+
+The focused animation selection is six checks:
+
+```sh
+./streaming/simulator.sh data-test 'tv.daniil.stream.PopupMotionTest,tv.daniil.stream.PopupInteractionTest#nestedPagesMeasureTheirContentAndMorphNarrowWideNarrow,tv.daniil.stream.PopupInteractionTest#menusGrowFromTheirOpenerAndStayInsideEveryScreenEdge,tv.daniil.stream.PopupInteractionTest#longChoicesKeepTheSelectionAndBothRemoteExitKeysCancel,tv.daniil.stream.PlayerPopupTest#subtitleFocusOnlyPreviewsAndSelectionCommitsToBothSettingsStores'
+```
+
+It covers content-sized geometry, every anchor edge, long selected lists,
+remote/pointer navigation, interrupted motion and real player subtitle menus.
+Contact sheets use software drawing and do not reproduce Android's hardware
+outline clipping; review actual emulator screen captures for the panel corners.
