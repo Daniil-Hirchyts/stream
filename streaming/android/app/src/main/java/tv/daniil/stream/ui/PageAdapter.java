@@ -352,7 +352,13 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         root.addView(logo, logoParams);
         TextView title = Tv.onArtwork(Tv.lines(Tv.bold(context, media.name, 36), 2)); title.setMaxWidth(dp(640)); title.setPadding(0, dp(8), 0, 0);
         root.addView(title, wrap());
-        if (media.logo != null) artwork.fetch(media.logo, Artwork.LOGO, true, bitmap -> { logo.setImageBitmap(bitmap); gone(logo, false); gone(title, true); });
+        // Reveal the finished header together: text must never flash before a cold logo download.
+        if (media.logo != null) {
+            root.setVisibility(View.INVISIBLE);
+            artwork.titleLogo(media.logo, bitmap -> {
+                logo.setImageBitmap(bitmap); gone(logo, false); gone(title, true); root.setVisibility(View.VISIBLE);
+            }, () -> root.setVisibility(View.VISIBLE));
+        } else if (item.loading) root.setVisibility(View.INVISIBLE);
         String facts = metaLine(media);
         if (!media.directors.isEmpty()) facts += (facts.isEmpty() ? "" : "  ·  ") + "Directed by " + String.join(", ", media.directors.subList(0, Math.min(2, media.directors.size())));
         if (!facts.isEmpty()) {
@@ -510,12 +516,25 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         @Override public void onBindViewHolder(Holder holder, int position) {
             FrameLayout box = (FrameLayout) holder.itemView; box.removeAllViews();
             View tile = tile(tiles.get(position), style, dp(widthDp));
+            box.setTransitionName("tile:" + tiles.get(position).key);
+            spacing(box, position);
+            box.addView(tile);
+        }
+        private void spacing(View box, int position) {
             if (columns > 0) {
                 // Each column gives up the same share of the gaps, so every tile in a grid has the same width.
                 int column = position % columns, gap = dp(gapDp);
                 box.setPadding(gap * column / columns, 0, gap - gap * (column + 1) / columns, dp(verticalGapDp));
             } else box.setPadding(0, 0, position == tiles.size() - 1 ? 0 : dp(gapDp), dp(verticalGapDp));
-            box.addView(tile);
+        }
+        /** Reflow the same cards; rebinding destroys the views a bounds transition needs to follow. */
+        void columns(RecyclerView grid, int value) {
+            columns = value;
+            for (int i = 0; i < grid.getChildCount(); i++) {
+                View box = grid.getChildAt(i);
+                int position = grid.getChildAdapterPosition(box);
+                if (position != RecyclerView.NO_POSITION) spacing(box, position);
+            }
         }
     }
 
@@ -1199,6 +1218,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         LinearLayout editor, results;
         RecyclerView grid;
         boolean visible, changing;
+        @Nullable Float interruptedKeyboardX;
         int transition;
         String lastKeyboard, lastResult = "";
         SearchPane(Item item) {
@@ -1244,7 +1264,6 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             // Focus notifications can arrive during RecyclerView layout. Mutate its span count on the next frame.
             post(() -> {
                 if (mine != transition || searchPane != this || !isAttachedToWindow()) return;
-                android.transition.TransitionManager.endTransitions(this);
                 View focused = findFocus();
                 String target = focused != null && focused.getTag() instanceof String && !String.valueOf(focused.getTag()).startsWith("keyboard:")
                         ? (String) focused.getTag() : lastResult;
@@ -1256,9 +1275,30 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                 boolean motion = animate && isLaidOut() && android.animation.ValueAnimator.areAnimatorsEnabled();
                 if (motion) {
                     android.transition.TransitionSet change = new android.transition.TransitionSet();
-                    change.addTransition(new android.transition.ChangeBounds().addTarget(results));
-                    change.addTransition(new android.transition.Fade().addTarget(editor));
-                    change.setDuration(260); change.setInterpolator(new android.view.animation.DecelerateInterpolator());
+                    // Follow the whole result hierarchy, including each poster, label and row position.
+                    // Animating only `results` changes the viewport while its cards jump to their final geometry.
+                    android.transition.ChangeBounds bounds = new android.transition.ChangeBounds();
+                    bounds.excludeTarget(editor, true); bounds.excludeChildren(editor, true);
+                    change.addTransition(bounds);
+                    android.transition.Visibility keyboard = new android.transition.Visibility() {
+                        @Override public android.animation.Animator onAppear(ViewGroup root, View view,
+                                android.transition.TransitionValues start, android.transition.TransitionValues end) {
+                            return keyboardMotion(view, true);
+                        }
+                        @Override public android.animation.Animator onDisappear(ViewGroup root, View view,
+                                android.transition.TransitionValues start, android.transition.TransitionValues end) {
+                            return keyboardMotion(view, false);
+                        }
+                    };
+                    keyboard.addTarget(editor);
+                    change.addTransition(keyboard);
+                    if (grid != null && grid.getAdapter() instanceof TileAdapter) {
+                        android.transition.Slide entering = new android.transition.Slide(Gravity.END);
+                        entering.setPropagation(null);
+                        for (Item.Tile tile : ((TileAdapter) grid.getAdapter()).tiles) entering.addTarget("tile:" + tile.key);
+                        change.addTransition(entering);
+                    }
+                    change.setDuration(420); change.setInterpolator(new android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f));
                     change.addListener(new android.transition.Transition.TransitionListener() {
                         @Override public void onTransitionEnd(android.transition.Transition t) { finish(mine, show, focusAfter, target, anchor); }
                         @Override public void onTransitionCancel(android.transition.Transition t) { finish(mine, show, focusAfter, target, anchor); }
@@ -1275,13 +1315,30 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                     int columns = show ? SEARCH_COLUMNS : 6;
                     layout.setSpanCount(columns);
                     if (grid.getAdapter() instanceof TileAdapter) {
-                        ((TileAdapter) grid.getAdapter()).columns = columns;
-                        grid.getAdapter().notifyDataSetChanged();
+                        ((TileAdapter) grid.getAdapter()).columns(grid, columns);
                     } else grid.setAdapter(skeletonCards(columns * 2, columns));
                     layout.scrollToPositionWithOffset(anchor, offset);
                 }
                 if (!motion) post(() -> finish(mine, show, focusAfter, target, anchor));
             });
+        }
+        private android.animation.Animator keyboardMotion(View view, boolean show) {
+            // Travel only the keyboard's width. A screen-width slide keeps it offscreen for most of the reveal.
+            float hidden = -view.getWidth() - getPaddingLeft();
+            float from = interruptedKeyboardX != null ? interruptedKeyboardX : show ? hidden : view.getTranslationX();
+            interruptedKeyboardX = null;
+            android.animation.ObjectAnimator animator = android.animation.ObjectAnimator.ofFloat(view, View.TRANSLATION_X, from, show ? 0f : hidden);
+            animator.addListener(new android.animation.AnimatorListenerAdapter() {
+                boolean cancelled;
+                @Override public void onAnimationCancel(android.animation.Animator animation) {
+                    cancelled = true; interruptedKeyboardX = view.getTranslationX();
+                }
+                @Override public void onAnimationEnd(android.animation.Animator animation) {
+                    view.setTranslationX(0f);
+                    if (!cancelled) interruptedKeyboardX = null;
+                }
+            });
+            return animator;
         }
         void finish(int mine, boolean show, boolean focusAfter, String target, int anchor) {
             if (mine != transition || searchPane != this || !isAttachedToWindow()) return;

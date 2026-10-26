@@ -187,12 +187,16 @@ public final class AddonRepository implements AutoCloseable {
         for (int attempt = 1; ; attempt++) {
             scope.check(); final int current = attempt;
             progress.accept(new CatalogPage(snapshot(parts), current, true));
-            long deadline = AddonClient.deadline();
+            // Home can have many more resources than Search. Budget the bounded collection for its queue,
+            // but start each catalogue's network deadline only when a worker admits it. Keep all workers busy:
+            // a fast later shelf should not wait for the slowest request of an earlier group to finish.
+            long waves = (pending.size() + (long) ProviderExecutor.PARALLELISM - 1) / ProviderExecutor.PARALLELISM;
+            long deadline = SystemClock.elapsedRealtime() + waves * AddonClient.DISCOVERY_MS;
             List<Callable<Part<Part<Title>>>> tasks = new ArrayList<>(); List<String> keys = new ArrayList<>();
             // Keep each resource's HTTP status through collection, so a 401 is never retried like a 503.
             for (int index : pending) {
                 CatalogQuery query = queries.get(index); String key = parts.get(index).key; keys.add(key);
-                tasks.add(() -> new Part<>(key, Collections.singletonList(catalog(query, scope, deadline, key)), null, false));
+                tasks.add(() -> new Part<>(key, Collections.singletonList(catalog(query, scope, AddonClient.deadline(), key)), null, false));
             }
             Result<Part<Title>> loaded = collect(tasks, keys, scope, deadline, partial -> {
                 mergeCatalogParts(parts, positions, partial);

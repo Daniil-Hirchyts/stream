@@ -90,8 +90,17 @@ public final class PlayerInteractionTest extends AppHarness {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
         instrumentation.runOnMainSync(() -> assertTrue("Right reaches Audio & subtitles",
                 activity.findViewById(tv.daniil.playback.R.id.control_options).hasFocus()));
-        SystemClock.sleep(4500);
-        assertTrue("Focused options stay visible", shown(tv.daniil.playback.R.id.controls));
+        waitUntil("Active controls include the clock", 2000, () -> shown(R.id.player_clock));
+        SystemClock.sleep(2500);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT);
+        SystemClock.sleep(2000);
+        assertTrue("Real remote activity restarts the timeout", shown(R.id.controls));
+        waitUntil("Focused controls hide after inactivity", 4000, () -> !shown(R.id.controls));
+        waitUntil("Clock hides with active controls", 2000, () -> !shown(R.id.player_clock));
+        instrumentation.runOnMainSync(() -> assertTrue("Focus returns to the video", activity.findViewById(R.id.player_root).hasFocus()));
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
         waitUntil("OK opens options", 5000, () -> popupOpen());
         // Subtitle choices are directly on the Audio & subtitles page: Off, then the first track.
@@ -110,15 +119,40 @@ public final class PlayerInteractionTest extends AppHarness {
                 activity.findViewById(tv.daniil.playback.R.id.progress).hasFocus()));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
         waitUntil("remote pauses", 5000, () -> !state().playWhenReady);
+        SystemClock.sleep(4500);
+        assertTrue("Paused controls stay visible", shown(R.id.controls));
+        assertTrue("Paused clock stays visible", shown(R.id.player_clock));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
         waitUntil("remote timeline seeks", 5000, () -> state().positionMs >= 9000);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
         waitUntil("remote resumes", 5000, () -> state().playing);
+        waitUntil("Focused timeline hides after resume", 6000, () -> !shown(R.id.controls));
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
+        waitUntil("Remote reopens transport", 2000, () -> shown(R.id.controls));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
         waitUntil("Back hides focused transport", 5000, () -> !shown(tv.daniil.playback.R.id.controls));
         SystemClock.sleep(1200);
         assertFalse("The focus keeper must not reopen dismissed controls", shown(tv.daniil.playback.R.id.controls));
+    }
+
+    @Test public void mouseMovementRestoresControlsAndIdlePointerLetsThemHide() throws Exception {
+        readyLibrary("http-mkv"); launch(); tap("Generated Film", false); tap("Play", true); chooseFirstSource();
+        waitUntil("video renders", 30_000, () -> state() != null && state().playing && state().renderedFirstFrame);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PAUSE);
+        waitUntil("paused clock and controls", 5000, () -> shown(R.id.controls) && shown(R.id.player_clock));
+        WatchActivity activity = watch(); Rect timeline = new Rect();
+        instrumentation.runOnMainSync(() -> assertTrue(activity.findViewById(R.id.progress).getGlobalVisibleRect(timeline)));
+        control(R.id.progress, true);
+        waitUntil("timeline click resumes", 5000, () -> state().playing);
+        waitUntil("Pointer transport hides after resume", 6000, () -> !shown(R.id.controls));
+        assertFalse("Clock clears the picture too", shown(R.id.player_clock));
+        // Use the timeline's last visible bounds to move the real pointer over it.
+        hoverMouse(timeline.centerX() + 30, timeline.centerY());
+        waitUntil("Mouse movement restores controls", 3000, () -> shown(R.id.controls));
+        waitUntil("Mouse movement restores clock", 2000, () -> shown(R.id.player_clock));
+        waitUntil("Stationary mouse does not keep the timeline open", 6000, () -> !shown(R.id.controls));
+        assertTrue("Video keeps playing after the overlay hides", state().playing);
     }
 
     @Ignore("Exact rasterized icon geometry is a design choice; it does not verify player interaction.")
@@ -136,6 +170,17 @@ public final class PlayerInteractionTest extends AppHarness {
             assertEquals("Glyph horizontal optical centre", 120, xTotal / weight, 4);
             assertEquals("Glyph vertical optical centre", 120, yTotal / weight, 2);
         }
+    }
+
+    private void hoverMouse(float x, float y) {
+        long time = SystemClock.uptimeMillis();
+        MotionEvent.PointerProperties pointer = new MotionEvent.PointerProperties();
+        pointer.id = 0; pointer.toolType = MotionEvent.TOOL_TYPE_MOUSE;
+        MotionEvent.PointerCoords coords = new MotionEvent.PointerCoords(); coords.x = x; coords.y = y;
+        MotionEvent event = MotionEvent.obtain(time, time, MotionEvent.ACTION_HOVER_MOVE, 1,
+                new MotionEvent.PointerProperties[]{pointer}, new MotionEvent.PointerCoords[]{coords},
+                0, 0, 1, 1, 0, 0, InputDevice.SOURCE_MOUSE, 0);
+        assertTrue(instrumentation.getUiAutomation().injectInputEvent(event, true)); event.recycle();
     }
 
     private boolean popupOpen() { return visible("Settings") || visible("Audio & subtitles") || visible("Subtitle style"); }

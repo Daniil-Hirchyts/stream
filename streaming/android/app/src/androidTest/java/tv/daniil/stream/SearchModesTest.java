@@ -11,11 +11,75 @@ import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Test;
 import tv.daniil.stream.addon.Cancellation;
+import tv.daniil.stream.ui.PageAdapter;
 
 public final class SearchModesTest extends AppHarness {
+    @Test public void cardsMorphThroughTheReflowWithoutRecreatingTheirContents() throws Exception {
+        try (BrowseRecoveryTest.CatalogServer server = new BrowseRecoveryTest.CatalogServer()) {
+            try (Cancellation request = services.addons.newRequest()) {
+                services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", request));
+            }
+            launch(); waitUntil("Home", 10000, () -> visible("Film 00"));
+            tap("Search", true); browse.onActivity(activity -> activity.searchInput("Film"));
+            waitUntil("results", 10000, () -> visible("Film 00") && columns() == 5);
+            SystemClock.sleep(600);
+            String key = "search:[\"" + services.store.addons().get(0).id + "\",\"movie\",\"browse:5\"]";
+            for (boolean show : new boolean[]{false, true}) {
+                List<Rect> frames = new ArrayList<>();
+                AtomicReference<View> original = new AtomicReference<>();
+                AtomicReference<Rect> before = new AtomicReference<>(), after = new AtomicReference<>();
+                AtomicBoolean keyboardMoved = new AtomicBoolean();
+                AtomicBoolean keyboardOvershot = new AtomicBoolean();
+                AtomicReference<android.view.ViewTreeObserver.OnDrawListener> observer = new AtomicReference<>();
+                browse.onActivity(activity -> {
+                    View rows = activity.findViewById(R.id.page_rows);
+                    original.set(rows.findViewWithTag(key)); before.set(cardBounds(original.get()));
+                    View keyboard = rows.findViewWithTag("search-keyboard");
+                    observer.set(() -> {
+                        View card = rows.findViewWithTag(key);
+                        if (card != null) frames.add(cardBounds(card));
+                        if (Math.abs(keyboard.getTranslationX()) > dp(2)) keyboardMoved.set(true);
+                        if (Math.abs(keyboard.getTranslationX()) > keyboard.getWidth() + dp(50)) keyboardOvershot.set(true);
+                    });
+                    rows.getViewTreeObserver().addOnDrawListener(observer.get());
+                    ((PageAdapter) ((RecyclerView) rows).getAdapter()).toggleSearchKeyboard();
+                });
+                SystemClock.sleep(140); capture("validation-search-morph-" + show + ".png");
+                waitUntil("morph finishes", 5000, () -> columns() == (show ? 5 : 6) && keyboardShown() == show
+                        && (show ? focus().startsWith("keyboard:") : focus().startsWith("search:[")));
+                browse.onActivity(activity -> {
+                    View rows = activity.findViewById(R.id.page_rows);
+                    rows.getViewTreeObserver().removeOnDrawListener(observer.get());
+                    View card = rows.findViewWithTag(key);
+                    assertSame("The same film view survives the column change", original.get(), card);
+                    after.set(cardBounds(card));
+                });
+                assertTrue("Posters resize across multiple frames", frames.stream().map(Rect::width).distinct().count() > 3);
+                assertTrue("A film moves between rows rather than teleporting", frames.stream().anyMatch(rect ->
+                        rect.top > Math.min(before.get().top, after.get().top) + dp(2)
+                        && rect.top < Math.max(before.get().top, after.get().top) - dp(2)));
+                assertTrue("Keyboard slides with the reflow", keyboardMoved.get());
+                assertFalse("Keyboard moves only through its own space", keyboardOvershot.get());
+            }
+            // Reverse an in-flight gesture; no stale completion may hide the reopened keyboard or take focus.
+            browse.onActivity(activity -> ((PageAdapter) ((RecyclerView) activity.findViewById(R.id.page_rows)).getAdapter()).toggleSearchKeyboard());
+            SystemClock.sleep(100);
+            browse.onActivity(activity -> ((PageAdapter) ((RecyclerView) activity.findViewById(R.id.page_rows)).getAdapter()).toggleSearchKeyboard());
+            waitUntil("reversed morph", 5000, () -> keyboardShown() && columns() == 5 && focus().startsWith("keyboard:"));
+            assertEquals(1, server.searchRequests.get());
+        }
+    }
+    private Rect cardBounds(View view) {
+        assertNotNull(view);
+        int[] point = new int[2]; view.getLocationOnScreen(point);
+        return new Rect(point[0], point[1], point[0] + view.getWidth(), point[1] + view.getHeight());
+    }
     @Test public void emptyFullSearchStillReturnsToTheKeyboardWithLeft() throws Exception {
         launch(); waitUntil("Home", 10000, () -> visible("Make yourself at home"));
         tap("Search", true); waitUntil("keyboard", 5000, this::keyboardShown);
@@ -85,7 +149,10 @@ public final class SearchModesTest extends AppHarness {
     }
     private int dp(int value) { return Math.round(value * context.getResources().getDisplayMetrics().density); }
     private void screenshot(String name) throws Exception {
-        SystemClock.sleep(350); Bitmap image = instrumentation.getUiAutomation().takeScreenshot(); assertNotNull(image);
+        SystemClock.sleep(350); capture(name);
+    }
+    private void capture(String name) throws Exception {
+        Bitmap image = instrumentation.getUiAutomation().takeScreenshot(); assertNotNull(image);
         try (FileOutputStream out = new FileOutputStream(new File(context.getFilesDir(), name))) { image.compress(Bitmap.CompressFormat.PNG, 100, out); } image.recycle();
     }
 }

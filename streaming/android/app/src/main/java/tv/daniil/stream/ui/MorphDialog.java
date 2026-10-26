@@ -10,6 +10,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.view.Gravity;
@@ -29,7 +30,11 @@ import java.util.ArrayList;
 import java.util.List;
 import tv.daniil.stream.R;
 
-/** A compact menu attached to its opener. Morph snapshots contain only the control or popup, never the page behind it. */
+/**
+ * A compact menu attached to its opener. Morph snapshots contain only the control or popup, never the page behind it.
+ * A control's popup grows out from behind a copy of the control and shrinks back behind it, so the focused (white)
+ * platter never blends into the menu's gray: it stays exactly as the real control looks underneath.
+ */
 final class MorphDialog extends Dialog {
     private static final int BELOW = 0, ABOVE = 1, RIGHT = 2, LEFT = 3, OVER = 4;
     private static final PathInterpolator EASE = new PathInterpolator(.2f, .7f, .15f, 1f);
@@ -54,6 +59,7 @@ final class MorphDialog extends Dialog {
     private final boolean artwork;
     private final Rect original = new Rect(), visual = new Rect();
     private Bitmap openingImage;
+    private Glide glide;
     private ValueAnimator motion;
     private Runnable motionCleanup;
     private Page displayed;
@@ -235,7 +241,13 @@ final class MorphDialog extends Dialog {
         Rect start = opening && !original.isEmpty() ? source() : currentBounds();
         // Capture the actual composite before cancelling or rebuilding anything. An
         // interrupted transition must continue from the pixels currently on screen.
-        Bitmap previous = changing && animate ? copyView(panel, 1024) : null;
+        // The panel's own surface stays live: only its content is handed off. The focused row's white
+        // platter isn't part of it either; one platter glides to the new page's focused row instead.
+        View oldRow = changing && animate ? focusedRow() : null;
+        Rect glideFrom = !changing || !animate ? null : glide != null ? new Rect(glide.now) : oldRow != null ? rowBounds(oldRow) : null;
+        Drawable glideLook = glideFrom == null ? null : glide != null ? glide.surface.getBackground() : platterOf(oldRow);
+        Bitmap previous = changing && animate ? copyContent(panel, 2048, oldRow) : null;
+        float fromRadius = opening && !original.isEmpty() ? cornerRadius(start) : shape.getCornerRadius();
         stopMotion();
         if (page.alert.prepare != null) page.alert.prepare.run();
         Rect end = measure(page);
@@ -251,19 +263,27 @@ final class MorphDialog extends Dialog {
         displayed = page;
         ((ViewGroup) incoming).setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
         incoming.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
-        ImageView ghost = ghost(opening ? openingImage : previous, start.width(), start.height());
         boolean reveal = changing || opening && !original.isEmpty();
-        if (ghost != null) {
-            // Cover the union of both surfaces, but keep the captured pixels at
+        // A control's copy stays above the panel while the menu grows out from behind it; only where the menu
+        // ends up over its opener does the copy fade. Artwork still dissolves into the panel.
+        ImageView lifted = opening && animate && !artwork ? lift(openingImage, start) : null;
+        boolean covers = lifted != null && Rect.intersects(start, end);
+        ImageView ghost = lifted != null ? null : ghost(opening ? openingImage : previous, start.width(), start.height());
+        // Content-only layers over the panel's live surface: the old content leaves before the new arrives, so
+        // a focused (white) row is never crossfaded against the gray surface or another white row.
+        boolean handoff = ghost != null && changing;
+        if (ghost != null && !handoff) {
+            // Artwork: cover the union of both surfaces, but keep the captured pixels at
             // their original size. Fade this one opaque layer over the new page:
             // fading both layers would darken the content twice at the midpoint.
             ghost.setBackgroundColor(getContext().getColor(R.color.tv_material_dialog));
             ghost.setLayoutParams(new FrameLayout.LayoutParams(Math.max(start.width(), end.width()), Math.max(start.height(), end.height())));
         }
-        incoming.setAlpha(animate && reveal && ghost == null ? 0 : 1);
+        incoming.setAlpha(animate && reveal && (ghost == null || handoff) ? 0 : 1);
         incoming.setTranslationX(changing && animate ? dp(returning ? -8 : 8) : 0);
         panel.setAlpha(1); setBounds(animate ? start : end); panel.setVisibility(View.VISIBLE);
-        float fromRadius = artwork ? dp(10) : Math.min(dp(22), start.height() / 2f);
+        Glide moving = handoff && glideLook != null ? new Glide(glideLook, glideFrom) : null;
+        glide = moving;
         if (animate) {
             ValueAnimator animation = ValueAnimator.ofFloat(0, 1);
             animation.setDuration(opening ? 280 : 240); animation.setInterpolator(null);
@@ -272,15 +292,28 @@ final class MorphDialog extends Dialog {
                 float progress = (float) value.getAnimatedValue();
                 float f = EASE.getInterpolation(progress), blend = smooth(progress);
                 setBounds(interpolate(from, end, f));
-                shape.setCornerRadius(opening ? fromRadius + (dp(22) - fromRadius) * f : dp(22));
-                // Geometry eases quickly into place; the single covering layer
-                // dissolves over the full duration without a blank midpoint.
-                incoming.setAlpha(reveal && ghost == null ? blend : 1);
+                shape.setCornerRadius(fromRadius + (dp(22) - fromRadius) * f);
+                if (lifted != null) {
+                    if (covers) lifted.setAlpha(1 - smooth(progress / .5f));
+                    // Brief, so the focused row's white platter doesn't linger as a dim gray.
+                    incoming.setAlpha(smooth((progress - .1f) / .4f));
+                } else if (handoff) {
+                    ghost.setAlpha(1 - smooth(progress / .35f));
+                    incoming.setAlpha(smooth((progress - .25f) / .4f));
+                } else {
+                    // Geometry eases quickly into place; the single covering layer
+                    // dissolves over the full duration without a blank midpoint.
+                    incoming.setAlpha(reveal && ghost == null ? blend : 1);
+                    if (ghost != null) ghost.setAlpha(1 - blend);
+                }
                 panel.setAlpha(opening && original.isEmpty() ? blend : 1);
                 incoming.setTranslationX(changing ? dp((returning ? -8 : 8) * (1 - blend)) : 0);
-                if (ghost != null) ghost.setAlpha(1 - blend);
+                if (moving != null) moving.step(f, progress, incoming.getTranslationX());
             });
-            startMotion(animation, () -> { removeGhost(ghost); recycleOpening(); });
+            startMotion(animation, () -> {
+                removeGhost(ghost); removeGhost(lifted); recycleOpening();
+                if (moving != null) { moving.finish(); if (glide == moving) glide = null; }
+            });
         } else { removeGhost(ghost); shape.setCornerRadius(dp(22)); recycleOpening(); }
         View restored = focusedKey == null ? null : page.alert.surface.findViewWithTag(focusedKey);
         if (restored != null) restored.requestFocus();
@@ -290,6 +323,7 @@ final class MorphDialog extends Dialog {
             if (first != null) first.requestFocus();
             else { page.content.setFocusableInTouchMode(true); page.content.requestFocus(); }
         }
+        if (moving != null && running()) moving.land(focusedRow());
         if (!animate && refreshPending) { refreshPending = false; root.post(this::refreshCurrent); }
     }
     void refreshCurrent() {
@@ -302,21 +336,126 @@ final class MorphDialog extends Dialog {
         if (closed || closing || pages.isEmpty() || top() != page || !isShowing() || !page.content.isAttachedToWindow()) return;
         Rect end = measure(page); if (end.equals(visual)) return;
         stopMotion(); page.content.setLayoutParams(new FrameLayout.LayoutParams(end.width(), end.height()));
-        page.content.setAlpha(1); page.content.setTranslationX(0);
+        page.content.setAlpha(1); page.content.setTranslationX(0); shape.setCornerRadius(dp(22));
         if (!animate || !ValueAnimator.areAnimatorsEnabled()) { setBounds(end); return; }
         Rect start = currentBounds(); ValueAnimator animation = ValueAnimator.ofFloat(0, 1); animation.setDuration(180); animation.setInterpolator(EASE);
         animation.addUpdateListener(value -> setBounds(interpolate(start, end, (float) value.getAnimatedValue())));
         startMotion(animation, null);
     }
+    /**
+     * Live-blur buttons (GlassView) draw nothing into a bitmap canvas, so a control is copied as its platter plus
+     * its content. Artwork and plain views draw themselves.
+     */
     private Bitmap copyControl() {
-        return copyView(anchor, 512);
+        if (anchor == null) return null;
+        if (artwork) return copyView(anchor, 512);
+        // At its on-screen pixel size, focus growth included: the copy sits over the real control while the
+        // menu opens, and a smaller copy stretched to that size shows its text soft until the swap.
+        float scale = anchor.getWidth() <= 0 || original.isEmpty() ? 1f : Math.max(1f, (float) original.width() / anchor.getWidth());
+        if (!(anchor instanceof ViewGroup)) return copy(anchor, scale, anchor::draw);
+        return copy(anchor, scale, canvas -> {
+            Drawable background = anchor.getBackground(); if (background != null) background.draw(canvas);
+            drawChildren((ViewGroup) anchor, canvas);
+        });
     }
-    private Bitmap copyView(View view, int maxEdge) {
+    /** The panel's content; with {@code focusedRow}, without that row's platter or a gliding one. */
+    private Bitmap copyContent(ViewGroup group, int maxEdge, View focusedRow) {
+        Drawable platter = focusedRow == null ? null : focusedRow.getBackground();
+        int alpha = platter == null ? 255 : platter.getAlpha();
+        if (platter != null) platter.setAlpha(0);
+        View skipped = focusedRow == null || glide == null ? null : glide.surface;
+        try { return copy(group, fit(group, maxEdge), canvas -> drawChildren(group, canvas, skipped)); }
+        finally { if (platter != null) platter.setAlpha(alpha); }
+    }
+    /** The focused row of the shown page, when it paints a focus platter. */
+    private View focusedRow() {
+        View focus = getCurrentFocus();
+        if (focus == null || !focus.isFocused() || focus.getBackground() == null) return null;
+        for (android.view.ViewParent parent = focus.getParent(); parent != null; parent = parent.getParent()) if (parent == panel) return focus;
+        return null;
+    }
+    private Rect rowBounds(View row) {
+        Rect rect = new Rect(0, 0, row.getWidth(), row.getHeight()); panel.offsetDescendantRectToMyCoords(row, rect);
+        View page = panel.getChildCount() > 0 ? panel.getChildAt(0) : null;
+        if (page != null) rect.offset(Math.round(page.getTranslationX()), 0);
+        return rect;
+    }
+    private Drawable platterOf(View row) {
+        Drawable.ConstantState state = row.getBackground().getCurrent().getConstantState();
+        return state == null ? null : state.newDrawable(getContext().getResources()).mutate();
+    }
+    /**
+     * During a page change both pages have a white focused row. Crossfading them would dim each through gray, so
+     * their platters are hidden and this one surface glides from the old row to the new while only text fades.
+     */
+    private final class Glide {
+        final View surface = new View(getContext());
+        final Rect from, now = new Rect(), to = new Rect();
+        View row; Drawable hidden; int hiddenAlpha;
+        Glide(Drawable look, Rect from) {
+            this.from = from; surface.setBackground(look); surface.setTag("popup-focus");
+            surface.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            panel.addView(surface, 0, new FrameLayout.LayoutParams(1, 1, Gravity.TOP | Gravity.LEFT)); place(from);
+        }
+        /** The new page's focused row; without one the platter just fades. */
+        void land(View target) {
+            if (target == null) return;
+            row = target; hidden = target.getBackground(); hiddenAlpha = hidden.getAlpha(); hidden.setAlpha(0);
+        }
+        void step(float f, float progress, float shift) {
+            // A returning page keeps its layout but isn't re-laid out, so isLaidOut() stays false: test its size.
+            if (row != null && row.getWidth() > 0 && row.isFocused()) {
+                to.set(0, 0, row.getWidth(), row.getHeight()); panel.offsetDescendantRectToMyCoords(row, to);
+                Rect rect = interpolate(from, to, f); rect.offset(Math.round(shift), 0); place(rect);
+            } else if (row == null) surface.setAlpha(1 - smooth(progress / .35f));
+            // Focus moved on mid-glide: the new row shows its own platter, so this one steps aside.
+            else if (!row.isFocused()) surface.setAlpha(0);
+        }
+        void place(Rect rect) {
+            now.set(rect); FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) surface.getLayoutParams();
+            p.width = Math.max(1, rect.width()); p.height = Math.max(1, rect.height()); p.leftMargin = rect.left; p.topMargin = rect.top;
+            surface.setLayoutParams(p);
+        }
+        void finish() { if (hidden != null) hidden.setAlpha(hiddenAlpha); surface.setBackground(null); detach(surface); }
+    }
+    private Bitmap copyView(View view, int maxEdge) { return copy(view, fit(view, maxEdge), view::draw); }
+    private static float fit(View view, int maxEdge) { return Math.min(1f, (float) maxEdge / Math.max(1, Math.max(view.getWidth(), view.getHeight()))); }
+    private static Bitmap copy(View view, float scale, java.util.function.Consumer<Canvas> painter) {
         if (view == null || view.getWidth() <= 0 || view.getHeight() <= 0) return null;
-        float scale = Math.min(1f, (float) maxEdge / Math.max(view.getWidth(), view.getHeight()));
         Bitmap image = Bitmap.createBitmap(Math.max(1, Math.round(view.getWidth() * scale)), Math.max(1, Math.round(view.getHeight() * scale)), Bitmap.Config.ARGB_8888);
-        try { Canvas canvas = new Canvas(image); canvas.scale(scale, scale); view.draw(canvas); return image; }
+        try { Canvas canvas = new Canvas(image); canvas.scale(scale, scale); painter.accept(canvas); return image; }
         catch (RuntimeException unsupportedSurface) { image.recycle(); return null; }
+    }
+    private static void drawChildren(ViewGroup group, Canvas canvas) { drawChildren(group, canvas, null); }
+    /** Children at their positions and opacity, without the parent's own surface. */
+    private static void drawChildren(ViewGroup group, Canvas canvas, View skipped) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child == skipped || child.getVisibility() != View.VISIBLE || child.getAlpha() <= 0) continue;
+            int saved = canvas.save(); canvas.translate(child.getX(), child.getY());
+            if (child.getAlpha() < 1) canvas.saveLayerAlpha(0, 0, child.getWidth(), child.getHeight(), Math.round(child.getAlpha() * 255));
+            child.draw(canvas); canvas.restoreToCount(saved);
+        }
+    }
+    /** The opener's copy over the real control, above the panel (same elevation, added later), casting no shadow. */
+    private ImageView lift(Bitmap image, Rect bounds) {
+        if (image == null || bounds.isEmpty()) return null;
+        ImageView lift = new ImageView(getContext()); lift.setTag("popup-origin"); lift.setImageBitmap(image);
+        lift.setScaleType(ImageView.ScaleType.FIT_XY); lift.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        lift.setOutlineProvider(null); lift.setElevation(panel.getElevation());
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(bounds.width(), bounds.height(), Gravity.TOP | Gravity.LEFT);
+        params.leftMargin = bounds.left; params.topMargin = bounds.top;
+        root.addView(lift, params); return lift;
+    }
+    /** The anchor's corner radius at its on-screen (focus-grown) size. */
+    private float cornerRadius(Rect bounds) {
+        if (artwork) return dp(10);
+        float half = Math.min(bounds.width(), bounds.height()) / 2f;
+        Drawable current = anchor == null || anchor.getBackground() == null ? null : anchor.getBackground().getCurrent();
+        if (!(current instanceof GradientDrawable)) return Math.min(dp(22), half);
+        GradientDrawable platter = (GradientDrawable) current;
+        if (platter.getShape() == GradientDrawable.OVAL) return half;
+        return Math.min(half, platter.getCornerRadius() * bounds.width() / Math.max(1, anchor.getWidth()));
     }
     private ImageView ghost(Bitmap image, int width, int height) {
         if (image == null) return null;
@@ -328,7 +467,7 @@ final class MorphDialog extends Dialog {
         // enclosing surface changes shape. MATCH_PARENT would stretch them each frame.
         panel.addView(ghost, new FrameLayout.LayoutParams(width, height)); return ghost;
     }
-    private void removeGhost(ImageView ghost) { if (ghost != null) { ghost.setImageDrawable(null); panel.removeView(ghost); } }
+    private void removeGhost(ImageView ghost) { if (ghost != null) { ghost.setImageDrawable(null); detach(ghost); } }
     private void recycleOpening() { openingImage = null; }
     private Page top() { return pages.get(pages.size() - 1); }
     private boolean running() { return motion != null && motion.isRunning(); }
@@ -391,7 +530,12 @@ final class MorphDialog extends Dialog {
         if (closing) { if (finishing) closeNow(); return; }
         Rect start = currentBounds();
         boolean animate = !finishing && isShowing() && panel.isAttachedToWindow() && ValueAnimator.areAnimatorsEnabled();
-        Bitmap visibleContent = animate ? copyView(panel, 1024) : null; float initialAlpha = panel.getAlpha();
+        boolean returning = !original.isEmpty() && anchor != null && anchor.isAttachedToWindow();
+        // Back into a control: the gray panel shrinks behind the control's copy, which matches the real control
+        // underneath, so the white platter is never tinted gray and nothing changes when the window goes.
+        boolean tucking = animate && returning && !artwork;
+        Bitmap visibleContent = !animate ? null : tucking ? copyContent(panel, 2048, null) : copyView(panel, 2048);
+        float initialAlpha = panel.getAlpha(), fromRadius = shape.getCornerRadius();
         closing = true; refreshPending = false; stopMotion();
         if (beforeClose != null) beforeClose.run();
         if (!animate) { closeNow(); return; }
@@ -399,19 +543,29 @@ final class MorphDialog extends Dialog {
         if (anchor != null && anchor.isAttachedToWindow() && anchor.getGlobalVisibleRect(end)) {
             int[] position = new int[2]; root.getLocationOnScreen(position); end.offset(-position[0], -position[1]);
         } else end.set(start);
-        Bitmap image = original.isEmpty() || anchor == null || !anchor.isAttachedToWindow() ? null : copyControl();
+        Bitmap image = returning ? copyControl() : null;
         panel.removeAllViews();
-        ImageView ghost = ghost(image, end.width(), end.height());
+        ImageView lifted = tucking ? lift(image, end) : null;
+        ImageView ghost = tucking ? null : ghost(image, end.width(), end.height());
         ImageView outgoing = ghost(visibleContent, start.width(), start.height());
-        Rect destination = end;
+        Rect destination = end; float toRadius = cornerRadius(end); boolean covered = Rect.intersects(start, end);
+        if (lifted != null && covered) lifted.setAlpha(0);
         ValueAnimator animation = ValueAnimator.ofFloat(0, 1); animation.setDuration(200); animation.setInterpolator(null);
         animation.addUpdateListener(value -> {
-            float progress = (float) value.getAnimatedValue(), blend = smooth(progress);
-            setBounds(interpolate(start, destination, EASE.getInterpolation(progress)));
+            float progress = (float) value.getAnimatedValue(), blend = smooth(progress), f = EASE.getInterpolation(progress);
+            setBounds(interpolate(start, destination, f));
+            if (tucking) {
+                shape.setCornerRadius(fromRadius + (toRadius - fromRadius) * f);
+                if (outgoing != null) outgoing.setAlpha(1 - smooth(progress / .45f));
+                if (lifted != null && covered) lifted.setAlpha(smooth(progress / .6f));
+                // Hidden behind the copy by now: only its shadow is left to fade.
+                panel.setAlpha(1 - smooth((progress - .7f) / .3f));
+                return;
+            }
             if (outgoing != null) outgoing.setAlpha(1 - blend);
             panel.setAlpha(initialAlpha * (original.isEmpty() ? 1 - blend : 1 - smooth((progress - .65f) / .35f)));
         });
-        startMotion(animation, () -> { removeGhost(outgoing); removeGhost(ghost); closeNow(); });
+        startMotion(animation, () -> { removeGhost(outgoing); removeGhost(ghost); removeGhost(lifted); closeNow(); });
     }
     private void closeNow() {
         if (closed) return; closed = true;

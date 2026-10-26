@@ -2,7 +2,12 @@ package androidx.media3.ui;
 
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.CornerPathEffect;
 import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.PathEffect;
+import android.graphics.Rect;
+import android.graphics.RectF;
 import android.text.Layout;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -74,22 +79,47 @@ public final class DaniilSubtitleOutput extends FrameLayout implements SubtitleV
     private static final class Box implements LineBackgroundSpan {
         private final int color;
         private final Layout.Alignment alignment;
+        private final Path shape = new Path(), row = new Path();
+        private final Rect clip = new Rect();
+        private final RectF line = new RectF();
+        private int previousLine = -1;
         Box(int color, Layout.Alignment alignment) { this.color = color; this.alignment = alignment; }
 
         @Override public void drawBackground(Canvas target, Paint paint, int left, int right, int top, int baseline,
                 int bottom, CharSequence text, int start, int end, int lineNumber) {
+            if (lineNumber <= previousLine) { shape.reset(); line.setEmpty(); }
+            previousLine = lineNumber;
+            boolean last = end == text.length();
             while (end > start && (text.charAt(end - 1) == '\n' || text.charAt(end - 1) == '\r')) end--;
-            if (end <= start) return;
-            float width = Layout.getDesiredWidth(text, start, end, new android.text.TextPaint(paint));
-            boolean rtl = !new Bidi(text.subSequence(start, end).toString(), Bidi.DIRECTION_DEFAULT_LEFT_TO_RIGHT).baseIsLeftToRight();
-            float x = (left + right - width) / 2f;
-            if (alignment == Layout.Alignment.ALIGN_NORMAL) x = rtl ? right - width : left;
-            else if (alignment == Layout.Alignment.ALIGN_OPPOSITE) x = rtl ? left : right - width;
-            float padding = paint.getTextSize() * 0.3f, radius = paint.getTextSize() * 0.16f;
+            float padding = paint.getTextSize() * 0.3f, radius = paint.getTextSize() * 0.24f;
+            if (end > start) {
+                float width = Layout.getDesiredWidth(text, start, end, new android.text.TextPaint(paint));
+                boolean rtl = !new Bidi(text.subSequence(start, end).toString(), Bidi.DIRECTION_DEFAULT_LEFT_TO_RIGHT).baseIsLeftToRight();
+                float x = (left + right - width) / 2f;
+                if (alignment == Layout.Alignment.ALIGN_NORMAL) x = rtl ? right - width : left;
+                else if (alignment == Layout.Alignment.ALIGN_OPPOSITE) x = rtl ? left : right - width;
+                line.set(x - padding, top, x + width + padding, bottom);
+            } else if (!line.isEmpty()) {
+                // An intentional empty row still belongs to the same caption background.
+                line.top = top; line.bottom = bottom;
+            }
+            if (!line.isEmpty()) {
+                row.reset(); row.addRect(line, Path.Direction.CW);
+                shape.op(row, Path.Op.UNION);
+            }
+            // Layout draws every line background before any glyphs. Fill the combined contour once,
+            // after collecting its rows: no seams or darker overlaps, and no full-width rectangle.
+            target.getClipBounds(clip);
+            // Layout may omit the last rows when a long cue extends outside the viewport.
+            if ((!last && bottom < clip.bottom) || shape.isEmpty()) return;
             int savedColor = paint.getColor(); Paint.Style savedStyle = paint.getStyle();
+            PathEffect savedEffect = paint.getPathEffect();
             paint.setColor(color); paint.setStyle(Paint.Style.FILL);
-            target.drawRoundRect(x - padding, top, x + width + padding, bottom, radius, radius, paint);
-            paint.setColor(savedColor); paint.setStyle(savedStyle);
+            // Rounds the outside corners and the inward steps where adjacent line widths differ.
+            paint.setPathEffect(new CornerPathEffect(radius));
+            target.drawPath(shape, paint);
+            paint.setColor(savedColor); paint.setStyle(savedStyle); paint.setPathEffect(savedEffect);
+            shape.reset(); line.setEmpty(); previousLine = -1;
         }
     }
 }

@@ -8,8 +8,9 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /** Four sockets at most, with bounded admission and foreground work ahead of preparation. */
 final class ProviderExecutor extends ThreadPoolExecutor {
+    static final int PARALLELISM = 4;
     private final AtomicLong sequence = new AtomicLong();
-    ProviderExecutor() { super(4, 4, 0, TimeUnit.MILLISECONDS, new PriorityBlockingQueue<>()); }
+    ProviderExecutor() { super(PARALLELISM, PARALLELISM, 0, TimeUnit.MILLISECONDS, new PriorityBlockingQueue<>()); }
     synchronized void execute(Runnable command, Cancellation scope) {
         if (getQueue().size() >= 64) throw new RejectedExecutionException("Provider queue full");
         Work work = new Work(command, scope, sequence.getAndIncrement());

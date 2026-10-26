@@ -29,7 +29,9 @@ final class BrowseScreens {
         SavedResults(AddonRepository.CatalogPage result, long configuration) { this.result = result; this.configuration = configuration; }
         boolean fresh(long revision, boolean restoring) {
             // Returning after a long film updates local progress without replacing the gallery underneath focus.
-            return configuration == revision && (restoring || android.os.SystemClock.elapsedRealtime() - saved < FRESH_MS);
+            // Failed snapshots can be shown while reloading, but must never suppress the recovery request.
+            return !result.loading && result.result.failures.isEmpty() && configuration == revision
+                    && (restoring || android.os.SystemClock.elapsedRealtime() - saved < FRESH_MS);
         }
     }
     private SavedResults homeResults;
@@ -87,8 +89,8 @@ final class BrowseScreens {
         }
         boolean loading = load == null ? !catalogues.isEmpty() : load.loading;
         if (!shelves.isEmpty()) page.add(Item.spotlight(null));
-        if (load != null && (failed || loading && load.attempt > 1)) {
-            String heading = loading ? "Retrying Home" : shelves.isEmpty() ? "Unable to load Home" : stale ? "Showing saved catalogues" : "Some providers are unavailable";
+        if (failed && !loading) {
+            String heading = shelves.isEmpty() ? "Unable to load Home" : stale ? "Showing saved catalogues" : "Some providers are unavailable";
             page.add(Item.notice(failed ? R.drawable.ic_tv_offline : R.drawable.ic_tv_refresh, heading, loadDetail(load),
                     new Item.Action("reload-home", Item.Action.Style.SECONDARY, "Reload", nav::refresh).icon(R.drawable.ic_tv_refresh)));
             if (shelves.isEmpty() && !loading) page.initialFocus = "reload-home";
@@ -159,11 +161,11 @@ final class BrowseScreens {
         search.tiles = tiles;
         search.loading = load == null || load.loading;
         boolean failed = found != null && !found.failures.isEmpty();
-        search.detail = failed && tiles.isEmpty() ? search.loading ? "Retrying search" : "Search unavailable"
+        search.detail = failed && !search.loading && tiles.isEmpty() ? "Search unavailable"
                 : !search.loading && tiles.isEmpty() ? "No results" : "";
         page.reusable = !search.loading && !failed;
-        if (load != null && (failed || search.loading && load.attempt > 1)) {
-            search.meta = (search.loading ? "Retrying search. " : "") + loadDetail(load);
+        if (failed && !search.loading) {
+            search.meta = loadDetail(load);
             search.actions = Collections.singletonList(new Item.Action("reload-search", Item.Action.Style.SECONDARY, "Reload", nav::refresh).icon(R.drawable.ic_tv_refresh));
         }
         return page;
@@ -321,8 +323,8 @@ final class BrowseScreens {
         for (int i = 0; i < limit; i++) tiles.add(poster("catalogue", found.items.get(i)));
         boolean failed = !found.failures.isEmpty();
         page.reusable = !failed && !load.loading;
-        if (load.loading || failed) {
-            String heading = load.loading ? (failed ? "Retrying catalogue" : tiles.isEmpty() ? "Loading catalogue" : "Updating catalogue") : "Unable to load catalogue";
+        if (failed && !load.loading) {
+            String heading = "Unable to load catalogue";
             String detail = "Attempt " + load.attempt + " of " + AddonRepository.CatalogPage.MAX_ATTEMPTS;
             if (failed && !load.loading) detail += ". " + catalogueFailure(found.failures.values().iterator().next());
             if (!tiles.isEmpty()) detail += ". Showing saved entries.";
@@ -334,7 +336,7 @@ final class BrowseScreens {
                 route.page > 0 ? "Go to the previous page or change the filters." : "Try other filters."));
         else if (!tiles.isEmpty()) page.addAll(Item.grid("catalogue-grid", Tile.Style.POSTER, POSTER_COLUMNS, tiles));
         if (paginated && !load.loading) page.add(pagination(route, "bottom", !tiles.isEmpty()));
-        page.initialFocus = tiles.isEmpty() ? failed ? "reload-catalogue" : "refresh-catalogue" : tiles.get(0).key;
+        page.initialFocus = tiles.isEmpty() ? failed && !load.loading ? "reload-catalogue" : "refresh-catalogue" : tiles.get(0).key;
         return page;
     }
     private static String loadDetail(AddonRepository.CatalogPage load) {

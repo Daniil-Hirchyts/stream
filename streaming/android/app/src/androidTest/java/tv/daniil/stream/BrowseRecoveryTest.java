@@ -41,11 +41,16 @@ public final class BrowseRecoveryTest extends AppHarness {
         waitUntil("settings restores the actual row", 5000, () -> focus().equals("keyboard-languages"));
         assertTrue("Languages pane is still shown", visible("Subtitle language"));
     }
-    @Test public void transientCategoryFailuresRetryWithCountsAndRecover() throws Exception {
+    @Test public void transientCategoryFailuresKeepOnlySkeletonsUntilTheyRecover() throws Exception {
         try (CatalogServer server = start()) {
             gallery(); tap("Flaky", true);
-            waitUntil("third bounded attempt", 10000, () -> server.requests("Flaky", 0) == 3 && text("Attempt 3 of 3"));
-            assertTrue(text("Retrying catalogue"));
+            waitUntil("third bounded attempt", 10000, () -> server.requests("Flaky", 0) == 3);
+            assertFalse(text("Attempt 3 of 3"));
+            assertFalse(text("Retrying catalogue")); assertFalse(text("Loading catalogue"));
+            assertFalse(visible("Reload"));
+            AtomicReference<Boolean> skeleton = new AtomicReference<>(false);
+            browse.onActivity(activity -> skeleton.set(((PageAdapter) ((RecyclerView) activity.findViewById(R.id.page_rows)).getAdapter()).position("skeleton:Catalogue results") >= 0));
+            assertTrue("The skeleton remains during retry", skeleton.get());
             server.flakyThird.countDown();
             waitUntil("retry recovers posters", 10000, () -> visible("Film 00") && !text("Loading catalogue") && !text("Retrying catalogue"));
             assertEquals(3, server.requests("Flaky", 0));
@@ -72,7 +77,8 @@ public final class BrowseRecoveryTest extends AppHarness {
     @Test public void changingCategoryCancelsBackoffAndPermanentFailuresAreNotRetried() throws Exception {
         try (CatalogServer server = start()) {
             gallery(); tap("Offline", true);
-            waitUntil("first failure before backoff", 5000, () -> text("Retrying catalogue"));
+            waitUntil("first failure before backoff", 5000, () -> server.requests("Offline", 0) >= 1);
+            assertFalse(text("Retrying catalogue"));
             tap("Empty", true);
             waitUntil("empty success", 5000, () -> text("No titles on this page"));
             int cancelled = server.requests("Offline", 0);
@@ -224,7 +230,10 @@ public final class BrowseRecoveryTest extends AppHarness {
         final CountDownLatch flakyThird = new CountDownLatch(1);
         volatile boolean unavailable, emptySearch;
         volatile int failureStatus = 503;
+        volatile int catalogCount = 1;
+        volatile long catalogueDelayMs;
         volatile CountDownLatch homeGate;
+        volatile String homeGateCatalog = "";
         CatalogServer() throws Exception {
             server = new ServerSocket(0, 20, java.net.InetAddress.getByName("127.0.0.1")); url = "http://127.0.0.1:" + server.getLocalPort();
             workers.execute(() -> { while (!server.isClosed()) try { Socket socket = server.accept(); workers.execute(() -> answer(socket)); } catch (Exception ignored) { break; } });
@@ -238,10 +247,12 @@ public final class BrowseRecoveryTest extends AppHarness {
                 int status = 200; JSONObject result = new JSONObject();
                 if (path.equals("/manifest.json")) {
                     JSONObject genre = new JSONObject().put("name", "genre").put("options", new JSONArray().put("Flaky").put("Offline").put("Empty").put("Bad data").put("Denied"));
+                    JSONArray catalogs = new JSONArray();
+                    for (int i = 0; i < catalogCount; i++) catalogs.put(new JSONObject().put("type", "movie").put("id", i == 0 ? "browse" : "browse-" + i).put("name", "Test films")
+                            .put("extra", new JSONArray().put(genre).put(new JSONObject().put("name", "skip")).put(new JSONObject().put("name", "search"))));
                     result.put("id", "tv.daniil.browse-fixture").put("name", "Browse fixture").put("version", "1.0.0")
                             .put("types", new JSONArray().put("movie")).put("resources", new JSONArray().put("catalog").put("meta").put("stream"))
-                            .put("catalogs", new JSONArray().put(new JSONObject().put("type", "movie").put("id", "browse").put("name", "Test films")
-                                    .put("extra", new JSONArray().put(genre).put(new JSONObject().put("name", "skip")).put(new JSONObject().put("name", "search")))));
+                            .put("catalogs", catalogs);
                 } else if (path.startsWith("/catalog/")) {
                     String[] parts = path.substring(0, path.length() - 5).split("/");
                     Map<String, String> extra = new java.util.HashMap<>();
@@ -251,8 +262,12 @@ public final class BrowseRecoveryTest extends AppHarness {
                     String genre = extra.getOrDefault("genre", ""); int skip = Integer.parseInt(extra.getOrDefault("skip", "0"));
                     int number = 0;
                     if (extra.containsKey("search")) searchRequests.incrementAndGet();
-                    else if (!extra.containsKey("skip")) { homeRequests.incrementAndGet(); if (homeGate != null) homeGate.await(15, TimeUnit.SECONDS); }
+                    else if (!extra.containsKey("skip")) {
+                        homeRequests.incrementAndGet();
+                        if (homeGate != null && (homeGateCatalog.isEmpty() || homeGateCatalog.equals(parts[3]))) homeGate.await(15, TimeUnit.SECONDS);
+                    }
                     else number = requests.computeIfAbsent(genre + ":" + skip, key -> new AtomicInteger()).incrementAndGet();
+                    if (catalogueDelayMs > 0) Thread.sleep(catalogueDelayMs);
                     if (unavailable || genre.equals("Offline") || genre.equals("Flaky") && number < 3) status = failureStatus;
                     if (genre.equals("Denied")) status = 401;
                     if (genre.equals("Flaky") && number == 3) flakyThird.await(15, TimeUnit.SECONDS);

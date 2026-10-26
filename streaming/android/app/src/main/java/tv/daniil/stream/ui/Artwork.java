@@ -62,6 +62,21 @@ public final class Artwork implements AutoCloseable {
      */
     public void fetch(String url, int maxSide, boolean transparent, Consumer<Bitmap> done) { fetch(url, maxSide, transparent, SHARP, done); }
 
+    /** Resolve a title once before revealing it; a slow/failed logo keeps the text fallback for this binding. */
+    public void titleLogo(String url, Consumer<Bitmap> done, Runnable failed) {
+        Cancellation request = cancellation;
+        boolean[] settled = {false}; // All completions run on the main thread, including memory-cache hits.
+        Runnable timeout = () -> {
+            if (settled[0] || request.isCancelled()) return;
+            settled[0] = true; failed.run();
+        };
+        main.postDelayed(timeout, 2000);
+        fetch(url, LOGO, true, SHARP, bitmap -> {
+            if (settled[0]) return;
+            settled[0] = true; main.removeCallbacks(timeout); done.accept(bitmap);
+        }, timeout);
+    }
+
     /** A heavily blurred version, for artwork behind lists (Sources). Computed once per image on a worker. */
     public void blurred(String url, Consumer<Bitmap> done) { fetch(url, BLURRED, false, BLUR, done); }
 
@@ -73,6 +88,9 @@ public final class Artwork implements AutoCloseable {
 
     private static final int SHARP = 0, BLUR = 1, SOFT = 2;
     private void fetch(String url, int maxSide, boolean transparent, int mode, Consumer<Bitmap> done) {
+        fetch(url, maxSide, transparent, mode, done, () -> {});
+    }
+    private void fetch(String url, int maxSide, boolean transparent, int mode, Consumer<Bitmap> done, Runnable failed) {
         String key = url + "@" + maxSide + (mode == BLUR ? "@blur" : mode == SOFT ? "@soft" : "");
         Bitmap known = cache.get(key);
         if (known != null) { done.accept(known); return; }
@@ -80,24 +98,26 @@ public final class Artwork implements AutoCloseable {
         workers.execute(() -> {
             try {
                 byte[] bytes = bytes(url, request);
-                if (bytes == null || request.isCancelled()) return;
+                if (request.isCancelled()) return;
+                if (bytes == null) throw new java.io.IOException("Empty artwork");
                 BitmapFactory.Options options = new BitmapFactory.Options();
                 options.inJustDecodeBounds = true;
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
-                if (options.outWidth <= 0 || options.outHeight <= 0) return;
+                if (options.outWidth <= 0 || options.outHeight <= 0) throw new java.io.IOException("Invalid artwork");
                 options.inSampleSize = 1;
                 while (Math.max(options.outWidth, options.outHeight) / options.inSampleSize > maxSide * 2) options.inSampleSize *= 2;
                 options.inJustDecodeBounds = false;
                 options.inPreferredConfig = transparent || mode != SHARP ? Bitmap.Config.ARGB_8888 : Bitmap.Config.RGB_565;
                 Bitmap decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
-                if (decoded == null || request.isCancelled()) return;
+                if (request.isCancelled()) return;
+                if (decoded == null) throw new java.io.IOException("Invalid artwork");
                 Bitmap bitmap = fit(decoded, maxSide);
                 if (transparent) bitmap = trim(bitmap);
                 if (mode != SHARP) bitmap = blur(bitmap, mode == SOFT);
                 Bitmap ready = bitmap;
                 cache.put(key, ready);
                 main.post(() -> { if (!request.isCancelled()) done.accept(ready); });
-            } catch (Exception ignored) { /* artwork is optional */ }
+            } catch (Exception ignored) { main.post(() -> { if (!request.isCancelled()) failed.run(); }); }
         });
     }
 

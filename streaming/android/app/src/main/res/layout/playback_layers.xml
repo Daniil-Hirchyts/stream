@@ -15,23 +15,13 @@
         android:paddingEnd="@dimen/idle_inset"
         android:visibility="gone">
 
-        <FrameLayout android:layout_width="420dp" android:layout_height="112dp">
-            <ImageView
-                android:id="@+id/loading_title_logo"
-                android:layout_width="match_parent"
-                android:layout_height="96dp"
-                android:layout_gravity="center"
-                android:scaleType="fitCenter"
-                android:visibility="gone" />
-            <!-- The shared binding remains a readable fallback when a provider has no logo. -->
-            <TextView
-                android:id="@+id/loading_title"
-                style="@style/Text.Title"
-                android:layout_gravity="center"
-                android:ellipsize="end"
-                android:gravity="center"
-                android:maxLines="2" />
-        </FrameLayout>
+        <TextView
+            android:id="@+id/loading_title"
+            style="@style/TvLoadingTitle"
+            android:layout_width="560dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="2" />
 
         <!-- The shared player may update these labels at every stage. Their parent gates them
              together, so transport details cannot flash into the normal viewing experience. -->
@@ -67,7 +57,7 @@
         android:layout_gravity="center"
         android:visibility="gone" />
 
-    <!-- Playback overlay, after tvOS: the title logo with watched, tracks and settings actions
+    <!-- Playback overlay, after tvOS: the text title with watched, tracks and settings actions
          beside it, and the timeline at the bottom. Every control works by remote, pointer
          and touch. -->
     <!-- Not clipping, so a focused button's growth is drawn whole. -->
@@ -124,31 +114,25 @@
                 android:layout_weight="1"
                 android:orientation="vertical">
 
-                <FrameLayout android:layout_width="match_parent" android:layout_height="56dp">
-                    <ImageView
-                        android:id="@+id/controls_title_logo"
-                        android:layout_width="280dp"
-                        android:layout_height="52dp"
-                        android:layout_gravity="center_vertical"
-                        android:scaleType="fitStart"
-                        android:visibility="gone" />
-                    <TextView
-                        android:id="@+id/controls_title"
-                        style="@style/Text.Title"
-                        android:layout_gravity="center_vertical"
-                        android:ellipsize="end"
-                        android:maxLines="1"
-                        android:shadowColor="#B3000000"
-                        android:shadowDy="1"
-                        android:shadowRadius="8" />
-                </FrameLayout>
+                <TextView
+                    android:id="@+id/controls_title"
+                    style="@style/TvPlayerTitle"
+                    android:layout_height="40dp"
+                    android:gravity="center_vertical"
+                    android:layout_width="match_parent"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:shadowColor="#B3000000"
+                    android:shadowDy="1"
+                    android:shadowRadius="8" />
 
                 <TextView
                     android:id="@+id/watching_info"
                     style="@style/Text.Caption"
+                    android:layout_width="match_parent"
                     android:layout_marginTop="4dp"
                     android:ellipsize="end"
-                    android:maxLines="1"
+                    android:maxLines="2"
                     android:shadowColor="#B3000000"
                     android:shadowDy="1"
                     android:shadowRadius="6"
@@ -229,8 +213,8 @@
                 android:max="1000"
                 android:background="@null"
                 android:defaultFocusHighlightEnabled="false"
-                android:maxHeight="4dp"
-                android:minHeight="4dp"
+                android:maxHeight="2dp"
+                android:minHeight="2dp"
                 android:progressDrawable="@drawable/tv_timeline_track"
                 android:splitTrack="false"
                 android:thumb="@drawable/tv_timeline_thumb"

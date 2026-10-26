@@ -1,22 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Stream's override of the shared player's top layers (same IDs and view types; see android/playback): short notices
-     and the options menu, a solid floating panel. -->
+<!-- Stream's override of the shared player's top layers (same IDs and view types; see android/playback). -->
 <merge xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Short notices, such as "Paired with Chrome on MacBook". -->
-    <TextView
-        android:id="@+id/notice"
-        style="@style/Text.Label"
-        android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="@dimen/safe_vertical"
-        android:background="@drawable/pill"
-        android:elevation="12dp"
-        android:paddingStart="22dp"
-        android:paddingTop="12dp"
-        android:paddingEnd="22dp"
-        android:paddingBottom="12dp"
-        android:visibility="gone" />
+    <!-- Retain the shared binding without a transient notification layer in Stream. -->
+    <FrameLayout android:layout_width="0dp" android:layout_height="0dp"
+        android:importantForAccessibility="noHideDescendants" android:visibility="gone">
+        <TextView android:id="@+id/notice" android:layout_width="0dp" android:layout_height="0dp"
+            android:visibility="gone" />
+    </FrameLayout>
 
     <!-- Options, opened by click/touch or the remote Menu shortcut. Back and Menu leave it; a pointer clicks the
          header's chevron or anywhere outside. -->

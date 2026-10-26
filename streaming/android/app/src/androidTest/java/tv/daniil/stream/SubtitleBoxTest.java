@@ -16,6 +16,47 @@ import tv.daniil.playback.SubtitleStyle;
 /** Render real Media3 output on Android, including wrapping, style changes and bitmap cues. */
 @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
 public final class SubtitleBoxTest extends AppHarness {
+    @Test public void multilineBoxIsOneRoundedContourFollowingTheLineWidths() {
+        instrumentation.runOnMainSync(() -> {
+            SubtitleView view = new SubtitleView(context); DaniilSubtitleOutput.install(view);
+            SubtitleStyle.apply(view, 1, 0, 0, 2, 1);
+            view.setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 32);
+            view.setBottomPaddingFraction(0.1f);
+            view.setCues(Collections.singletonList(new Cue.Builder()
+                    .setText("A longer first subtitle line\nShort line\nAnd a medium final line").build()));
+            Bitmap image = draw(view); Rect bounds = pixels(image, false);
+            assertFalse(bounds.isEmpty());
+            Rect middle = rowBounds(image, bounds.centerY());
+            assertTrue("The shape follows the short middle line instead of filling a rectangle",
+                    rowBounds(image, bounds.top + bounds.height() / 6).width() > middle.width() + 100);
+            for (int y = bounds.top + 8; y < bounds.bottom - 8; y++) {
+                assertTrue("Adjacent rows join without notches cutting into the common body at " + y,
+                        Color.alpha(image.getPixel(middle.left + 2, y)) >= 170);
+                for (int x = bounds.left; x < bounds.right; x++) {
+                    int pixel = image.getPixel(x, y);
+                    if (Color.red(pixel) == 0 && Color.alpha(pixel) > 20)
+                        assertTrue("The unified translucent fill has no darker overlapping seams", Color.alpha(pixel) <= 180);
+                }
+            }
+            Bitmap evidence = Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888);
+            Canvas scene = new Canvas(evidence); scene.drawColor(0xFF5B616B); view.draw(scene);
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(context.getFilesDir(), "validation-connected-subtitles.png"))) {
+                evidence.compress(Bitmap.CompressFormat.PNG, 100, out);
+            } catch (java.io.IOException e) { throw new AssertionError(e); }
+            evidence.recycle(); image.recycle();
+
+            Bitmap clipped = Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888);
+            Canvas partial = new Canvas(clipped); partial.clipRect(0, 0, 640, bounds.centerY()); view.draw(partial);
+            assertTrue("Clipping the final rows must not remove the visible background", hasBox(clipped));
+            clipped.recycle();
+
+            view.setCues(Collections.singletonList(new Cue.Builder().setText("First subtitle row\n\nLast row").build()));
+            image = draw(view); bounds = pixels(image, false);
+            assertEquals("Empty rows stay inside the connected background", 179, Color.alpha(image.getPixel(bounds.centerX(), bounds.centerY())));
+            image.recycle();
+        });
+    }
+
     @Test public void boxHasPaddedSidesRoundedCornersAndKeepsOtherCueTypes() {
         instrumentation.runOnMainSync(() -> {
             SubtitleView view = new SubtitleView(context); DaniilSubtitleOutput.install(view);
@@ -67,5 +108,18 @@ public final class SubtitleBoxTest extends AppHarness {
             if (Color.alpha(color) > 20 && (!white || Color.red(color) > 220)) out.union(x, y, x + 1, y + 1);
         }
         return out;
+    }
+    private static Rect rowBounds(Bitmap image, int y) {
+        Rect row = new Rect();
+        for (int x = 0; x < image.getWidth(); x++)
+            if (Color.alpha(image.getPixel(x, y)) > 20) row.union(x, y, x + 1, y + 1);
+        return row;
+    }
+    private static boolean hasBox(Bitmap image) {
+        for (int y = 0; y < image.getHeight(); y++) for (int x = 0; x < image.getWidth(); x++) {
+            int pixel = image.getPixel(x, y);
+            if (Color.red(pixel) == 0 && Color.alpha(pixel) >= 170) return true;
+        }
+        return false;
     }
 }

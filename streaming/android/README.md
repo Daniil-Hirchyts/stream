@@ -470,7 +470,10 @@ worker results. Close the repository when its owning application scope ends.
 
 The repository uses four request workers and a bounded queue; transport also
 limits sockets to four. Requests get ten seconds including redirects, and
-discovery gets fifteen seconds including queued providers. Results retain
+discovery gets fifteen seconds including queued providers. Home/Search catalogue
+loads allow fifteen seconds per four admitted resources in the aggregate; each
+catalogue's request budget starts when its worker runs, so queued shelves do not
+time out before they reach their provider. Results retain
 provider errors alongside valid responses in installation order. Catalogue/meta
 requests always try the network, then may return cached metadata marked stale.
 Stream/subtitle addresses are resolved afresh and never stored as resumable
@@ -676,6 +679,8 @@ See the [validation record](../../docs/streaming-validation.md) and the
 
 Home and Search now share the catalogue retry policy (at most three attempts for
 transient errors, cancellable backoff). Successful provider resources are retained
-while only failed resources retry. Inline Reload and attempt status are visible
-when recovery is needed; Search distinguishes provider failure from an empty
-success. These calls remain on application workers.
+while only failed resources retry. Skeletons (or existing posters) cover the
+attempts without an extra loading/retry notice. Inline Reload and the final
+attempt count appear only after loading fails; Search distinguishes provider
+failure from an empty success. Failed Home/Search snapshots are retried when
+revisited rather than reused as fresh data. These calls remain on application workers.

@@ -105,6 +105,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private boolean introHome, introArtwork;
     /** Where the next page enters from: 1 after opening a screen, -1 after Back, 0 for a tab (it rises instead). */
     private int enterDirection;
+    private boolean pageEntering;
+    @Nullable private android.view.ViewTreeObserver.OnPreDrawListener pageEntrance;
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -354,7 +356,9 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private void render(boolean restoreOnly) { render(restoreOnly, false); }
     private void render(boolean restoreOnly, boolean refreshData) {
         seriesTransition++;
-        list.animate().cancel(); list.setAlpha(1f); list.setTranslationY(0);
+        if (!pageEntering || shownRoute != route()) {
+            list.animate().cancel(); list.setAlpha(1f); list.setTranslationX(0); list.setTranslationY(0);
+        }
         if (searchDebounce != null) { main.removeCallbacks(searchDebounce); searchDebounce = null; }
         cancelWork();
         if (stopped || services == null) return;
@@ -380,10 +384,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         chrome(route.screen);
         java.util.Set<Route> kept = new java.util.HashSet<>(stack); kept.addAll(tabRoots.values());
         retainedPages.keySet().retainAll(kept); dirtyPages.retainAll(kept);
-        if (shownRoute != route && !restoreOnly) enter();
-        else if (restoreOnly) {
-            list.animate().cancel(); list.setAlpha(1f); list.setTranslationX(0); list.setTranslationY(0);
-        }
+        // Restoring data/focus on a tab or Back is still navigation and needs the same visible entrance.
+        if (shownRoute != route) preparePageEntrance(route);
         Page retained = retainedPages.get(route);
         boolean dirty = dirtyPages.contains(route);
         if (shownRoute != route && retained != null) show(retained);
@@ -412,15 +414,41 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         tv.daniil.stream.ui.Clock.apply(clock, clockFormat,
                 intro == null && (browseClockReady || !pageLoading) && !stack.isEmpty() && !route().screen.equals("Starting"));
     }
-    /** A new page slides a little way in from the direction of travel and fades up, rather than simply replacing the last. */
-    private void enter() {
+    /** Start with the new page's first laid-out frame, not while its worker is still fetching/building it. */
+    private void preparePageEntrance(Route expected) {
+        cancelPageEntrance();
         int direction = enterDirection; enterDirection = 0;
+        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) return;
+        pageEntering = true; list.setAlpha(0f);
+        pageEntrance = () -> {
+            if (stopped || route() != expected) { cancelPageEntrance(); return true; }
+            if (adapter.getItemCount() == 0 || !hasVisiblePageBlock() || list.hasPendingAdapterUpdates()) return true;
+            list.getViewTreeObserver().removeOnPreDrawListener(pageEntrance); pageEntrance = null;
+            enter(direction); return true;
+        };
+        list.getViewTreeObserver().addOnPreDrawListener(pageEntrance);
+    }
+    private boolean hasVisiblePageBlock() {
+        for (int i = 0; i < list.getChildCount(); i++) {
+            ViewGroup block = (ViewGroup) list.getChildAt(i);
+            if (block.getChildCount() > 0 && block.getChildAt(0).getVisibility() == View.VISIBLE && block.getHeight() > 0) return true;
+        }
+        return false;
+    }
+    private void cancelPageEntrance() {
+        if (pageEntrance != null) { list.getViewTreeObserver().removeOnPreDrawListener(pageEntrance); pageEntrance = null; }
+        pageEntering = false;
+        list.animate().cancel(); list.setAlpha(1f); list.setTranslationX(0); list.setTranslationY(0);
+    }
+    /** A new page slides a little way in from the direction of travel and fades up. */
+    private void enter(int direction) {
         list.animate().cancel();
         list.setAlpha(0f);
         list.setTranslationX(direction * Tv.dp(this, 36));
         list.setTranslationY(direction == 0 ? Tv.dp(this, 16) : 0);
         list.animate().alpha(1f).translationX(0).translationY(0).setDuration(280)
-                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.8f)).start();
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.8f))
+                .withEndAction(() -> pageEntering = false).start();
     }
     private Page build(Route route, Cancellation request, Consumer<Page> progress, boolean refreshData, boolean restoring) throws Exception {
         switch (route.screen) {
@@ -644,6 +672,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             }
             if (current.screen.equals("Details") && current.title != null) {
                 Page shell = titles.detailsPage(current.title, "");
+                TitleScreens.pendingTitle(shell, current.title);
                 showPartial(shell); return;
             }
             if (current.screen.equals("Search") && browse != null) {
@@ -767,6 +796,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         return true;
     }
     private void transitionSeriesLayout(Runnable change, boolean entering) {
+        cancelPageEntrance();
         int mine = ++seriesTransition; Route current = route();
         list.animate().cancel();
         list.animate().alpha(0f).translationY(Tv.dp(this, entering ? -8 : 8)).setDuration(100).withEndAction(() -> {
@@ -1073,7 +1103,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         return false;
     }
 
-    @Override protected void onStop() { rememberFocus(); super.onStop(); stopped = true; cancelWork(); artwork.cancel(); if (services != null) services.preparation.leave(); }
+    @Override protected void onStop() { rememberFocus(); super.onStop(); stopped = true; cancelPageEntrance(); cancelWork(); artwork.cancel(); if (services != null) services.preparation.leave(); }
     @Override protected void onStart() {
         super.onStart();
         Sounds.get(this).refresh(this);
@@ -1081,6 +1111,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         if (returning) { if (services == null) initialize(); else render(true); }
     }
     @Override protected void onDestroy() {
+        cancelPageEntrance();
         cancelWork();
         for (Dialog dialog : new ArrayList<>(dialogs)) dialog.dismiss();
         backdrop.release(); artwork.close(); main.removeCallbacksAndMessages(null);

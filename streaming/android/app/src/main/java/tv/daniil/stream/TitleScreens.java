@@ -29,7 +29,8 @@ final class TitleScreens {
     Page details(Route route, Cancellation scope) throws Exception { return details(route, scope, ignored -> {}); }
     Page overview(Route route) throws Exception { return detailContent(route, ""); }
     Page details(Route route, Cancellation scope, java.util.function.Consumer<Page> progress) throws Exception {
-        Page initial = detailContent(route, ""); progress.accept(initial);
+        Page initial = detailContent(route, "");
+        pendingTitle(initial, route.title); progress.accept(initial);
         if (route.title.provider.equals("local")) return initial;
         PlaybackPreparation.Entry entry = services.preparation.prepare(route.title, route.video);
         route.title = entry.awaitMetadata(scope);
@@ -37,6 +38,11 @@ final class TitleScreens {
         Page enriched = detailContent(route, "");
         scope.check(); services.preparation.prepare(route.title, route.video);
         return enriched;
+    }
+    /** Catalogue entries can omit a logo that metadata supplies. Wait before choosing text as the title. */
+    static void pendingTitle(Page page, Title title) {
+        if (title.logo == null && !title.provider.equals("local"))
+            for (Item item : page.items) if (item.kind == Item.Kind.DETAILS) item.loading = true;
     }
     private Page detailContent(Route route, String note) throws Exception {
         Title title = route.title;

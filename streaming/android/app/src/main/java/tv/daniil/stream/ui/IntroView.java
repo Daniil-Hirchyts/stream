@@ -21,8 +21,8 @@ import tv.daniil.stream.R;
 
 /**
  * The start screen, drawn while the app really loads: drifting light behind a tilted wall of poster placeholders
- * that fill with the catalogues' own artwork as it arrives, the play mark tracing itself and the name rising letter
- * by letter. {@link #finish} zooms through the mark and fades the whole screen away over the page that is already
+ * that fill with the catalogues' own artwork as it arrives, the play mark tracing itself and the name rising
+ * into place. {@link #finish} zooms through the mark and fades the whole screen away over the page that is already
  * in place beneath it.
  */
 public final class IntroView extends View {
@@ -67,8 +67,9 @@ public final class IntroView extends View {
         }
         stroke.setStyle(Paint.Style.STROKE); stroke.setStrokeJoin(Paint.Join.ROUND); stroke.setStrokeCap(Paint.Cap.ROUND);
         stroke.setColor(Color.WHITE);
-        name.setTypeface(android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL));
-        name.setColor(context.getColor(R.color.tv_text)); name.setLetterSpacing(0.16f);
+        name.setTypeface(androidx.core.content.res.ResourcesCompat.getFont(context, R.font.inter_display_semibold));
+        name.setColor(context.getColor(R.color.tv_text)); name.setLetterSpacing(0.12f);
+        name.setTextAlign(Paint.Align.CENTER);
         android.graphics.Path parsed = androidx.core.graphics.PathParser.createPathFromPathData(MARK);
         mark.set(parsed); mark.close();
         mark.computeBounds(markBounds, true);
@@ -236,21 +237,14 @@ public final class IntroView extends View {
         canvas.restore();
     }
 
-    /** The name, each letter rising and sharpening into place after the mark has drawn. */
+    /** Shape and draw the entire word together so tracking and kerning stay consistent. */
     private void drawName(Canvas canvas, long now, float cx, float baseline, float alpha) {
         if (alpha <= 0f) return;
-        name.setTextSize(32 * dp);
-        float total = name.measureText(NAME);
-        float x = cx - total / 2f;
+        name.setTextSize(28 * dp);
         long start = started + (long) (TRACE_MS * 0.7f);
-        for (int i = 0; i < NAME.length(); i++) {
-            String letter = NAME.substring(i, i + 1);
-            float advance = name.measureText(NAME, 0, i + 1) - name.measureText(NAME, 0, i);
-            float shown = ease(Math.max(0f, Math.min(1f, (now - start - i * LETTER_STAGGER) / (float) LETTER_MS)));
-            name.setAlpha(Math.round(255 * alpha * shown));
-            canvas.drawText(letter, x, baseline + (1f - shown) * 16 * dp, name);
-            x += advance;
-        }
+        float shown = ease(Math.max(0f, Math.min(1f, (now - start) / (float) LETTER_MS)));
+        name.setAlpha(Math.round(255 * alpha * shown));
+        canvas.drawText(NAME, cx, baseline + (1f - shown) * 12 * dp, name);
     }
 
     private static float ease(float x) { float inv = 1f - x; return 1f - inv * inv * inv; }

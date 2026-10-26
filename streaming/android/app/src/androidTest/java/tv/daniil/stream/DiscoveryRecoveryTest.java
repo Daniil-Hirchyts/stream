@@ -12,6 +12,19 @@ import tv.daniil.stream.addon.Cancellation;
 
 /** Real provider failures, retries and remote/pointer recovery in Home and both Search modes. */
 public final class DiscoveryRecoveryTest extends AppHarness {
+    @Test public void returningHomeAfterSearchRetriesAFailedSnapshotImmediately() throws Exception {
+        try (BrowseRecoveryTest.CatalogServer server = new BrowseRecoveryTest.CatalogServer()) {
+            install(server); server.unavailable = true;
+            launch(); waitUntil("Home retry limit", 12000, () -> visible("Unable to load Home") && visible("Reload"));
+            assertEquals(3, server.homeRequests.get());
+            server.unavailable = false;
+            browse.onActivity(MainActivity::search); browse.onActivity(activity -> activity.searchInput("Film"));
+            waitUntil("Search works again", 5000, () -> visible("Film 00"));
+            browse.onActivity(activity -> activity.root("Home"));
+            waitUntil("Home recovers without a manual refresh or a five-minute wait", 5000,
+                    () -> server.homeRequests.get() == 4 && visible("Film 00") && !visible("Reload"));
+        }
+    }
     @Test public void homeAndSearchRetryOnlyFailedResourcesAndKeepHealthyResults() throws Exception {
         try (BrowseRecoveryTest.CatalogServer good = new BrowseRecoveryTest.CatalogServer();
              BrowseRecoveryTest.CatalogServer flaky = new BrowseRecoveryTest.CatalogServer()) {
@@ -57,7 +70,8 @@ public final class DiscoveryRecoveryTest extends AppHarness {
         try (BrowseRecoveryTest.CatalogServer server = new BrowseRecoveryTest.CatalogServer()) {
             install(server); launch(); waitUntil("Home", 10000, () -> visible("Film 00")); server.unavailable = true;
             tap("Search", true); browse.onActivity(activity -> activity.searchInput("Film"));
-            waitUntil("backoff begins", 5000, () -> text("Retrying search"));
+            waitUntil("backoff begins", 5000, () -> server.searchRequests.get() >= 1);
+            assertFalse(text("Retrying search")); assertFalse(visible("Reload"));
             tap("Back", false); waitUntil("Home restored", 5000, () -> visible("Film 00"));
             int count = server.searchRequests.get(); SystemClock.sleep(3300); assertEquals("Abandoned search never retries", count, server.searchRequests.get());
             server.failureStatus = 401;

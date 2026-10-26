@@ -26,27 +26,29 @@ import tv.daniil.stream.addon.AddonClient;
 import tv.daniil.stream.addon.Cancellation;
 import tv.daniil.stream.addon.Title;
 
-/** Real loading, metadata, artwork, playback tracks and durable watched changes, using only loopback fixtures. */
+/** Real loading, metadata, playback tracks and durable watched changes, using only loopback fixtures. */
 public final class PlayerPresentationTest extends AppHarness {
-    @Test public void logosReplaceTitlesAndTheFirstActionTogglesWatchedBothWays() throws Exception {
+    @Test public void textTitlesKeepFilmMetadataOffThePlayerAndWatchedActionsWorking() throws Exception {
+        captureIntro();
         try (PresentationServer server = new PresentationServer(false, false)) {
             start(server, false);
-            waitUntil("logo shown during source loading", 10000, () -> shown(R.id.loading_title_logo));
+            waitUntil("text shown during source loading", 10000, () -> shown(R.id.loading_title));
             WatchActivity activity = watch();
             instrumentation.runOnMainSync(() -> {
                 assertTrue(activity.findViewById(R.id.loading).isShown());
-                assertFalse(activity.findViewById(R.id.loading_title).isShown());
+                assertEquals("Presentation film", ((TextView) activity.findViewById(R.id.loading_title)).getText().toString());
                 assertFalse("Normal loading has no step names", activity.findViewById(R.id.loading_step).isShown());
                 assertFalse(activity.findViewById(R.id.loading_message).isShown());
             });
-            screenshot("validation-player-logo-loading.png");
+            screenshot("validation-player-text-loading.png");
             server.streamGate.countDown();
             waitUntil("video renders", 30000, () -> state() != null && state().renderedFirstFrame && state().positionMs > 1000);
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PAUSE);
-            waitUntil("paused controls", 5000, () -> !state().playWhenReady && shown(R.id.controls_title_logo));
+            waitUntil("paused controls", 5000, () -> !state().playWhenReady && shown(R.id.controls_title));
             instrumentation.runOnMainSync(() -> {
-                assertFalse(activity.findViewById(R.id.controls_title).isShown());
-                assertFalse("Film facts do not crowd the player", activity.findViewById(R.id.watching_info).isShown());
+                assertEquals("Presentation film", ((TextView) activity.findViewById(R.id.controls_title)).getText().toString());
+                assertFalse("Year and genre stay off the player", activity.findViewById(R.id.watching_info).isShown());
+                assertTrue(activity.findViewById(R.id.player_clock).isShown());
                 View watched = activity.findViewById(R.id.control_watched), audio = activity.findViewById(R.id.control_options), settings = activity.findViewById(R.id.control_settings);
                 assertTrue("Watched comes first", watched.getLeft() < audio.getLeft());
                 assertTrue(audio.getLeft() < settings.getLeft());
@@ -55,48 +57,58 @@ public final class PlayerPresentationTest extends AppHarness {
             waitUntil("embedded subtitles available", 5000, () -> !state().textTracks.isEmpty());
             control(R.id.control_options, true); tap(state().textTracks.get(0).label, false);
             waitUntil("subtitle selected", 5000, () -> state().subtitles != null && !shown(R.id.menu));
-            waitUntil("controls visible after selecting subtitles", 5000, () -> shown(R.id.controls_title_logo));
+            waitUntil("controls visible after selecting subtitles", 5000, () -> shown(R.id.controls_title));
             instrumentation.runOnMainSync(() -> assertFalse("Track updates cannot show the subtitle summary", activity.findViewById(R.id.controls_details).isShown()));
             control(R.id.control_watched, true);
             waitUntil("marked watched", 5000, () -> services.store.progress(server.title.key(), server.video).watched);
-            instrumentation.runOnMainSync(() -> assertEquals("Mark unwatched", activity.findViewById(R.id.control_watched).getContentDescription()));
+            instrumentation.runOnMainSync(() -> {
+                assertEquals("Mark unwatched", activity.findViewById(R.id.control_watched).getContentDescription());
+                assertFalse("Marking watched never shows a toast", activity.findViewById(R.id.notice).isShown());
+            });
             control(R.id.control_watched, false);
             waitUntil("marked unwatched", 5000, () -> !services.store.progress(server.title.key(), server.video).watched);
             SystemClock.sleep(1200);
             assertFalse("Later progress preserves the viewer's choice", services.store.progress(server.title.key(), server.video).watched);
-            instrumentation.runOnMainSync(() -> assertEquals("Mark watched", activity.findViewById(R.id.control_watched).getContentDescription()));
-            assertEquals("Loading and controls share one artwork request", 1, server.logoRequests.get());
-            screenshot("validation-player-logo-controls.png");
+            instrumentation.runOnMainSync(() -> {
+                assertEquals("Mark watched", activity.findViewById(R.id.control_watched).getContentDescription());
+                assertFalse("Marking unwatched never shows a toast", activity.findViewById(R.id.notice).isShown());
+            });
+            assertEquals("Text titles never request logo artwork", 0, server.logoRequests.get());
+            screenshot("validation-player-text-controls.png");
             control(R.id.control_stop, true); waitUntil("player exits", 5000, () -> watch() == null);
             app.persistence.submit(() -> {}).get();
             assertFalse("Unwatched survives exit", services.store.progress(server.title.key(), server.video).watched);
         }
     }
 
-    @Test public void developerLoadingKeepsStepsAndFailedArtworkKeepsAReadableTitle() throws Exception {
+    @Test public void developerLoadingAndSeriesUseTextEvenWithALogo() throws Exception {
         try (PresentationServer server = new PresentationServer(true, true)) {
+            services.store.setPreference("playerClock", "false");
             start(server, true);
             waitUntil("developer sees the loading stage", 5000, () -> shown(R.id.loading_step));
             WatchActivity activity = watch();
             instrumentation.runOnMainSync(() -> {
                 assertFalse(((TextView) activity.findViewById(R.id.loading_step)).getText().toString().isEmpty());
                 assertTrue(activity.findViewById(R.id.loading_title).isShown());
-                assertFalse(activity.findViewById(R.id.loading_title_logo).isShown());
+                assertEquals("Presentation series", ((TextView) activity.findViewById(R.id.loading_title)).getText().toString());
             });
             server.streamGate.countDown();
-            waitUntil("failed optional image does not block playback", 30000, () -> state() != null && state().renderedFirstFrame);
+            waitUntil("video renders without artwork", 30000, () -> state() != null && state().renderedFirstFrame);
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PAUSE);
-            waitUntil("readable fallback title", 5000, () -> shown(R.id.controls_title));
+            waitUntil("readable series title", 5000, () -> shown(R.id.controls_title));
             instrumentation.runOnMainSync(() -> {
                 assertEquals("Presentation series", ((TextView) activity.findViewById(R.id.controls_title)).getText().toString());
+                assertFalse("Player clock preference still applies", activity.findViewById(R.id.player_clock).isShown());
                 assertEquals("S1 E2 · Pilot", ((TextView) activity.findViewById(R.id.watching_info)).getText().toString());
                 assertFalse(activity.findViewById(R.id.controls_details).isShown());
             });
+            assertEquals(0, server.logoRequests.get());
         }
     }
 
     private void start(PresentationServer server, boolean developer) throws Exception {
         services.store.setPreference("developerMode", Boolean.toString(developer));
+        services.store.setPreference("clock", "24");
         try (Cancellation scope = services.addons.newRequest()) { services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", scope)); }
         services.store.remember(server.title);
         launch(); waitUntil("Home", 10000, () -> visible("Make yourself at home"));
@@ -107,8 +119,24 @@ public final class PlayerPresentationTest extends AppHarness {
         WatchActivity activity = watch(); if (activity != null) instrumentation.runOnMainSync(() -> result.set(activity.findViewById(id).isShown()));
         return result.get();
     }
+    private void captureIntro() throws Exception {
+        tv.daniil.stream.ui.IntroView[] intro = new tv.daniil.stream.ui.IntroView[1];
+        instrumentation.runOnMainSync(() -> {
+            intro[0] = new tv.daniil.stream.ui.IntroView(context);
+            intro[0].measure(View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY));
+            intro[0].layout(0, 0, 1920, 1080);
+        });
+        SystemClock.sleep(tv.daniil.stream.ui.IntroView.minimumMs());
+        Bitmap image = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888);
+        instrumentation.runOnMainSync(() -> intro[0].draw(new Canvas(image)));
+        try (FileOutputStream out = new FileOutputStream(new File(context.getFilesDir(), "validation-startup-wordmark.png"))) {
+            image.compress(Bitmap.CompressFormat.PNG, 100, out);
+        }
+        image.recycle();
+    }
     private void screenshot(String name) throws Exception {
-        SystemClock.sleep(400); // Let the activity/window entrance and the new artwork reach the compositor.
+        SystemClock.sleep(400); // Let the activity/window entrance reach the compositor.
         Bitmap image = instrumentation.getUiAutomation().takeScreenshot(); assertNotNull(image);
         try (FileOutputStream out = new FileOutputStream(new File(context.getFilesDir(), name))) { image.compress(Bitmap.CompressFormat.PNG, 100, out); }
         image.recycle();

@@ -10,6 +10,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import androidx.annotation.OptIn;
 import androidx.media3.common.Format;
@@ -43,7 +44,6 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private TvApplication.Services services;
     private PlaybackSession session;
     private PlayerScreen screen;
-    private tv.daniil.stream.ui.PlayerTitles playerTitles;
     private String playerClockFormat = "off";
     private boolean playerClockEnabled;
     private final PlaybackCoordinator coordinator = new PlaybackCoordinator();
@@ -146,7 +146,6 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         developerMode = false;
         setContentView(R.layout.activity_watch);
         completionRecorded = false;
-        playerTitles = new tv.daniil.stream.ui.PlayerTitles(this);
         int mine = ++generation;
         preparation = loader.submit(() -> {
             try {
@@ -163,7 +162,6 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                     if (!current(mine)) return;
                     services = data; title = chosen; developerMode = diagnosticsEnabled;
                     findViewById(R.id.loading_diagnostics).setVisibility(developerMode ? View.VISIBLE : View.GONE);
-                    playerTitles.bind(title);
                     playerClockFormat = clockFormat; playerClockEnabled = clockShown;
                     session = new PlaybackSession(this, data.playerPreferences, getString(R.string.app_name), "DaniilTV/0.1", this, 24 << 20, new StreamDecoders());
                     session.player().setTrackSelectionParameters(session.player().getTrackSelectionParameters().buildUpon().setMaxVideoSize(1920, 1080).build());
@@ -209,6 +207,8 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     private void bindRemoteFocus() {
         View surface = findViewById(R.id.player_root);
         surface.requestFocus();
+        // Overlay fades finish independently of playback callbacks, including the inactivity timeout.
+        surface.getViewTreeObserver().addOnGlobalLayoutListener(this::updatePlayerClock);
         View clock = findViewById(R.id.player_clock);
         clock.addOnLayoutChangeListener((view, l, t, r, b, ol, ot, or, ob) -> updatePlayerHeaderInset());
         clock.post(this::updatePlayerHeaderInset);
@@ -246,7 +246,6 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             keepPausedOnRecovery = false;
             session.togglePlay(); screen.showControls();
         });
-        timeline.setOnHoverListener((view, event) -> { screen.showControls(); return false; });
         tv.daniil.playback.Ui.action(findViewById(R.id.next_episode_play), () -> {
             hideNextEpisode(); onNextEpisode();
         });
@@ -342,7 +341,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 request.check(); Title resolved = metadata; List<MediaSource> sources = choices; Availability why = empty;
                 main.post(() -> {
                     if (!current(mine)) return;
-                    title = resolved; playerTitles.bind(title); screen.setTitle(title.name);
+                    title = resolved; screen.setTitle(title.name);
                     episodeWatched = progress != null && progress.watched; updateWatchedButton(); coordinator.mark("FIRST_SOURCE"); resumePosition = resume; candidates = sources; marks = history; sourceResolution = resolution;
                     automatic = explicitKey == null || explicitKey.isEmpty();
                     if (title.provider.equals("local")) { open(null, -1); return; }
@@ -557,7 +556,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     }
     private static String mime(String url) { String lower = Uri.parse(url).getPath(); lower = lower == null ? "" : lower.toLowerCase(java.util.Locale.ROOT); return lower.endsWith(".srt") ? "application/x-subrip" : lower.endsWith(".ass") || lower.endsWith(".ssa") ? "text/x-ssa" : "text/vtt"; }
     private String episodeLabel() { for (Title.Episode e : title.episodes) if (e.id.equals(video)) return "S" + e.season + " E" + e.number + " · " + e.name; return ""; }
-    /** The show logo needs only episode context; film facts already belong to the title page. */
+    /** Only episode context belongs under the player's title. */
     private void updateWatchingInfo() {
         if (title == null) return;
         String info = title.type.equals("series") ? episodeLabel() : "";
@@ -853,7 +852,6 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             if (!watched) services.store.watched(markedTitle, markedVideo, false);
         });
         Sounds.play(watched ? Sounds.Sound.WATCHED_ON : Sounds.Sound.WATCHED_OFF);
-        screen.notice(watched ? "Marked watched" : "Marked unwatched");
     }
     @Override public void onExit() {
         if (exitChoiceOpen) return;
@@ -935,14 +933,17 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         for (View v = focused; v != null; v = v.getParent() instanceof View ? (View) v.getParent() : null) if (v == error) return;
         for (int id : ERROR_BUTTONS) { View button = findViewById(id); if (button.getVisibility() == View.VISIBLE) { button.requestFocus(); return; } }
     }
-    /** Keep the picture clear during playback and loading; the clock belongs to paused controls and menus. */
+    /** The clock accompanies active controls as well as paused playback and menus. */
     private void updatePlayerClock() {
         View clock = findViewById(R.id.player_clock);
         if (clock == null) return;
         boolean shown = screen != null && session != null && session.started() && screen.loading() == null
-                && session.error() == null && (screen.isMenuOpen() || playerMenus != null && playerMenus.isOpen()
+                && session.error() == null && (findViewById(R.id.controls).isShown()
+                || screen.isMenuOpen() || playerMenus != null && playerMenus.isOpen()
                 || !session.player().getPlayWhenReady() && session.player().getPlaybackState() == Player.STATE_READY);
         int previous = clock.getVisibility();
+        boolean visible = playerClockEnabled && shown && !playerClockFormat.equals("off");
+        if (previous == (visible ? View.VISIBLE : View.GONE)) return;
         tv.daniil.stream.ui.Clock.apply((android.widget.TextClock) clock, playerClockFormat, playerClockEnabled && shown);
         if (previous != clock.getVisibility()) clock.post(this::updatePlayerHeaderInset);
     }
@@ -966,9 +967,6 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             if (!visible || releasing || session == null) return;
             PlaybackSnapshot state = session.snapshot(); long now = SystemClock.elapsedRealtime();
             updateNextEpisode(state);
-            View focused = getCurrentFocus();
-            if (findViewById(R.id.controls).isShown() && focused != null
-                    && (headerIndex(focused.getId()) >= 0 || focused.getId() == R.id.progress)) screen.showControls();
             if (state.renderedFirstFrame && state.playing && state.positionMs > 1000 && coordinator.firstAvMs(state.audioFormat != null) > 0) coordinator.mark("STABLE_PLAYBACK");
             if (state.positionMs > previousPosition + 50 && state.playing) { lastAdvanceMs = now; previousPosition = state.positionMs; if (seekStarted > 0) { seekRecoveryMs = now - seekStarted; seekStarted = 0; } }
             if (!state.buffering && !switching && !state.playWhenReady) lastAdvanceMs = now;
@@ -1059,8 +1057,26 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         Tv.Alert alert = Tv.alert(this, "Playback diagnostics", diagnosticSnapshot().toString().replace(",\"", ", \""));
         choiceDialog = show(alert);
     }
+    /** Actual input extends the shared four-second timeout; retained focus alone must not keep controls up. */
+    @Override public void onUserInteraction() {
+        super.onUserInteraction();
+        if (canShowControls() && findViewById(R.id.controls).isShown()) screen.showControls();
+    }
+    private boolean canShowControls() {
+        return screen != null && session != null && session.started() && session.error() == null
+                && screen.loading() == null && !screen.isMenuOpen() && !screen.hasUpNext();
+    }
+    @Override public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        int action = event.getActionMasked();
+        // Android delivers the first mouse movement into this window as HOVER_ENTER.
+        if ((action == MotionEvent.ACTION_HOVER_ENTER || action == MotionEvent.ACTION_HOVER_MOVE)
+                && canShowControls()) screen.showControls();
+        return super.dispatchGenericMotionEvent(event);
+    }
     /** The player's controls and menu belong to the shared player: an arrow that moves its focus ticks here. */
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        // Shared remote handling consumes keys before Activity can report this interaction itself.
+        if (event.getAction() == KeyEvent.ACTION_DOWN) onUserInteraction();
         boolean move = event.getAction() == KeyEvent.ACTION_DOWN && Sounds.arrow(event.getKeyCode());
         if (move) Sounds.input();
         if (playerMenus != null && (event.getKeyCode() == KeyEvent.KEYCODE_MENU || event.getKeyCode() == KeyEvent.KEYCODE_CAPTIONS)) {
@@ -1106,7 +1122,6 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         lifts.clear();
         if (playerMenus != null) { playerMenus.close(); playerMenus = null; }
         if (screen != null) screen.release();
-        if (playerTitles != null) { playerTitles.close(); playerTitles = null; }
         if (session != null) session.release();
         screen = null; session = null;
         loader.execute(this::closeNative);
