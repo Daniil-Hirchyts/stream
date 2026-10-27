@@ -58,6 +58,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     private final java.util.Map<String, android.os.Parcelable> childScroll = new java.util.HashMap<>();
     private final java.util.Map<RecyclerView, String> scrollKeys = new java.util.WeakHashMap<>();
     public java.util.Map<String, android.os.Parcelable> scrollPositions() {
+        if (searchPane != null && searchPane.isAttachedToWindow()) searchPane.complete();
         for (java.util.Map.Entry<RecyclerView, String> entry : scrollKeys.entrySet())
             if (entry.getKey().isAttachedToWindow()) childScroll.put(entry.getValue(), entry.getKey().getLayoutManager().onSaveInstanceState());
         return new java.util.HashMap<>(childScroll);
@@ -1308,6 +1309,8 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         RecyclerView grid;
         boolean visible, changing;
         @Nullable Float interruptedKeyboardX;
+        /** Ends the latest keyboard change, at once if the page is left before its transition does. */
+        @Nullable Runnable finishing;
         int transition;
         String lastKeyboard, lastResult = "";
         SearchPane(Item item) {
@@ -1362,6 +1365,10 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                 int anchor = cell == null ? layout == null ? 0 : Math.max(0, layout.findFirstVisibleItemPosition()) : grid.getChildAdapterPosition(cell);
                 int offset = cell == null ? 0 : cell.getTop() - grid.getPaddingTop();
                 boolean motion = animate && isLaidOut() && android.animation.ValueAnimator.areAnimatorsEnabled();
+                Runnable done = () -> finish(mine, show, focusAfter, target, anchor);
+                finishing = done;
+                // Registered before the transition's own listener, so it records the settled position as the end.
+                if (!show && layout != null) settle(mine, target, anchor);
                 if (motion) {
                     android.transition.TransitionSet change = new android.transition.TransitionSet();
                     // Follow the whole result hierarchy, including each poster, label and row position.
@@ -1389,16 +1396,20 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                     }
                     change.setDuration(420); change.setInterpolator(new android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f));
                     change.addListener(new android.transition.Transition.TransitionListener() {
-                        @Override public void onTransitionEnd(android.transition.Transition t) { finish(mine, show, focusAfter, target, anchor); }
-                        @Override public void onTransitionCancel(android.transition.Transition t) { finish(mine, show, focusAfter, target, anchor); }
+                        @Override public void onTransitionEnd(android.transition.Transition t) { done.run(); }
+                        @Override public void onTransitionCancel(android.transition.Transition t) { done.run(); }
                         @Override public void onTransitionStart(android.transition.Transition t) {}
                         @Override public void onTransitionPause(android.transition.Transition t) {}
                         @Override public void onTransitionResume(android.transition.Transition t) {}
                     });
                     android.transition.TransitionManager.beginDelayedTransition(this, change);
                 }
-                if (focusAfter || cell != null) results.requestFocus();
-                results.setClipChildren(true);
+                // A focused result keeps focus while the cards move, so OK still opens it. Focus waits on the column
+                // only when it moves into the pane afterwards; only then does the column clip, as clipping would cut
+                // the focused card's lift at the column's edge.
+                boolean keep = !focusAfter && focused != null && grid != null && grid.findContainingItemView(focused) != null;
+                if (!keep && (focusAfter || cell != null)) results.requestFocus();
+                results.setClipChildren(!keep);
                 editor.setVisibility(show ? View.VISIBLE : View.GONE);
                 if (layout != null) {
                     int columns = show ? SEARCH_COLUMNS : 6;
@@ -1408,8 +1419,48 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                     } else grid.setAdapter(skeletonCards(columns * 2, columns));
                     layout.scrollToPositionWithOffset(anchor, offset);
                 }
-                if (!motion) post(() -> finish(mine, show, focusAfter, target, anchor));
+                if (!motion) post(done);
             });
+        }
+        /** Leaving mid-change: put every card where the change is taking it, so the saved offset is one the grid rests at. */
+        void complete() {
+            if (!changing) return;
+            android.transition.TransitionManager.endTransitions(this);
+            // A transition ended before it started never reports its end.
+            if (changing && finishing != null) finishing.run();
+        }
+        /**
+         * Wider columns make the kept card taller, so keeping its top can push its bottom out of the grid. Bring it
+         * into view in the reflowed frame, before it is drawn and before the transition records where it ends:
+         * otherwise finish() scrolls it a second time, and leaving during that scroll saves an offset the card never
+         * rested at.
+         */
+        private void settle(int mine, String target, int anchor) {
+            android.view.ViewTreeObserver observer = getViewTreeObserver();
+            observer.addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+                @Override public boolean onPreDraw() {
+                    if (observer.isAlive()) observer.removeOnPreDrawListener(this);
+                    if (mine == transition && searchPane == SearchPane.this && isAttachedToWindow()) reveal(result(target, anchor), true);
+                    return true;
+                }
+            });
+        }
+        /** Scrolls the grid as focusing {@code card} would; {@code immediate} jumps instead of scrolling smoothly. */
+        private void reveal(@Nullable View card, boolean immediate) {
+            View cell = card == null || grid == null ? null : grid.findContainingItemView(card);
+            if (cell == null) return;
+            Rect bounds = new Rect(0, 0, card.getWidth(), card.getHeight());
+            if (card != cell) ((ViewGroup) cell).offsetDescendantRectToMyCoords(card, bounds);
+            grid.getLayoutManager().requestChildRectangleOnScreen(grid, cell, bounds, immediate);
+        }
+        /** The card a hidden keyboard hands focus back to. */
+        @Nullable private View result(String target, int anchor) {
+            View card = target.isEmpty() ? null : results.findViewWithTag(target);
+            if (card == null && grid != null) {
+                RecyclerView.ViewHolder holder = grid.findViewHolderForAdapterPosition(anchor);
+                if (holder != null) card = firstFocusable(holder.itemView);
+            }
+            return card;
         }
         private android.animation.Animator keyboardMotion(View view, boolean show) {
             // Travel only the keyboard's width. A screen-width slide keeps it offscreen for most of the reveal.
@@ -1433,18 +1484,16 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             if (mine != transition || searchPane != this || !isAttachedToWindow()) return;
             results.setClipChildren(false); changing = false;
             if (!hasFocus()) return; // Respect a newer move to Back or the search header during the animation.
-            if (!show && grid != null && grid.findContainingItemView(findFocus()) != null) return;
+            // A card that kept focus is in view already; one reached during the motion, while the grid could not
+            // scroll, is brought into view now.
+            if (!show && grid != null && grid.findContainingItemView(findFocus()) != null) { reveal(findFocus(), false); return; }
             if (show && focusAfter) { focusKeyboard(); return; }
             if (show) return;
             if (grid == null) {
                 View retry = results.findViewWithTag("reload-search"); if (retry != null) retry.requestFocus();
                 return;
             }
-            View restored = target.isEmpty() ? null : results.findViewWithTag(target);
-            if (restored == null && grid != null) {
-                RecyclerView.ViewHolder holder = grid.findViewHolderForAdapterPosition(anchor);
-                if (holder != null) restored = firstFocusable(holder.itemView);
-            }
+            View restored = result(target, anchor);
             if (restored != null) restored.requestFocus();
         }
         void focusKeyboard() {
