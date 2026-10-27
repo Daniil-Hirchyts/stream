@@ -623,7 +623,3 @@ sideloading alone.
   AIOMetadata and the TMDB add-on publish those fields.
 - **New episodes** rely on providers' `released` dates; a provider without dates
   never announces anything.
-- **Search return:** Back from a search result restores the right card but not
-  its exact vertical position in the results grid (about 30 px off);
-  `BrowseRecoveryTest#searchLibraryAndHomeRestoreTheirOwnFocusAndNestedViewports`
-  fails on it, and did before the new-episode work.
