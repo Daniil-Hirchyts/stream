@@ -443,8 +443,9 @@ public final class Tv {
     }
 
     /** Alpha fades on the clipped composite, rather than Android's padding-relative fading-edge bands. */
-    public static FrameLayout faded(ViewGroup scrolling, int bleed, int lengthDp) {
-        FrameLayout frame = new ScrollFade(scrolling, dp(scrolling.getContext(), lengthDp));
+    public static FrameLayout faded(ViewGroup scrolling, int bleed, int lengthDp) { return faded(scrolling, bleed, lengthDp, lengthDp); }
+    public static FrameLayout faded(ViewGroup scrolling, int bleed, int topDp, int bottomDp) {
+        FrameLayout frame = new ScrollFade(scrolling, dp(scrolling.getContext(), topDp), dp(scrolling.getContext(), bottomDp));
         scrolling.setVerticalFadingEdgeEnabled(false);
         scrolling.setClipChildren(false); scrolling.setClipToPadding(false);
         scrolling.setPadding(scrolling.getPaddingLeft() + bleed, scrolling.getPaddingTop(),
@@ -460,17 +461,17 @@ public final class Tv {
 
     private static final class ScrollFade extends FrameLayout {
         private final ViewGroup scrolling;
-        private final int length;
+        private final int topLength, bottomLength;
         private final android.graphics.Paint mask = new android.graphics.Paint();
-        ScrollFade(ViewGroup scrolling, int length) {
-            super(scrolling.getContext()); this.scrolling = scrolling; this.length = length;
+        ScrollFade(ViewGroup scrolling, int topLength, int bottomLength) {
+            super(scrolling.getContext()); this.scrolling = scrolling; this.topLength = topLength; this.bottomLength = bottomLength;
             mask.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN));
         }
         @Override protected void dispatchDraw(android.graphics.Canvas canvas) {
             int layer = canvas.saveLayer(0, 0, getWidth(), getHeight(), null);
             super.dispatchDraw(canvas);
-            float top = scrolling.canScrollVertically(-1) ? length : 0;
-            float bottom = scrolling.canScrollVertically(1) ? length : 0;
+            float top = scrolling.canScrollVertically(-1) ? topLength : 0;
+            float bottom = scrolling.canScrollVertically(1) ? bottomLength : 0;
             View focus = findFocus();
             if (focus != null && focus != scrolling) {
                 android.graphics.Rect rect = new android.graphics.Rect(); focus.getDrawingRect(rect);

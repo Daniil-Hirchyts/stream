@@ -30,6 +30,8 @@ public final class SearchModesTest extends AppHarness {
             for (boolean show : new boolean[]{false, true}) {
                 AtomicBoolean fadedOut = new AtomicBoolean(), fadedIn = new AtomicBoolean(), crossed = new AtomicBoolean();
                 AtomicBoolean reflowVisible = new AtomicBoolean(), keyboardMoved = new AtomicBoolean(), keyboardOvershot = new AtomicBoolean();
+                AtomicBoolean sharedMotion = new AtomicBoolean(), easedTail = new AtomicBoolean();
+                long started = SystemClock.uptimeMillis();
                 int initialColumns = columns();
                 int[] previousColumns = {initialColumns};
                 AtomicReference<android.view.ViewTreeObserver.OnDrawListener> observer = new AtomicReference<>();
@@ -52,6 +54,11 @@ public final class SearchModesTest extends AppHarness {
                         }
                         if (Math.abs(keyboard.getTranslationX()) > dp(2)) keyboardMoved.set(true);
                         if (Math.abs(keyboard.getTranslationX()) > keyboard.getWidth() + dp(50)) keyboardOvershot.set(true);
+                        if (keyboard.isShown() && keyboard.getAlpha() > .02f && keyboard.getAlpha() < .98f) {
+                            if (columns == initialColumns && alpha > .1f && alpha < .95f) sharedMotion.set(true);
+                            long elapsed = SystemClock.uptimeMillis() - started;
+                            if (elapsed >= 180 && elapsed <= 340 && Math.abs(keyboard.getTranslationX()) > dp(2)) easedTail.set(true);
+                        }
                     });
                     rows.getViewTreeObserver().addOnDrawListener(observer.get());
                     ((PageAdapter) ((RecyclerView) rows).getAdapter()).toggleSearchKeyboard();
@@ -64,8 +71,8 @@ public final class SearchModesTest extends AppHarness {
                     rows.getViewTreeObserver().removeOnDrawListener(observer.get());
                     assertEquals(1f, rows.findViewWithTag("search-results").getAlpha(), 0f);
                     assertEquals(0f, rows.findViewWithTag("search-keyboard").getTranslationX(), 0f);
-                    assertEquals("Search has a plain clipping frame without an edge fade", android.widget.FrameLayout.class,
-                            grid(rows).getParent().getClass());
+                    assertTrue("Results stay inside their scrolling viewport",
+                            ((ViewGroup) grid(rows).getParent()).getClipChildren());
                     assertEquals(0f, activity.findViewById(R.id.scroll_fade).getAlpha(), 0f);
                 });
                 assertSearchNavigationHidden();
@@ -74,13 +81,22 @@ public final class SearchModesTest extends AppHarness {
                 assertFalse("Column changes happen while the grid is invisible", reflowVisible.get());
                 assertFalse("Visible films never cross over one another", crossed.get());
                 assertTrue("Keyboard slides with the reflow", keyboardMoved.get());
+                assertTrue("Keyboard motion starts with the outgoing grid fade", sharedMotion.get());
+                assertTrue("Keyboard motion eases through a longer fading tail", easedTail.get());
                 assertFalse("Keyboard moves only through its own space", keyboardOvershot.get());
             }
             // Reverse before the layout changes, then reverse during the incoming keyboard slide.
             for (long delay : new long[]{60, 200}) {
                 browse.onActivity(activity -> ((PageAdapter) ((RecyclerView) activity.findViewById(R.id.page_rows)).getAdapter()).toggleSearchKeyboard());
                 SystemClock.sleep(delay);
-                browse.onActivity(activity -> ((PageAdapter) ((RecyclerView) activity.findViewById(R.id.page_rows)).getAdapter()).toggleSearchKeyboard());
+                browse.onActivity(activity -> {
+                    RecyclerView rows = activity.findViewById(R.id.page_rows);
+                    View keyboard = rows.findViewWithTag("search-keyboard");
+                    float x = keyboard.getTranslationX(), alpha = keyboard.getAlpha();
+                    ((PageAdapter) rows.getAdapter()).toggleSearchKeyboard();
+                    assertEquals("A reversal keeps the painted keyboard position", x, keyboard.getTranslationX(), .001f);
+                    assertEquals("A reversal keeps the painted keyboard opacity", alpha, keyboard.getAlpha(), .001f);
+                });
                 waitUntil("reversed reflow", 5000, () -> keyboardShown() && columns() == 4 && focus().startsWith("keyboard:"));
             }
             assertEquals(1, server.searchRequests.get());
@@ -89,6 +105,8 @@ public final class SearchModesTest extends AppHarness {
     @Test public void leftStaysInTheKeyboardAndSearchNeverRevealsNavigation() throws Exception {
         launch(); waitUntil("Home", 10000, () -> visible("Make yourself at home"));
         tap("Search", true); waitUntil("keyboard", 5000, this::keyboardShown);
+        browse.onActivity(activity -> activity.findViewById(R.id.page_rows).findViewWithTag("keyboard:q").requestFocus());
+        SystemClock.sleep(250); capture("validation-search-popup-keyboard.png");
         for (String[] pair : new String[][]{{"r", "q"}, {"f", "e"}, {"b", "a"}, {"l", "k"}, {"x", "w"},
                 {"Space", "z"}, {"⌫", "Space"}, {"Clear", "àéü"}}) {
             browse.onActivity(activity -> activity.findViewById(R.id.page_rows).findViewWithTag("keyboard:" + pair[0]).requestFocus());

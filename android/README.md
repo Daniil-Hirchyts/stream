@@ -123,10 +123,10 @@ Shelves scroll horizontally. Page titles scroll with their page.
   using the same opaque material, 22 dp corners and shadow as the other menus. Opening and closing it never
   moves/resizes the page, its controls or its scroll position. No navigation gradient or dimmer is used.
   The wrapped content viewport begins at 104 dp; pages with hidden navigation reclaim that space at 16 dp.
-  Search always hides the rail and its reveal target; Back leaves Search. On other pages, first Left focuses
-  the wrapped rail, revealing it where it is hidden; a second, separate Left opens
+  Search, Details and Sources always hide the rail and its reveal target; Back returns to the previous page.
+  On pages with a wrapped rail, first Left focuses it; a second, separate Left opens
   the labels. Focus and Up/Down alone never expand it, and held-key repeats do not count as a second press.
-  A transparent 32 dp left-edge target also supports clicks/touch. Browse uses a compass icon.
+  Wrapped rail controls also support clicks and touch. Browse uses a compass icon.
   Browse is a primary page with catalogue categories, not a Home toolbar action.
 - **Toolbar:** Back remains an icon-only circle at the top left. Refresh is always icon-only at
   the top right, beside the clock, with 40 dp controls and safe insets of 24 dp above and 40 dp
@@ -204,6 +204,8 @@ Shelves scroll horizontally. Page titles scroll with their page.
   only results. A pointer or touch tap on a result keeps the keyboard, since a pointer
   has no other way to bring it back. Back closes Search. Results fade out before the
   column change and back in after layout, so films never travel over other rows.
+  The keyboard slides and fades continuously over 360 ms while the results reflow invisibly;
+  reversing mid-motion starts from its current position and opacity, without jumping to an endpoint.
   The transition preserves the query and selection without another provider request,
   and Back retains the active mode. Left within a keyboard row selects its previous key
   and stops at the leading edge. Navigation stays hidden for keyboard, results, loading and empty states.
@@ -219,17 +221,23 @@ Shelves scroll horizontally. Page titles scroll with their page.
   bottom row and shows the language name. Search uses typed input; there is no voice mode.
   The query and first key row have fixed top positions; extra rows grow downward when a language
   or character page changes, instead of vertically centring the keyboard again.
-  Space and Delete fill unused cells in the last character row. A five-character
-  tail spreads evenly across the row and puts Space/Delete on their own full row,
+  Keys share one graphite popup surface with 22 dp corners, equal 6 dp padding on all four sides and a soft shadow. Letters are bare at rest;
+  letters use a 34 dp circular platter before focus growth, including on wider tail cells. Space, Delete, page switches,
+  Clear and the language action use quiet capsule platters, with a hairline above the page actions.
+  Focus and hover use the shared control easing. Growth adds about 4 dp to the visible width:
+  12% for a letter's circle, about 5.7% for two-cell actions and 1.8% for the full-width language key.
+  Scaling stays uniform on both axes, with smaller percentages for wider capsules.
+  Growth uses drawing transforms, so neither focus nor hover changes row alignment or spacing.
+  Space and Delete fill unused cells in the last character row when Space can span at least two cells.
+  A four- or five-character tail spreads evenly across the row and puts Space/Delete on their own full row,
   so no language or character page adds blank spacer keys. Page switches and Clear
   span two cells; the language key spans all six. Cell and gap widths are rounded
-  to pixels before calculating spans. White focus fill keeps keys aligned without
-  scaling the wide keys. Results update as you type,
+  to pixels before calculating spans. The popup leaves focus growth clear of clipping. Results update as you type,
   with no heading or count. Before a search, and when nothing matches, a quiet
   line sits centred in the results area.
 - **Corners:** one scale in `res/values/dimens.xml`, on this 960 dp canvas
   (half of tvOS points):
-  - 10 dp for buttons, rows, fields and artwork; 8 dp for keycaps and 6 dp for the search keyboard.
+  - 10 dp for rows, fields and artwork; 8 dp for keycaps; 22 dp for the search keyboard's shared popup surface.
   - 16 dp for cards and 24 dp for sheets.
   - 28 dp for the morphing rail; capsules for its rows and chips; circles for icon buttons.
 - **Type:** Geist Sans, bundled at Regular (400) for body text and supporting values,
@@ -275,7 +283,7 @@ Shelves scroll horizontally. Page titles scroll with their page.
 - **Contrast:** small text is at least 4.5:1 on the canvas; tertiary grey is
   60% white. Facts over artwork use a brighter grey, and all text that can sit
   over artwork carries a soft shadow.
-- **Remote:** Left from the content's left edge focuses the current destination in the wrapped rail.
+- **Remote:** On pages with a wrapped rail, Left from the content's left edge focuses the current destination.
   A second Left unwraps it into the navigation popup.
   Up/Down traverse the five destinations; the endpoints hold focus. Up from the first content row
   reaches Back or Refresh where available; utility Down restores content and utility Left returns

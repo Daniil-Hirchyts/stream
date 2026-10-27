@@ -179,7 +179,7 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                         }
                     });
                     androidx.media3.ui.StreamSubtitleOutput.install(findViewById(tv.stream.playback.R.id.subtitles));
-                    screen = new PlayerScreen(this, session, this); screen.setTitle(title.name);
+                    screen = new PlayerScreen(this, session, this); screen.keepControlsBehindMenu(true); screen.setTitle(title.name);
                     androidx.media3.ui.StreamSubtitleOutput.font(findViewById(R.id.subtitles), tv.stream.app.ui.SubtitleFonts.selected(services.playerPreferences));
                     androidx.media3.ui.StreamSubtitleOutput.configure(findViewById(R.id.subtitles));
                     bindRemoteFocus();

@@ -33,6 +33,8 @@ final class ControlsOverlay {
     private final Handler handler;
     private final Runnable onVisibilityChanged;
     private boolean shown;
+    /** A menu drawn above the overlay keeps it from fading on the inactivity timer. */
+    private boolean held;
 
     private final Runnable hide = this::hide;
     private final Runnable hideSeek = this::hideSeek;
@@ -120,7 +122,14 @@ final class ControlsOverlay {
         }
         update();
         handler.removeCallbacks(hide);
-        if (active()) handler.postDelayed(hide, HIDE_DELAY_MS);
+        if (active() && !held) handler.postDelayed(hide, HIDE_DELAY_MS);
+    }
+
+    /** While held, the overlay keeps its visibility; releasing it restarts the inactivity timer. */
+    void hold(boolean hold) {
+        held = hold;
+        handler.removeCallbacks(hide);
+        if (shown && active() && !held) handler.postDelayed(hide, HIDE_DELAY_MS);
     }
 
     void hide() {

@@ -99,7 +99,7 @@ FFmpeg (`RealFilmsLiveTest`, evidence in `app/build/live-evidence/`).
 
 `VerticalNavigationTest` checks page-specific hidden/wrapped defaults (independent of scrolling), circular button geometry,
 first-Left wrapped focus, second-Left expansion, wrapped Up/Down and held-key repeat handling,
-painted overlay morph frames with fixed page/poster bounds, outside-click/Back dismissal, pointer reveal,
+painted overlay morph frames with fixed page/poster bounds, outside-click/Back dismissal, hidden-page remote and pointer behavior,
 compact measured label widths and larger-text expansion without ellipses or content movement,
 icon-only toolbar controls, focus restoration and Settings/Search handoffs,
 clock formats, empty/error screens, subpages and menu clearance. Its PNGs are saved in
@@ -109,8 +109,16 @@ app-private `files/vertical-navigation/`.
 plain result clipping, grid fades with no visible row crossings during column changes,
 rapid reversals, activity recreation during both transition phases, selected-film restoration
 and mode switches without repeating provider requests.
+The reflow regression observes overlapping keyboard/grid fades, the keyboard's longer eased tail,
+and position/opacity continuity when direction changes.
 `InterfacePolishTest#keyboardLanguagesKeepTheQueryAndFillEveryRowWithoutVoiceInput` checks all eight
-languages and three character pages, including fixed query/key top anchors and bottom safe-area clearance.
+languages and three character pages, including equal panel insets on both axes, fixed query/key top anchors
+and bottom safe-area clearance.
+`BrowsePolishTest#keyboardRowsAlignAndEmptyScreensStayNavigable` also checks keyboard focus/hover growth,
+equal visible width growth across letter/medium/full-width keys, return to resting scale,
+stable row geometry and pointer hover preserving the remote's focused key.
+`FilmFocusNavigationTest` checks adjacent Library grid cards, column-preserving vertical moves,
+Home shelf transitions and movement back through a scrolled shelf before entering navigation.
 
 `DesignAuditCapture` is a screenshot utility, not a test: `after`,
 `otherStates` and `providerFailures` write PNGs to app-private

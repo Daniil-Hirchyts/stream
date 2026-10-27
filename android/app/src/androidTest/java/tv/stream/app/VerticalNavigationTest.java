@@ -158,6 +158,47 @@ public final class VerticalNavigationTest extends AppHarness {
         key(KeyEvent.KEYCODE_DPAD_RIGHT); collapsed("57-larger-labels-returned");
     }
 
+    @Test public void hiddenPagesKeepRemoteAndPointerNavigationInsideContent() throws Exception {
+        readyLibrary(); launch(); waitUntil("Home", 10000, () -> visible("Generated Film"));
+        tap("Generated Film", true); waitUntil("Details", 10000, () -> visible("Play"));
+        browse.onActivity(a -> a.findViewById(R.id.page_rows).findViewWithTag("play").requestFocus());
+        waitUntil("Details Play focused", 5000, () -> focused("play"));
+        key(KeyEvent.KEYCODE_DPAD_LEFT); assertFocus("play"); assertNavigationHidden();
+        key(KeyEvent.KEYCODE_DPAD_RIGHT); assertFocus("sources");
+        key(KeyEvent.KEYCODE_DPAD_LEFT); assertFocus("play");
+        key(KeyEvent.KEYCODE_DPAD_RIGHT); key(KeyEvent.KEYCODE_DPAD_CENTER);
+        waitUntil("Sources page", 10000, () -> visible("Size"));
+        assertNavigationHidden();
+        browse.onActivity(a -> a.findViewById(R.id.page_rows).findViewWithTag("sort:BEST").requestFocus());
+        key(KeyEvent.KEYCODE_DPAD_LEFT); assertFocus("sort:BEST");
+        key(KeyEvent.KEYCODE_DPAD_RIGHT); assertFocus("sort:QUALITY");
+        key(KeyEvent.KEYCODE_DPAD_LEFT); assertFocus("sort:BEST");
+        key(KeyEvent.KEYCODE_DPAD_DOWN);
+        waitUntil("Down reaches a source", 5000, () -> {
+            AtomicBoolean source = new AtomicBoolean();
+            browse.onActivity(a -> source.set(a.getCurrentFocus() != null && String.valueOf(a.getCurrentFocus().getTag()).startsWith("source:")));
+            return source.get();
+        });
+        key(KeyEvent.KEYCODE_DPAD_LEFT); key(KeyEvent.KEYCODE_DPAD_LEFT);
+        assertNavigationHidden();
+        hover(dp(2), dp(300)); assertNavigationHidden();
+        browse.onActivity(a -> assertNotNull("Sources retains a focused control", a.getCurrentFocus()));
+        key(KeyEvent.KEYCODE_BACK); waitUntil("Back returns to Details", 10000, () -> visible("Play"));
+        assertNavigationHidden();
+        key(KeyEvent.KEYCODE_BACK); waitUntil("Back returns to Home", 10000, () -> railState() == NavigationRail.State.WRAPPED && visible("Generated Film"));
+        key(KeyEvent.KEYCODE_DPAD_LEFT); wrappedFocus("nav:Home", "hidden-pages-return-to-home");
+    }
+
+    private void assertNavigationHidden() {
+        browse.onActivity(a -> {
+            assertEquals(NavigationRail.State.HIDDEN, ((NavigationRail) a.findViewById(R.id.top_bar)).state());
+            assertFalse(a.findViewById(R.id.top_bar).isShown());
+            assertFalse(a.findViewById(R.id.navigation_reveal).isShown());
+            assertFalse(a.findViewById(R.id.navigation_dismiss).isShown());
+            assertFalse(a.findViewById(R.id.top_bar).hasFocus());
+        });
+    }
+
     private void enlargeLabels(View view) {
         if (view instanceof TextView) ((TextView) view).setTextSize(22);
         if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++) enlargeLabels(((ViewGroup) view).getChildAt(i));
@@ -184,10 +225,8 @@ public final class VerticalNavigationTest extends AppHarness {
         key(KeyEvent.KEYCODE_BACK);
         waitUntil("Back from wrapped navigation restores content", 5000, () -> !focused("nav:Home") && visible("Generated Film"));
         tap("Generated Film", false); waitUntil("Details", 5000, () -> visible("Play"));
-        key(KeyEvent.KEYCODE_DPAD_LEFT); wrappedFocus("nav:Home", "53-hidden-page-wrapped-focus");
-        key(KeyEvent.KEYCODE_DPAD_LEFT); expanded("nav:Home", "54-hidden-page-second-left");
-        key(KeyEvent.KEYCODE_DPAD_RIGHT);
-        waitUntil("Right restores hidden page and Play focus", 5000, () -> railState() == NavigationRail.State.HIDDEN && focused("play"));
+        key(KeyEvent.KEYCODE_DPAD_LEFT); key(KeyEvent.KEYCODE_DPAD_LEFT);
+        assertFocus("play"); assertNavigationHidden();
     }
 
     @Test public void settingsSearchAndDialogsRespectTheirOwnFocusBeforeEnteringRail() throws Exception {
@@ -225,11 +264,9 @@ public final class VerticalNavigationTest extends AppHarness {
     @Test public void backDismissesNavigationBeforeLeavingItsPageAndNeverTrapsTheViewer() throws Exception {
         readyLibrary(); launch(); waitUntil("Home", 10000, () -> visible("Generated Film"));
         tap("Generated Film", false); waitUntil("Details", 5000, () -> visible("Play"));
-        key(KeyEvent.KEYCODE_DPAD_LEFT); expanded("nav:Home", "46-details-overlay");
+        key(KeyEvent.KEYCODE_DPAD_LEFT); assertNavigationHidden();
         key(KeyEvent.KEYCODE_BACK);
-        waitUntil("Back closes only navigation", 5000, () -> railState() == NavigationRail.State.HIDDEN && visible("Play"));
-        key(KeyEvent.KEYCODE_BACK);
-        waitUntil("Next Back restores Home", 5000, () -> visible("Generated Film") && !visible("Play"));
+        waitUntil("Back restores Home from Details", 5000, () -> visible("Generated Film") && !visible("Play"));
         tap("Settings", false); waitUntil("Settings", 5000, () -> visible("Add-ons"));
         key(KeyEvent.KEYCODE_BACK);
         waitUntil("Root-page Back returns Home", 5000, () -> visible("Generated Film") && !visible("Add-ons"));
@@ -238,7 +275,7 @@ public final class VerticalNavigationTest extends AppHarness {
         waitUntil("Back from Home exits", 5000, () -> owner.get().isFinishing() || owner.get().isDestroyed());
     }
 
-    @Test public void scrollingKeepsWrappedNavigationAndDensePagesCanRevealIt() throws Exception {
+    @Test public void scrollingKeepsWrappedNavigationAndDetailsKeepsItHidden() throws Exception {
         readyLibrary(); launch(); waitUntil("Home", 10000, () -> visible("Generated Film")); collapsed("40-home-wrapped");
         browse.onActivity(a -> ((androidx.recyclerview.widget.RecyclerView) a.findViewById(R.id.page_rows)).scrollBy(0, dp(280)));
         waitUntil("Scrolling preserves wrapped navigation", 5000, () -> railState() == NavigationRail.State.WRAPPED);
@@ -248,7 +285,7 @@ public final class VerticalNavigationTest extends AppHarness {
         browse.onActivity(a -> a.root("Home"));
         tap("Generated Film", true); waitUntil("Details", 5000, () -> visible("Play"));
         waitUntil("Details uses hidden navigation", 5000, () -> railState() == NavigationRail.State.HIDDEN);
-        tap("Open navigation", true); expanded("nav:Home", "42-pointer-revealed");
+        hover(dp(2), dp(300)); assertNavigationHidden();
         browse.onActivity(a -> {
             ViewGroup search = a.findViewById(R.id.search_button);
             assertEquals("Search always has its icon and label", 2, search.getChildCount());
@@ -267,11 +304,9 @@ public final class VerticalNavigationTest extends AppHarness {
         tap("Generated Film", false); waitUntil("Card click opens Details", 5000, () -> visible("Play"));
         AtomicReference<Rect> before = new AtomicReference<>();
         browse.onActivity(a -> before.set(bounds(a.findViewById(R.id.browse_content))));
-        key(KeyEvent.KEYCODE_DPAD_LEFT); expanded("nav:Home", "44-expanded-before-action");
-        browse.onActivity(a -> assertEquals("Even hidden-page navigation leaves its content unchanged", before.get(), bounds(a.findViewById(R.id.browse_content))));
-        tap("Close navigation", true);
-        waitUntil("Outside click hides navigation on Details", 5000, () -> railState() == NavigationRail.State.HIDDEN);
-        assertFalse("No click-through into More", visible("Remove from library"));
+        key(KeyEvent.KEYCODE_DPAD_LEFT); assertNavigationHidden();
+        browse.onActivity(a -> assertEquals("Hidden navigation leaves content unchanged", before.get(), bounds(a.findViewById(R.id.browse_content))));
+        assertFalse("More is not opened by Left", visible("Remove from library"));
         tap("More", true); waitUntil("Small action opens its menu", 5000, () -> visible("Remove from library")); shot("45-menu-after-expansion");
         assertEquals("Details navigation stays hidden behind its action menu", NavigationRail.State.HIDDEN, railState());
         key(KeyEvent.KEYCODE_BACK);

@@ -39,6 +39,11 @@ public final class InterfacePolishTest extends AppHarness {
                     assertNotNull(keys);
                     assertEquals("The query stays anchored at the top", queryTop.get(), bounds(activity.findViewById(R.id.search_query)).top);
                     Rect keyboard = bounds(keys);
+                    Rect surface = bounds(activity.findViewById(R.id.page_rows).findViewWithTag("keyboard-surface"));
+                    int inset = keyboard.left - surface.left;
+                    assertEquals("Panel padding matches horizontally and vertically", inset, keyboard.top - surface.top);
+                    assertEquals("Panel padding matches at the right edge", inset, surface.right - keyboard.right);
+                    assertEquals("Panel padding matches at the bottom edge", inset, surface.bottom - keyboard.bottom);
                     assertEquals("Different languages and character pages grow down from the same top", keysTop.get(), keyboard.top);
                     View rows = activity.findViewById(R.id.page_rows);
                     assertTrue("Every key stays inside the bottom safe area", keyboard.bottom <= bounds(rows).bottom - rows.getPaddingBottom());
@@ -51,6 +56,8 @@ public final class InterfacePolishTest extends AppHarness {
                         assertEquals("Every language/page fills the row", keys.getWidth(), last.getRight());
                     }
                 });
+                if (code.equals("de") && page == 2) screenshot("validation-keyboard-popup-short.png");
+                if (code.equals("ru") && page == 0) screenshot("validation-keyboard-popup-long.png");
                 if (page == 0) tap("Show 123 keys", false);
                 else if (page == 1) tap("Show àéü keys", true);
             }

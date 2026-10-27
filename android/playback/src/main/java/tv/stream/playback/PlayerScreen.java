@@ -74,6 +74,7 @@ public final class PlayerScreen implements PlaybackSession.Listener, MenuPanel.L
     private final TextView notice, upNextTitle, upNextDetail;
     private final ControlsOverlay controls;
     private final MenuPanel menu;
+    private boolean controlsBehindMenu;
     private final SubtitleStyle style;
     private final List<Cue> sample;
 
@@ -210,6 +211,11 @@ public final class PlayerScreen implements PlaybackSession.Listener, MenuPanel.L
         controls.show();
     }
 
+    /** For an app whose menu is a popup over the video: the overlay stays visible beneath an open menu. */
+    public void keepControlsBehindMenu(boolean keep) {
+        controlsBehindMenu = keep;
+    }
+
     // Up next
 
     /** Counts down, then plays the next episode unless the viewer cancels; {@code context} reads "Season 2". */
@@ -276,7 +282,7 @@ public final class PlayerScreen implements PlaybackSession.Listener, MenuPanel.L
         Ui.fade(errorView, failed);
         bufferingView.setVisibility(!failed && !preparing && session.started()
                 && player.getPlaybackState() == Player.STATE_BUFFERING ? View.VISIBLE : View.GONE);
-        if (failed || preparing || !session.started() || menu.isOpen()) controls.hide();
+        if (failed || preparing || !session.started() || menu.isOpen() && !controlsBehindMenu) controls.hide();
         if (preparing) {
             loadingTitle.setText(title);
             loadingStep.setText(loading.overline);
@@ -311,7 +317,7 @@ public final class PlayerScreen implements PlaybackSession.Listener, MenuPanel.L
         lastState = state;
         lastPlayWhenReady = playWhenReady;
         // The up-next card replaces the overlay at the end of an episode.
-        if (changed && session.started() && upNext == null && !menu.isOpen()) controls.onPlaybackChanged();
+        if (changed && session.started() && upNext == null && (!menu.isOpen() || controlsBehindMenu)) controls.onPlaybackChanged();
         render();
     }
 
@@ -560,7 +566,8 @@ public final class PlayerScreen implements PlaybackSession.Listener, MenuPanel.L
     }
 
     @Override public void onMenuToggled(boolean open) {
-        if (open) controls.hide();
+        if (open && !controlsBehindMenu) controls.hide();
+        else controls.hold(open);
         host.onMenuToggled(open);
         layoutSubtitles();
         showCues();

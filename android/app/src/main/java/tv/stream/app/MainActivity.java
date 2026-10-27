@@ -503,7 +503,6 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         }
     }
     private int contentInset() { return hiddenNavigation() ? NavigationRail.HIDDEN_CONTENT_START : NavigationRail.CONTENT_START; }
-    private boolean searchPage() { return !stack.isEmpty() && route().screen.equals("Search"); }
     /** Where the page's content starts, in pixels: clear of the rail, or of the screen edge when the rail is hidden. */
     public int contentStart() { return Tv.dp(this, contentInset()); }
     private void updateTopBar() {
@@ -512,19 +511,18 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         int offset = list.computeVerticalScrollOffset();
         scrollFade.setAlpha(!stack.isEmpty() && route().screen.equals("Search") ? 0f : Math.min(1f, offset / (float) Tv.dp(this, 32)));
         if (!dialogs.isEmpty()) return;
-        boolean starting = stack.isEmpty() || route().screen.equals("Starting");
-        boolean search = searchPage();
-        NavigationRail.State state = starting || search ? NavigationRail.State.HIDDEN : topBar.hasFocus()
+        boolean hidden = hiddenNavigation();
+        NavigationRail.State state = hidden ? NavigationRail.State.HIDDEN : topBar.hasFocus()
                 ? topBar.state() == NavigationRail.State.EXPANDED ? NavigationRail.State.EXPANDED : NavigationRail.State.WRAPPED
-                : hiddenNavigation() ? NavigationRail.State.HIDDEN : NavigationRail.State.WRAPPED;
-        topBar.overlaysContent(hiddenNavigation());
+                : NavigationRail.State.WRAPPED;
+        topBar.overlaysContent(hidden);
         topBar.state(state);
-        if (search) topBar.setVisibility(View.INVISIBLE);
-        findViewById(R.id.navigation_reveal).setVisibility(!starting && !search && state == NavigationRail.State.HIDDEN ? View.VISIBLE : View.GONE);
+        if (hidden) topBar.setVisibility(View.INVISIBLE);
+        findViewById(R.id.navigation_reveal).setVisibility(View.GONE);
         findViewById(R.id.navigation_dismiss).setVisibility(state == NavigationRail.State.EXPANDED ? View.VISIBLE : View.GONE);
     }
     private void focusNavigation() {
-        if (searchPage()) return;
+        if (hiddenNavigation()) return;
         rememberFocus();
         // Entering navigation only transfers focus. A separate Left press opens its labels.
         topBar.state(NavigationRail.State.WRAPPED);
@@ -752,6 +750,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
                 String focus = current.focus.isEmpty() ? "keyboard:a" : current.focus;
                 // Search's own gutter and top before its pane is bound: the previous page's include the rail's inset.
                 gutters(false); contentTop(false);
+                // Search uses the plain canvas: clear the previous page's artwork alongside the entrance, not after it.
+                if (shownRoute != current) backdrop.show(null, true, false);
                 // Typing updates the results beside the keyboard; the focused key stays focused and keeps being remembered.
                 if (adapter.set(java.util.Collections.singletonList(search), focus)) contentReady = true;
                 return;
@@ -1159,7 +1159,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         View before = getCurrentFocus();
         if (move && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP && before != null
                 && String.valueOf(before.getTag()).startsWith("season:") && returnToSeriesOverview()) return true;
-        if (move && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT && (before == list || before == null) && services != null) {
+        if (move && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT && (before == list || before == null) && services != null && !hiddenNavigation()) {
             focusNavigation();
             if (waitingForContentFocus) finishContentFocusWait();
             return true;
@@ -1171,7 +1171,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             if (move && !topBar.hasFocus() && !stack.isEmpty() && route().screen.equals("Search") && adapter.searchKey(event.getKeyCode())) return true;
             handled = super.dispatchKeyEvent(event);
         } finally { adapter.arrowing(false); }
-        if (move && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT && insidePage(before) && leftContentEdge(before)
+        if (move && !hiddenNavigation() && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT && insidePage(before) && leftContentEdge(before)
                 && (getCurrentFocus() == before || !insidePage(getCurrentFocus()))) {
             focusNavigation(); handled = true;
         }
@@ -1183,6 +1183,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     /** Do not steal a shelf's asynchronous scroll to a previous off-screen card. */
     private boolean leftContentEdge(View focused) {
         for (View child = focused; child != null && child != list; ) {
+            if (child.getParent() instanceof PageAdapter.GridRow
+                    && ((PageAdapter.GridRow) child.getParent()).indexOfChild(child) > 0) return false;
             if (child.getParent() instanceof RecyclerView) {
                 RecyclerView row = (RecyclerView) child.getParent();
                 RecyclerView.LayoutManager layout = row.getLayoutManager();

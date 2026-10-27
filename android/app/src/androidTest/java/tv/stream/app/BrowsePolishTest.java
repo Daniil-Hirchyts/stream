@@ -2,6 +2,7 @@ package tv.stream.app;
 
 import static org.junit.Assert.*;
 import android.graphics.Bitmap;
+import android.graphics.Rect;
 import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.view.View;
@@ -19,6 +20,7 @@ public final class BrowsePolishTest extends AppHarness {
         tap("Library", true); waitUntil("empty Library", 5000, () -> visible("Your library is empty"));
         screenshot("validation-empty-library.png");
         tap("Search", true); waitUntil("keyboard", 5000, () -> visible("Type a"));
+        keyboardLift();
         alignedKeys("a"); screenshot("validation-search-keyboard.png");
         tap("Show 123 keys", false); alignedKeys("1");
         tap("Show àéü keys", true); alignedKeys("à");
@@ -90,12 +92,87 @@ public final class BrowsePolishTest extends AppHarness {
                     assertTrue("Every cell is an actual key, with no blank spacers", (icon || key instanceof android.widget.TextView) && key.isFocusable());
                     assertEquals("Different label sizes must not offset key backgrounds", other.getChildAt(0).getTop(), key.getTop());
                     assertEquals("Keys share a height", row.getChildAt(0).getHeight(), key.getHeight());
-                    assertEquals("Focus does not distort wide keys", 1f, key.getScaleX(), 0.001f);
+                    assertEquals("Focus growth preserves each key's proportions", key.getScaleX(), key.getScaleY(), 0.001f);
                     if (!icon) assertEquals("Key captions fit", 0, ((android.widget.TextView) key).getLayout().getEllipsisCount(0));
                     if (j > 0) assertEquals("Only the designed gap separates keys", tv.stream.app.ui.Tv.dp(context, 4), key.getLeft() - other.getChildAt(j - 1).getRight());
                 }
             }
         });
+    }
+    private void keyboardLift() throws Exception {
+        hover(tv.stream.app.ui.Tv.dp(context, 700), tv.stream.app.ui.Tv.dp(context, 300));
+        Rect before = new Rect();
+        browse.onActivity(activity -> {
+            View key = activity.findViewById(R.id.page_rows).findViewWithTag("keyboard:b");
+            before.set(key.getLeft(), key.getTop(), key.getRight(), key.getBottom());
+            activity.findViewById(R.id.page_rows).findViewWithTag("keyboard:a").requestFocus();
+        });
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
+        waitUntil("remote focus grows the key and releases the previous key", 3000, () -> {
+            AtomicBoolean ready = new AtomicBoolean();
+            browse.onActivity(activity -> {
+                View rows = activity.findViewById(R.id.page_rows);
+                View key = rows.findViewWithTag("keyboard:b"), old = rows.findViewWithTag("keyboard:a");
+                ready.set(key.isFocused() && key.getScaleX() > 1.03f && Math.abs(old.getScaleX() - 1f) < .001f);
+                assertEquals("Growth leaves the keyboard grid in place", before,
+                        new Rect(key.getLeft(), key.getTop(), key.getRight(), key.getBottom()));
+            }); return ready.get();
+        });
+        SystemClock.sleep(250); // Compare completed growth, not different points in the focus easing.
+        float letterGrowth = keyGrowth("keyboard:b");
+        browse.onActivity(activity -> activity.findViewById(R.id.page_rows).findViewWithTag("keyboard:Clear").requestFocus());
+        waitUntil("medium capsule focus grows", 3000, () -> keyScale("keyboard:Clear") > 1.01f);
+        SystemClock.sleep(250);
+        float actionScale = keyScale("keyboard:Clear");
+        assertEquals("Medium keys add the same visible width as letters", letterGrowth,
+                keyGrowth("keyboard:Clear"), tv.stream.app.ui.Tv.dp(context, .25f));
+        Rect language = new Rect();
+        browse.onActivity(activity -> activity.findViewById(R.id.page_rows).findViewWithTag("keyboard:Language").requestFocus());
+        waitUntil("wide capsule focus grows too", 3000, () -> keyScale("keyboard:Language") > 1.01f);
+        screenshot("validation-keyboard-capsule-lift.png");
+        assertEquals("The full-width language key adds the same visible width as letters", letterGrowth,
+                keyGrowth("keyboard:Language"), tv.stream.app.ui.Tv.dp(context, .25f));
+        assertTrue("Wider keys use a smaller scale", keyScale("keyboard:Language") < actionScale);
+        browse.onActivity(activity -> {
+            View rows = activity.findViewById(R.id.page_rows);
+            View key = rows.findViewWithTag("keyboard:Language");
+            assertTrue(key.getGlobalVisibleRect(language));
+            rows.findViewWithTag("keyboard:b").requestFocus();
+        });
+        waitUntil("unfocused capsule returns to rest", 3000, () -> Math.abs(keyScale("keyboard:Language") - 1f) < .001f);
+        hover(language.centerX(), language.centerY());
+        waitUntil("pointer hover grows the capsule", 3000, () -> keyScale("keyboard:Language") > 1.01f);
+        assertTrue("Hover preserves the remote's focused letter", focused("keyboard:b"));
+        screenshot("validation-keyboard-hover-lift.png");
+        assertEquals("Hover uses the same size-aware growth as remote focus", letterGrowth,
+                keyGrowth("keyboard:Language"), tv.stream.app.ui.Tv.dp(context, .25f));
+        hover(tv.stream.app.ui.Tv.dp(context, 700), tv.stream.app.ui.Tv.dp(context, 300));
+        waitUntil("pointer exit restores the capsule", 3000, () -> Math.abs(keyScale("keyboard:Language") - 1f) < .001f);
+        assertTrue(focused("keyboard:b"));
+    }
+    private float keyScale(String tag) {
+        java.util.concurrent.atomic.AtomicReference<Float> value = new java.util.concurrent.atomic.AtomicReference<>();
+        browse.onActivity(activity -> value.set(activity.findViewById(R.id.page_rows).findViewWithTag(tag).getScaleX()));
+        return value.get();
+    }
+    private float keyGrowth(String tag) {
+        java.util.concurrent.atomic.AtomicReference<Float> value = new java.util.concurrent.atomic.AtomicReference<>();
+        browse.onActivity(activity -> {
+            View key = activity.findViewById(R.id.page_rows).findViewWithTag(tag);
+            assertEquals("Growth keeps captions and circles in proportion", key.getScaleX(), key.getScaleY(), .001f);
+            value.set(key.getWidth() * (key.getScaleX() - 1f));
+        });
+        return value.get();
+    }
+    private void hover(float x, float y) {
+        long time = SystemClock.uptimeMillis();
+        android.view.MotionEvent.PointerProperties pointer = new android.view.MotionEvent.PointerProperties();
+        pointer.id = 0; pointer.toolType = android.view.MotionEvent.TOOL_TYPE_MOUSE;
+        android.view.MotionEvent.PointerCoords point = new android.view.MotionEvent.PointerCoords(); point.x = x; point.y = y;
+        android.view.MotionEvent event = android.view.MotionEvent.obtain(time, time, android.view.MotionEvent.ACTION_HOVER_MOVE,
+                1, new android.view.MotionEvent.PointerProperties[]{pointer}, new android.view.MotionEvent.PointerCoords[]{point},
+                0, 0, 1, 1, 0, 0, android.view.InputDevice.SOURCE_MOUSE, 0);
+        assertTrue(instrumentation.getUiAutomation().injectInputEvent(event, true)); event.recycle();
     }
     private void screenshot(String name) throws Exception {
         SystemClock.sleep(400); // Capture after the page entrance transition.

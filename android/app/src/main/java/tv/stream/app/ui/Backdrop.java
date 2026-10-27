@@ -66,7 +66,7 @@ public final class Backdrop {
             // Put the new image underneath, then fade the old one away.
             bottom.setImageBitmap(bitmap); bottom.setAlpha(1f); top.animate().alpha(0f).setDuration(FADE_MS).start();
         }
-        scrim.animate().cancel(); scrim.animate().alpha(1f).setDuration(FADE_MS).start();
+        scrim.animate().cancel(); scrim.animate().alpha(1f).setStartDelay(0).setDuration(FADE_MS).start();
     }
 
     /** Cross-fades the softened layer to {@code bitmap}, or away for none. */
@@ -85,7 +85,10 @@ public final class Backdrop {
     private void clear() {
         shown = null;
         soften(null);
-        for (View layer : new View[]{top, bottom, scrim}) { layer.animate().cancel(); layer.animate().alpha(0f).setDuration(FADE_MS).start(); }
+        for (View layer : new View[]{top, bottom}) { layer.animate().cancel(); layer.animate().alpha(0f).setDuration(FADE_MS).start(); }
+        // The scrim leaves once the artwork has mostly gone; fading both together would brighten the artwork midway.
+        scrim.animate().cancel();
+        scrim.animate().alpha(0f).setStartDelay(FADE_MS / 2).setDuration(FADE_MS / 2).start();
     }
 
     public void release() { main.removeCallbacksAndMessages(null); generation++; }

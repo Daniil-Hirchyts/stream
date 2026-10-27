@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_focused="true"><shape><solid android:color="@color/tv_focus" /><corners android:radius="6dp" /></shape></item>
-    <item android:state_pressed="true"><shape><solid android:color="@color/tv_focus_pressed" /><corners android:radius="6dp" /></shape></item>
-    <item><shape><solid android:color="@color/tv_platter_low" /><corners android:radius="6dp" /></shape></item>
+<!-- Bare letters on the shared popup surface. The focus circle stays round on wider tail rows too. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:enterFadeDuration="120" android:exitFadeDuration="160">
+    <item android:state_pressed="true"><layer-list><item android:width="34dp" android:height="34dp" android:gravity="center">
+        <shape android:shape="oval"><solid android:color="@color/tv_focus_pressed" /></shape>
+    </item></layer-list></item>
+    <item android:state_focused="true"><layer-list><item android:width="34dp" android:height="34dp" android:gravity="center">
+        <shape android:shape="oval"><solid android:color="@color/tv_focus" /></shape>
+    </item></layer-list></item>
+    <item android:state_hovered="true"><layer-list><item android:width="34dp" android:height="34dp" android:gravity="center">
+        <shape android:shape="oval"><solid android:color="@color/tv_platter_hover" /></shape>
+    </item></layer-list></item>
+    <item android:drawable="@android:color/transparent" />
 </selector>

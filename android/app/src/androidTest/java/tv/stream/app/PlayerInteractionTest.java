@@ -39,7 +39,7 @@ public final class PlayerInteractionTest extends AppHarness {
         waitUntil("subtitle style persisted", 5000, () -> services.playerPreferences.getString("subtitle_size", "").equals("large"));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT);
         WatchActivity menuActivity = watch();
-        instrumentation.runOnMainSync(() -> assertFalse("Track changes must not expose controls beneath the menu",
+        instrumentation.runOnMainSync(() -> assertTrue("The toolbar stays visible beneath the popup menu",
                 menuActivity.findViewById(tv.stream.playback.R.id.controls).isShown()));
         // The centre of the video lies outside the right-hand menu; clicking it dismisses the sheet.
         control(tv.stream.playback.R.id.player_view, false);

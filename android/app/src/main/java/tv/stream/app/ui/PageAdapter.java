@@ -42,6 +42,10 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     private static final int POSTER_WIDTH = 120, LANDSCAPE_WIDTH = 216, GAP = 20, SEARCH_COLUMNS = 4;
     /** Where a list row's label starts inside its platter. */
     private static final int ROW_INSET = 16;
+    /** The width, in dp, a focused Settings row adds: about what a button's focus lift adds. */
+    private static final int ROW_GROWTH = 12;
+    /** Settings' columns lift their rows on focus, like the app's buttons; other lists only turn white. */
+    private boolean liftRows;
     private final Context context;
     private final Artwork artwork;
     private final Listener listener;
@@ -527,8 +531,12 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         for (Item.Tile tile : item.tiles) tiles.add(tile(tile, item.style, 0));
         return gridRow(tiles, columns);
     }
+    /** A row of cards whose slots must be traversed before leaving the page. */
+    public static final class GridRow extends LinearLayout {
+        GridRow(Context context) { super(context); }
+    }
     private View gridRow(List<View> tiles, int columns) {
-        LinearLayout row = new LinearLayout(context); row.setOrientation(LinearLayout.HORIZONTAL);
+        GridRow row = new GridRow(context); row.setOrientation(LinearLayout.HORIZONTAL);
         row.setClipChildren(false); row.setClipToPadding(false); row.setWeightSum(columns);
         row.setPadding(gutterStart, dp(12), gutterEnd, dp(6));
         int gap = dp(GAP);
@@ -1179,7 +1187,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         return row;
     }
     /** A focusable platter around a row: transparent until focused, then white with dark text (no live blur). */
-    private View wrapRow(Item item, LinearLayout row, int background, float lift) {
+    private View wrapRow(Item item, LinearLayout row, int background, float fixedLift) {
         FrameLayout box = new FrameLayout(context); box.setClipChildren(false); box.setClipToPadding(false);
         box.setPadding(gutterStart, dp(2), gutterEnd, dp(2));
         FrameLayout platter = new FrameLayout(context);
@@ -1189,8 +1197,11 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         row.setDuplicateParentStateEnabled(true);
         platter.addView(row, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         box.addView(platter, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        // Settings rows grow by the same few dp as a button, whatever their width, so their text barely shifts.
+        java.util.function.DoubleSupplier lift = !liftRows || fixedLift != Tv.LIFT_ROW ? () -> fixedLift
+                : () -> platter.getWidth() > 0 ? 1f + dp(ROW_GROWTH) / (float) platter.getWidth() : 1f;
         if (item.action != null) {
-            Tv.control(platter, item.key, item.action, this::focused, lift);
+            Tv.control(platter, item.key, item.action, this::focused, lift, true);
             if (item.key.equals(restore)) restoreLater(platter, item.key);
         } else platter.setTag(item.key);
         box.setTag(R.id.page_binding, (Binding) next -> {
@@ -1205,7 +1216,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             platter.setContentDescription(body.getContentDescription()); body.setContentDescription(null);
             body.setDuplicateParentStateEnabled(true);
             platter.removeAllViews(); platter.addView(body, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            if (next.action != null) Tv.control(platter, next.key, next.action, this::focused, lift);
+            if (next.action != null) Tv.control(platter, next.key, next.action, this::focused, lift, true);
             return true;
         });
         box.setLayoutParams(fill());
@@ -1317,19 +1328,43 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         LinearLayout keyboardPanel = new LinearLayout(context); keyboardPanel.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         keyboardPanel.setOrientation(LinearLayout.VERTICAL);
         keyboardPanel.setClipChildren(false); keyboardPanel.setClipToPadding(false);
-        editor.addView(keyboardPanel, new LinearLayout.LayoutParams(keyboardWidth() + dp(12), ViewGroup.LayoutParams.MATCH_PARENT));
+        editor.addView(keyboardPanel, new LinearLayout.LayoutParams(keyboardWidth() + dp(12), ViewGroup.LayoutParams.WRAP_CONTENT));
         LinearLayout.LayoutParams queryParams = new LinearLayout.LayoutParams(keyboardWidth(), ViewGroup.LayoutParams.WRAP_CONTENT);
-        queryParams.bottomMargin = dp(14);
+        queryParams.bottomMargin = dp(12);
         keyboardPanel.addView(queryText(root, item), queryParams);
-        keyboardPanel.addView(keyboardKeys(item), new LinearLayout.LayoutParams(keyboardWidth(), ViewGroup.LayoutParams.WRAP_CONTENT));
+        FrameLayout surface = new FrameLayout(context); surface.setTag("keyboard-surface");
+        surface.setBackgroundResource(R.drawable.tv_dialog); surface.setElevation(dp(6));
+        surface.setClipChildren(false); surface.setClipToPadding(false);
+        int surfaceInset = dp(6);
+        surface.setPadding(surfaceInset, surfaceInset, surfaceInset, surfaceInset);
+        LinearLayout keys = keyboardKeys(item);
+        surface.addView(keys, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        // The separator belongs to the surface, keeping every keyboard row a regular set of focusable keys.
+        View separator = new View(context); separator.setBackgroundColor(context.getColor(R.color.tv_hairline));
+        separator.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        surface.addView(separator, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1), Gravity.TOP));
+        keys.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            View actions = keys.findViewWithTag("keyboard-actions");
+            if (actions != null) separator.setTranslationY(actions.getTop() - dp(6));
+        });
+        keyboardPanel.addView(surface, new LinearLayout.LayoutParams(keyboardWidth() + dp(12), ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        // The divider spans the query and keyboard: the wrapped editor gives its MATCH_PARENT child their height,
+        // so it follows taller alphabets and character pages.
         View divider = new View(context); divider.setBackgroundColor(context.getColor(R.color.tv_hairline));
-        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(dp(1), dp(300));
+        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(dp(1), ViewGroup.LayoutParams.MATCH_PARENT);
         dividerParams.setMargins(dp(10), 0, dp(16), 0); editor.addView(divider, dividerParams);
-        root.addView(editor, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        LinearLayout.LayoutParams editorParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        editorParams.gravity = Gravity.TOP;
+        root.addView(editor, editorParams);
         root.editor = editor; editor.setVisibility(root.visible ? View.VISIBLE : View.GONE);
 
-        LinearLayout results = new LinearLayout(context); results.setOrientation(LinearLayout.VERTICAL);
+        // The column fades while the keyboard moves. An overlapping view fades through an offscreen layer cut to its
+        // own bounds, which would crop the grid running on to the screen edges for the length of the fade.
+        LinearLayout results = new LinearLayout(context) {
+            @Override public boolean hasOverlappingRendering() { return false; }
+        };
+        results.setOrientation(LinearLayout.VERTICAL);
         results.setClipChildren(false); results.setClipToPadding(false);
         results.setPadding(0, dp(8), 0, 0);
         // Keep the results viewport inside the visible page, including its bottom safe area.
@@ -1361,6 +1396,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         RecyclerView grid;
         boolean visible, changing;
         @Nullable android.animation.Animator modeAnimation;
+        @Nullable android.animation.Animator editorAnimation;
         @Nullable Runnable reflow;
         /** Ends the latest keyboard change, at once if the page is left before its transition does. */
         @Nullable Runnable finishing;
@@ -1419,8 +1455,9 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             keyboard(true, true, true); return true;
         }
         void keyboard(boolean show, boolean animate, boolean focusAfter) {
-            if (visible == show) { if (show && focusAfter) focusKeyboard(); return; }
-            complete();
+            if (visible == show) { if (show && focusAfter && !changing) focusKeyboard(); return; }
+            // Reversing a gesture starts from its painted position, rather than completing the old direction first.
+            cancelMotion(); reflow = null; finishing = null;
             visible = show; item.keyboardVisible = show;
             listener.searchKeyboardChanged(show);
             int mine = ++transition; changing = true;
@@ -1429,6 +1466,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                 if (mine != transition || searchPane != this || !isAttachedToWindow()) return;
                 View focused = findFocus();
                 String target = focused != null && focused.getTag() instanceof String && !String.valueOf(focused.getTag()).startsWith("keyboard:")
+                        && !String.valueOf(focused.getTag()).equals("search-results")
                         ? (String) focused.getTag() : lastResult;
                 GridLayoutManager layout = grid == null ? null : (GridLayoutManager) grid.getLayoutManager();
                 View cell = focused == null || grid == null ? null : grid.findContainingItemView(focused);
@@ -1443,13 +1481,26 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                 // the focused card's lift at the column's edge.
                 boolean keep = !focusAfter && focused != null && grid != null && grid.findContainingItemView(focused) != null;
                 if (!keep && (focusAfter || cell != null)) results.requestFocus();
+                editor.measure(MeasureSpec.makeMeasureSpec(getWidth() - getPaddingLeft() - getPaddingRight(), MeasureSpec.AT_MOST),
+                        MeasureSpec.makeMeasureSpec(getHeight() - getPaddingTop() - getPaddingBottom(), MeasureSpec.EXACTLY));
+                int editorWidth = editor.getMeasuredWidth();
+                float hidden = -editorWidth - getPaddingLeft();
+                if (editor.getVisibility() != View.VISIBLE) {
+                    // Keep full-width results in place while the keyboard starts arriving above them.
+                    editor.setTranslationX(hidden); editor.setAlpha(0f); editor.setVisibility(View.VISIBLE);
+                    resultMargin(-editorWidth);
+                }
+                editor.setTranslationZ(dp(8));
+                editor.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+                int margin = show ? 0 : -editorWidth;
+                boolean needsReflow = ((LinearLayout.LayoutParams) results.getLayoutParams()).leftMargin != margin
+                        || layout != null && layout.getSpanCount() != (show ? SEARCH_COLUMNS : 6);
                 // Reflow only while the results are invisible. Per-card bounds/slide transitions cross row
                 // boundaries and can match recycled holders to a different film, painting them above other rows.
                 reflow = () -> {
                     reflow = null;
-                    results.setClipChildren(!keep);
-                    editor.setVisibility(show ? View.VISIBLE : View.GONE);
-                    editor.setTranslationX(0f);
+                    clipColumn(!keep);
+                    resultMargin(margin);
                     if (layout != null) {
                         int columns = show ? SEARCH_COLUMNS : 6;
                         layout.setSpanCount(columns);
@@ -1459,11 +1510,27 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                     }
                 };
                 if (!motion) { reflow.run(); post(done); return; }
-                android.animation.AnimatorSet out = new android.animation.AnimatorSet();
-                List<android.animation.Animator> outgoing = new ArrayList<>();
-                outgoing.add(android.animation.ObjectAnimator.ofFloat(results, View.ALPHA, 0f));
-                if (!show) outgoing.add(android.animation.ObjectAnimator.ofFloat(editor, View.TRANSLATION_X, -editor.getWidth() - getPaddingLeft()));
-                out.playTogether(outgoing); out.setDuration(120);
+                boolean[] ended = {false, false};
+                Runnable keyboardDone = () -> { ended[0] = true; if (ended[1]) done.run(); };
+                Runnable gridDone = () -> { ended[1] = true; if (ended[0]) done.run(); };
+                long duration = Math.max(180, Math.round(360 * Math.abs((show ? 0 : hidden) - editor.getTranslationX()) / Math.max(1f, -hidden)));
+                android.animation.AnimatorSet keyboard = new android.animation.AnimatorSet();
+                keyboard.playTogether(android.animation.ObjectAnimator.ofFloat(editor, View.TRANSLATION_X, show ? 0f : hidden),
+                        android.animation.ObjectAnimator.ofFloat(editor, View.ALPHA, show ? 1f : 0f));
+                keyboard.setDuration(duration);
+                keyboard.setInterpolator(new android.view.animation.PathInterpolator(.32f, 0f, .16f, 1f));
+                keyboard.addListener(new android.animation.AnimatorListenerAdapter() {
+                    @Override public void onAnimationEnd(android.animation.Animator animation) { keyboardDone.run(); }
+                });
+                editorAnimation = keyboard; keyboard.start();
+                if (!needsReflow) {
+                    reflow = null;
+                    fadeResults(1f, duration, gridDone);
+                    return;
+                }
+                android.animation.ObjectAnimator out = android.animation.ObjectAnimator.ofFloat(results, View.ALPHA, 0f);
+                out.setDuration(Math.max(1, Math.round(140 * results.getAlpha())));
+                out.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
                 out.addListener(new android.animation.AnimatorListenerAdapter() {
                     @Override public void onAnimationEnd(android.animation.Animator animation) {
                         if (mine != transition || !changing || !isAttachedToWindow()) return;
@@ -1474,17 +1541,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                                 if (observer.isAlive()) observer.removeOnPreDrawListener(this);
                                 if (mine != transition || !changing || !isAttachedToWindow()) return true;
                                 if (!show) reveal(result(target, anchor), true);
-                                android.animation.AnimatorSet in = new android.animation.AnimatorSet();
-                                List<android.animation.Animator> incoming = new ArrayList<>();
-                                incoming.add(android.animation.ObjectAnimator.ofFloat(results, View.ALPHA, 1f));
-                                if (show) incoming.add(android.animation.ObjectAnimator.ofFloat(editor, View.TRANSLATION_X,
-                                        -editor.getWidth() - getPaddingLeft(), 0f));
-                                in.playTogether(incoming); in.setDuration(240);
-                                in.setInterpolator(new android.view.animation.PathInterpolator(.2f, .7f, .15f, 1f));
-                                in.addListener(new android.animation.AnimatorListenerAdapter() {
-                                    @Override public void onAnimationEnd(android.animation.Animator animation) { done.run(); }
-                                });
-                                modeAnimation = in; in.start();
+                                fadeResults(1f, 220, gridDone);
                                 return true;
                             }
                         });
@@ -1493,10 +1550,34 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                 modeAnimation = out; out.start();
             });
         }
+        /**
+         * Keeps the moving grid off the keyboard's side only. The grid runs from the top to the bottom of the screen
+         * beyond the column, so clipping to the column would cut its rows there for the length of the motion.
+         */
+        private void clipColumn(boolean clip) {
+            results.setClipBounds(clip ? new Rect(0, -Integer.MAX_VALUE / 4, Integer.MAX_VALUE / 4, Integer.MAX_VALUE / 4) : null);
+        }
+        private void resultMargin(int value) {
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) results.getLayoutParams();
+            if (params.leftMargin == value) return;
+            params.leftMargin = value; results.setLayoutParams(params);
+        }
+        private void fadeResults(float alpha, long duration, Runnable done) {
+            android.animation.ObjectAnimator fade = android.animation.ObjectAnimator.ofFloat(results, View.ALPHA, alpha);
+            fade.setDuration(duration); fade.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+            fade.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override public void onAnimationEnd(android.animation.Animator animation) { done.run(); }
+            });
+            modeAnimation = fade; fade.start();
+        }
+        private void cancelMotion() {
+            if (modeAnimation != null) { modeAnimation.removeAllListeners(); modeAnimation.cancel(); modeAnimation = null; }
+            if (editorAnimation != null) { editorAnimation.removeAllListeners(); editorAnimation.cancel(); editorAnimation = null; }
+        }
         /** Leaving mid-change: put every card where the change is taking it, so the saved offset is one the grid rests at. */
         void complete() {
             if (!changing) return;
-            if (modeAnimation != null) { modeAnimation.removeAllListeners(); modeAnimation.cancel(); modeAnimation = null; }
+            cancelMotion();
             if (reflow != null) reflow.run();
             if (finishing != null) finishing.run();
         }
@@ -1519,8 +1600,10 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         }
         void finish(int mine, boolean show, boolean focusAfter, String target, int anchor) {
             if (mine != transition || searchPane != this || !isAttachedToWindow()) return;
-            results.setAlpha(1f); editor.setTranslationX(0f);
-            results.setClipChildren(false); changing = false; finishing = null; modeAnimation = null;
+            editor.setVisibility(show ? View.VISIBLE : View.GONE); resultMargin(0);
+            results.setAlpha(1f); editor.setTranslationX(0f); editor.setAlpha(1f); editor.setTranslationZ(0f);
+            editor.setDescendantFocusability(show ? ViewGroup.FOCUS_AFTER_DESCENDANTS : ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+            clipColumn(false); changing = false; finishing = null; modeAnimation = null; editorAnimation = null;
             if (!hasFocus()) return; // Respect a newer move to Back during the animation.
             // A card that kept focus is in view already; one reached during the motion, while the grid could not
             // scroll, is brought into view now.
@@ -1549,6 +1632,47 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             if (mine == resultsGeneration && results == searchResults && results.isAttachedToWindow() && item.loading)
                 resultsNow(results, item, true);
         }, 160);
+    }
+    /**
+     * Lays the faded results viewport out from the top to the bottom of the screen while it keeps its place in the
+     * page's layout: the first row still starts below the toolbar and the last one clears the TV's safe area, and
+     * rows scroll on beneath both and fade out instead of being cut off inside the page.
+     */
+    private static final class ScreenTall extends FrameLayout {
+        private final View viewport; private final RecyclerView grid;
+        private final int[] at = new int[2], screen = new int[2];
+        private int above, below;
+        // The page list moves its rows after laying them out, so the distances are checked again before each frame.
+        private final android.view.ViewTreeObserver.OnPreDrawListener measure = () -> !reach();
+        ScreenTall(View viewport, RecyclerView grid) {
+            super(viewport.getContext()); this.viewport = viewport; this.grid = grid;
+            setClipChildren(false); setClipToPadding(false);
+            addView(viewport, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+        /** Updates the distances to the screen edges; true when they changed and a new layout is on its way. */
+        private boolean reach() {
+            View page = getRootView().findViewById(R.id.browse_content);
+            if (page == null || !isLaidOut()) return false;
+            getLocationInWindow(at); page.getLocationInWindow(screen);
+            int nextAbove = Math.max(0, at[1] - screen[1]);
+            int nextBelow = Math.max(0, screen[1] + page.getHeight() - at[1] - getHeight());
+            if (nextAbove == above && nextBelow == below) return false;
+            // The viewport grows upwards by the change; moving its rows down by as much keeps them where they are.
+            grid.offsetChildrenVertical(nextAbove - above);
+            above = nextAbove; below = nextBelow;
+            requestLayout();
+            return true;
+        }
+        @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); getViewTreeObserver().addOnPreDrawListener(measure); }
+        @Override protected void onDetachedFromWindow() { getViewTreeObserver().removeOnPreDrawListener(measure); super.onDetachedFromWindow(); }
+        @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
+            int top = Tv.dp(getContext(), 18) + above, bottom = Tv.dp(getContext(), 36);
+            if (grid.getPaddingTop() != top || grid.getPaddingBottom() != bottom)
+                grid.setPadding(grid.getPaddingLeft(), top, grid.getPaddingRight(), bottom);
+            int height = getHeight() + above + below;
+            viewport.measure(MeasureSpec.makeMeasureSpec(getWidth(), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
+            viewport.layout(0, -above, getWidth(), height - above);
+        }
     }
     private void resultsNow(LinearLayout results, Item item, boolean skeletons) {
         if (searchPane != null) searchPane.complete();
@@ -1594,10 +1718,11 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             // After recreation only the route's selection survives. Attach its row before focus restoration;
             // scrolling the outer page cannot reach an offscreen card in this nested grid.
             if (selected >= 0 && !childScroll.containsKey("search:" + item.value)) list.scrollToPosition(selected);
-            // Rows scrolled up must not draw over the heading; the edge columns keep room to lift.
+            // The grid scrolls over the whole screen height and fades out at its edges rather than being cut off
+            // inside the page; the edge columns keep room to lift.
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1);
             params.leftMargin = params.rightMargin = -dp(12);
-            results.addView(Tv.clipped(list, dp(12)), params);
+            results.addView(new ScreenTall(Tv.faded(list, dp(12), 96, 48), list), params);
             boolean restoringSelection = selected >= 0;
             if (!restoringSelection && !item.loading && searchPane != null && !searchPane.visible && results.isFocused())
                 list.post(() -> {
@@ -1639,7 +1764,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         root.setPadding(gutterStart, dp(4), gutterEnd, 0);
         RecyclerView left = new RecyclerView(context), right = new RecyclerView(context);
         PageAdapter pane = new PageAdapter(context, artwork, listener);
-        pane.gutter(28, 0);
+        pane.gutter(28, 0); pane.liftRows = true;
         PageAdapter list = new PageAdapter(context, artwork, new Listener() {
             @Override public void focused(String key) {
                 // Replacing a changed settings pane can give the first category transient framework focus.
@@ -1658,7 +1783,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             }
             @Override public void featured(@Nullable Title title) { listener.featured(title); }
         });
-        list.gutter(0, 0);
+        list.gutter(0, 0); list.liftRows = true;
         // OK or a tap on a category moves into its pane, once the pane shows that category's rows (a tap selects and
         // opens in one step, so the new rows may not be laid out yet).
         Runnable enter = () -> { View first = firstFocusable(right); if (first != null) first.requestFocus(); };
@@ -1760,8 +1885,8 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     private int keyboardPage;
 
     /**
-     * Fill short character rows with Space/Delete. If only one cell remains, spread the five letters evenly
-     * and give the commands their own row. Every offered language and character page fills both edges.
+     * Fill short character rows with Space/Delete when Space can span at least two cells. Otherwise spread
+     * the four/five trailing letters evenly and give the commands their own row. Every row fills both edges.
      */
     private LinearLayout keyboardKeys(Item item) {
         LinearLayout keys = new LinearLayout(context); keys.setOrientation(LinearLayout.VERTICAL); keys.setTag("keyboard-keys");
@@ -1779,22 +1904,24 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                 addKeyboardButton(row, item, character, "Type " + character, 1, () -> type(item, query, character));
             }
             int used = characters.length() % KEY_COLUMNS;
-            if (used == KEY_COLUMNS - 1) {
-                // Five letters cannot share a row with two usable commands. Their backgrounds fill
-                // the row evenly, without an invisible sixth key or a large blank tail.
+            if (used >= KEY_COLUMNS - 2) {
+                // Four/five letters leave too little room for a readable Space capsule and Delete.
+                // Spread their hit cells evenly; the focused letter still gets a centred circle.
                 for (int i = 0; i < row.getChildCount(); i++) {
                     LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) row.getChildAt(i).getLayoutParams();
                     params.width = 0; params.weight = 1;
                 }
             }
             int remaining = KEY_COLUMNS - used;
-            if (used == 0 || remaining < 2) { row = keyboardRow(keys); remaining = KEY_COLUMNS; }
+            if (used == 0 || remaining < 3) { row = keyboardRow(keys); remaining = KEY_COLUMNS; }
             addKeyboardButton(row, item, "Space", "Insert a space", (remaining + 1) / 2, () -> type(item, query, " "));
             addKeyboardButton(row, item, "⌫", "Delete last character", remaining / 2, () -> {
                 if (query.length() > 0) query.deleteCharAt(query.length() - 1);
                 typed(item, query);
             });
             row = keyboardRow(keys);
+            row.setTag("keyboard-actions");
+            ((LinearLayout.LayoutParams) row.getLayoutParams()).topMargin = dp(12);
             for (int other = 0; other < KEY_PAGES.length; other++) if (other != keyboardPage) {
                 int target = other;
                 String name = other == 0 ? KeyboardLanguages.alphabet(item.keyboardLanguage).substring(0, 3) : KEY_PAGE_NAMES[other];
@@ -1863,7 +1990,8 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             key = text;
         }
         key.setContentDescription(description);
-        key.setBackgroundResource(R.drawable.tv_keyboard_key);
+        boolean character = description.startsWith("Type ");
+        key.setBackgroundResource(character ? R.drawable.tv_keyboard_key : R.drawable.tv_keyboard_action);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(cells * dp(KEY) + (cells - 1) * dp(KEY_GAP), dp(KEY));
         if (row.getChildCount() > 0) params.setMarginStart(dp(KEY_GAP));
         row.addView(key, params);
@@ -1872,8 +2000,11 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         boolean typed = cells == 1 || label.equals("Space");
         Runnable press = erase ? () -> { Sounds.play(Sounds.Sound.DELETE); action.run(); }
                 : typed ? () -> { Sounds.at(Sounds.Sound.KEY, key); action.run(); } : action;
-        // The white focus fill keeps keys on their grid, including wide Space/Delete keys.
-        Tv.control(key, item.key + ":" + (description.equals("Change keyboard language") ? "Language" : label), press, this::focused, 1f, false);
+        // Add the same drawn width as a round key; wide capsules need a smaller percentage.
+        // A letter's visible platter stays KEY wide even when its tail-row hit cell is wider.
+        float lift = 1f + (Tv.LIFT_ICON - 1f) * dp(KEY) / (character ? dp(KEY) : params.width);
+        Tv.control(key, item.key + ":" + (description.equals("Change keyboard language") ? "Language" : label), press, this::focused, lift, false);
+        Tv.hover(key, () -> lift);
         if (key.getTag() != null && key.getTag().equals(restore)) restoreLater(key, String.valueOf(key.getTag()));
     }
 
@@ -1889,6 +2020,11 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     /** Scrolls so a focused child keeps some room around it, rather than stopping at the very edge. */
     public static final class Layout extends LinearLayoutManager {
         private final int margin;
+        @Nullable private RecyclerView owner;
+        @Override public void onAttachedToWindow(RecyclerView view) { super.onAttachedToWindow(view); owner = view; }
+        @Override public void onDetachedFromWindow(RecyclerView view, RecyclerView.Recycler recycler) {
+            super.onDetachedFromWindow(view, recycler); owner = null;
+        }
         @Nullable private View navigationTarget;
         public void navigationTarget(@Nullable View target) { navigationTarget = target; }
         /** Each block's height as last measured, so the distance to the top is known after the top has scrolled away. */
@@ -1946,6 +2082,16 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             if (direction == View.FOCUS_UP && getOrientation() == HORIZONTAL
                     && navigationTarget != null && navigationTarget.isShown()) return navigationTarget;
             if ((direction == View.FOCUS_UP || direction == View.FOCUS_DOWN) && getOrientation() == VERTICAL) {
+                boolean filmRow = false;
+                for (View child = focused; child != null && child != owner && child.getParent() instanceof View; child = (View) child.getParent()) {
+                    if (child.getParent() instanceof GridRow || child.getParent() instanceof RecyclerView
+                            && ((RecyclerView) child.getParent()).getAdapter() instanceof TileAdapter) { filmRow = true; break; }
+                }
+                if (owner != null && filmRow) {
+                    View within = FocusFinder.getInstance().findNextFocus(owner, focused, direction);
+                    if (within != null) return within;
+                    if (owner.canScrollVertically(direction == View.FOCUS_UP ? -1 : 1)) return null;
+                }
                 View next = FocusFinder.getInstance().findNextFocus((ViewGroup) focused.getRootView(), focused, direction);
                 if (next != null && findContainingItemView(next) == null) {
                     if (direction != View.FOCUS_UP) return focused;
@@ -1957,6 +2103,17 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                 return null;
             }
             if (direction != View.FOCUS_LEFT && direction != View.FOCUS_RIGHT) return null;
+            for (View child = focused; child != null && child.getParent() instanceof View; child = (View) child.getParent()) {
+                if (child.getParent() instanceof GridRow) {
+                    GridRow row = (GridRow) child.getParent();
+                    int index = row.indexOfChild(child) + (direction == View.FOCUS_LEFT ? -1 : 1);
+                    if (index >= 0 && index < row.getChildCount()) {
+                        View target = firstFocusable(row.getChildAt(index));
+                        if (target != null) return target;
+                    }
+                    return focused;
+                }
+            }
             View item = findContainingItemView(focused);
             if (item == null) return null;
             if (getOrientation() == HORIZONTAL) {
