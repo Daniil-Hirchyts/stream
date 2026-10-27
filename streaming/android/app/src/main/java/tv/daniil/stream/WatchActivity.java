@@ -1062,8 +1062,12 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     /** Actual input extends the shared four-second timeout; retained focus alone must not keep controls up. */
     @Override public void onUserInteraction() {
         super.onUserInteraction();
-        if (canShowControls() && findViewById(R.id.controls).isShown()) screen.showControls();
+        // Back isn't interaction that keeps the controls up: its key-down would re-show controls that the previous Back
+        // is still fading out, and its key-up would only hide them again, so a quick second Back could never leave.
+        if (dispatchingKey != KeyEvent.KEYCODE_BACK && canShowControls() && findViewById(R.id.controls).isShown()) screen.showControls();
     }
+    /** The key being dispatched, for {@link #onUserInteraction}; zero for touches and pointers. */
+    private int dispatchingKey;
     private boolean canShowControls() {
         return screen != null && session != null && session.started() && session.error() == null
                 && screen.loading() == null && !screen.isMenuOpen() && !screen.hasUpNext();
@@ -1077,6 +1081,10 @@ public final class WatchActivity extends Activity implements PlaybackHost {
     }
     /** The player's controls and menu belong to the shared player: an arrow that moves its focus ticks here. */
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        dispatchingKey = event.getKeyCode();
+        try { return dispatchKey(event); } finally { dispatchingKey = 0; }
+    }
+    private boolean dispatchKey(KeyEvent event) {
         // Shared remote handling consumes keys before Activity can report this interaction itself.
         if (event.getAction() == KeyEvent.ACTION_DOWN) onUserInteraction();
         boolean move = event.getAction() == KeyEvent.ACTION_DOWN && Sounds.arrow(event.getKeyCode());

@@ -46,7 +46,10 @@ public final class AppFlowTest extends AppHarness {
         waitUntil("favourite persisted", 5000, () -> services.store.library(true).size() == 1);
     }
     @Test public void seriesResolvesItsOriginalVideoIdAndNextEpisodeIndependently() throws Exception {
-        readyLibrary(); launch(); tap("Generated Series", true); tap("Play", false); chooseFirstSource();
+        readyLibrary(); launch(); waitUntil("Home", 10_000, () -> visible("Generated Film"));
+        // The series shelf starts below the fold, under a "Generated series" heading; the remote brings its card up.
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
+        tap("Generated Series", true); tap("Play", false); chooseFirstSource();
         waitUntil("first episode", 60_000, () -> state() != null && state().playing && state().renderedFirstFrame);
         WatchActivity activity = watch(); instrumentation.runOnMainSync(() -> assertTrue(activity.onNextEpisode()));
         waitUntil("second episode", 60_000, () -> state() != null && state().playing && state().positionMs > 1000);

@@ -631,3 +631,6 @@ sideloading alone.
   AIOMetadata and the TMDB add-on publish those fields.
 - **New episodes** rely on providers' `released` dates; a provider without dates
   never announces anything.
+- **Video ending first:** when a file's subtitle or audio track runs on past its
+  last video frame, playback keeps advancing without new frames and
+  `VideoFrameWatchdog` ends it with "too demanding" instead of letting it finish.

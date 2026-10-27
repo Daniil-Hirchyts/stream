@@ -52,12 +52,13 @@ public final class PlayerInteractionTest extends AppHarness {
             View captions = activity.findViewById(tv.daniil.playback.R.id.subtitles);
             assertTrue("Captions clear the timeline touch target", captions.getHeight() - captions.getPaddingBottom() < timeline.top);
         });
-        // The subtitle track extends beyond the generated video; keep the seek inside both A/V tracks.
-        long target = state().durationMs * 4 / 10;
+        // The subtitle track extends beyond the generated 30-second video. Seek early enough that the rest of the test,
+        // at 1.5×, ends well inside the video: past its last frame the frame watchdog reports a failure.
+        long target = state().durationMs * 2 / 10;
         assertTrue("Known duration for a real timeline drag", target > 0);
         long started = SystemClock.uptimeMillis();
         for (int i = 0; i <= 10; i++) {
-            float x = timeline.left + timeline.width() * (0.2f + 0.2f * i / 10);
+            float x = timeline.left + timeline.width() * (0.1f + 0.1f * i / 10);
             MotionEvent event = MotionEvent.obtain(started, SystemClock.uptimeMillis(), i == 0 ? MotionEvent.ACTION_DOWN
                     : i == 10 ? MotionEvent.ACTION_UP : MotionEvent.ACTION_MOVE, x, timeline.centerY(), 0);
             event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
@@ -70,7 +71,9 @@ public final class PlayerInteractionTest extends AppHarness {
         waitUntil("remote opens menu after touch", 5000, () -> popupOpen());
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
         waitUntil("remote closes menu", 5000, () -> !popupOpen());
-        control(tv.daniil.playback.R.id.player_view, false);
+        // Closing the menu brings the toolbar back; a tap on the video now would hide it again. The menu's window keeps
+        // focus (and ignores Back) until its closing animation ends.
+        waitUntil("toolbar after the menu", 5000, () -> shown(tv.daniil.playback.R.id.controls) && watch().hasWindowFocus());
         WatchActivity playing = watch();
         instrumentation.runOnMainSync(() -> assertTrue("Back exits from the playback toolbar",
                 playing.findViewById(tv.daniil.playback.R.id.control_stop).isShown()));
