@@ -1,0 +1,11 @@
+AndroidX and Media3
+Copyright The Android Open Source Project and Google LLC.
+Licensed under the Apache License, Version 2.0. The complete license is
+included in openssl.txt in this directory, under "Apache License".
+
+https://android.googlesource.com/platform/frameworks/support/
+https://github.com/androidx/media
+
+Native dependency licenses in this directory are copied from the exact
+sources pinned in native/deps.lock. libtorrent.txt includes
+the notices for its bundled third-party code.

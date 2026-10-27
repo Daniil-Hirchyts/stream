@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Daniil Cast palette, shared with the Chrome extension: deep ink surfaces and a single mint accent. -->
+    <!-- Default playback palette: deep ink surfaces and a single mint accent. -->
     <color name="ink">#FF0B1116</color>
     <color name="surface">#FF131B22</color>
     <color name="surface_raised">#FF1A242D</color>

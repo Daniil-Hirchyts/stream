@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application android:usesCleartextTraffic="true">
+        <!-- Test APK only: supplies generated metainfo through Android's real content-URI path. -->
+        <provider android:name="tv.stream.app.FixtureFileProvider" android:authorities="tv.stream.app.test.files" android:exported="true" android:grantUriPermissions="true" />
+    </application>
+</manifest>

@@ -1,6 +1,6 @@
 plugins { id 'com.android.library' }
 android {
-    namespace 'tv.daniil.playback'
+    namespace 'tv.stream.playback'
     compileSdk 36
     defaultConfig {
         minSdk 26

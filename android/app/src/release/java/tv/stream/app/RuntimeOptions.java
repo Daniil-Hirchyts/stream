@@ -1,0 +1,19 @@
+package tv.stream.app;
+
+import android.content.Context;
+
+/** Release configuration contains no fixture/test preferences or peers. */
+public final class RuntimeOptions {
+    static String playerPreferences(String database) { return "player"; }
+    static String databaseName(Context context) { return "stream.db"; }
+    static java.util.List<String> addonDirectory(Context context) { return java.util.Collections.singletonList(tv.stream.app.addon.AddonRepository.DIRECTORY); }
+    static java.util.List<String> starterAddons(Context context) { return StarterAddons.ALL; }
+    /** A new install sets itself up with the starter add-ons. */
+    static boolean installDefaults(Context context) { return true; }
+    static boolean checkNewEpisodes(Context context) { return true; }
+    public final boolean localOnly = false;
+    public final boolean publicNetworkOnly = false;
+    public final String peer = "";
+    public final long cacheBytes;
+    RuntimeOptions(Context context, long configuredCache) { cacheBytes = configuredCache; }
+}

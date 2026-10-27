@@ -1,0 +1,11 @@
+pluginManagement {
+    repositories { google(); mavenCentral(); gradlePluginPortal() }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories { google(); mavenCentral(); maven { url 'https://jitpack.io' } }
+}
+rootProject.name = 'Stream'
+include ':playback', ':torrent', ':codecs', ':app'
+// Owned by Stream; no casting checkout is required.
+project(':playback').projectDir = new File(settingsDir, 'playback')

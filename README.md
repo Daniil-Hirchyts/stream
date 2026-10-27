@@ -1,66 +1,22 @@
-# Daniil TV
+# Stream
 
-Daniil TV is a separate Android TV app for catalogues, search, a local library,
-manual torrent imports and direct playback. It uses a bounded native torrent
-cache and shared Media3 controls, independently of the Chrome extension and
-desktop helper.
-
-```sh
-./streaming/simulator.sh up       # Build/install/open the standalone app
-./streaming/simulator.sh site     # Real emulator screen and pointer/remote controls
-./streaming/simulator.sh test     # JNI, data and application smoke suites
-./streaming/simulator.sh soak     # Thirty real minutes of playback and seeks
-```
-
-See the [Android app guide](streaming/android/README.md), its
-[testing guide](streaming/android/TESTING.md) and the
-[streaming engine](streaming/native/README.md). The development target is the
-explicitly verified local Android TV emulator. Physical Fire TV testing
-requires separate authorization.
-
-Daniil Cast sends video from a Chrome tab to an Android/Fire TV receiver. The
-project contains the Chrome extension, its Rust desktop helper, the Android app,
-and a complete local Android TV test environment.
-
-From the repository root on this Mac:
+Stream is an Android TV app for catalogues, search, a private local library,
+add-ons and direct or BitTorrent playback. This repository owns its Android UI,
+playback library, native engine, codec integration, sounds and local simulator.
+No other application checkout or installed desktop helper is required.
 
 ```sh
-./casting/simulator.sh
+./simulator.sh up           # Start the isolated local emulator, build, install and open
+./simulator.sh site         # Live emulator screen with pointer and remote controls
+./simulator.sh smoke        # Generated catalogue → BitTorrent → visible playback
 ```
 
-This starts the visible emulator with sound, builds and installs the current
-receiver and helper, builds the extension, restores local network bridges,
-selects the emulator, opens the test room in Chrome, and plays a local sample.
-It reports success only after the receiver renders video and playback advances.
-On first use, enter the pairing code displayed in the emulator when prompted.
+The default test target is `Stream_Local_TV` on `emulator-5558` (Android TV 16,
+API 36). Custom targets require both `STREAM_AVD` and `STREAM_PORT`; every device
+operation checks the serial, emulator property and AVD name. Physical TVs are
+never selected automatically. FFmpeg, Node.js, an Android SDK and Java 21/17 are
+local simulator prerequisites. The app needs none of these tools at runtime.
 
-Click/tap the emulator screen to reveal playback controls. Play/pause, seeking,
-options and every menu work with mouse/touch. Remote keys are optional. The
-[local test room](http://127.0.0.1:58132/) also provides an interactive live screen.
-
-```sh
-./casting/simulator.sh menu    # Interactive commands
-./casting/simulator.sh test    # Android subtitle, error and pointer regressions
-./casting/simulator.sh smoke   # Actual helper → receiver playback/conversion tests
-./casting/simulator.sh stop    # Stop the emulator
-```
-
-Double-click `casting/Simulator.command` for startup followed by the command menu.
-The simulator never installs to or controls a physical TV.
-
-See [simulator setup and commands](casting/simulator/README.md),
-[casting installation and architecture](casting/README.md),
-[desktop helper](casting/native/README.md), [agent instructions](AGENTS.md),
-and [validation results and release limitations](docs/desktop-validation.md).
-
-The older physical Fire TV cleanup tools remain separate from casting. Their
-[recovery notes](docs/firetv-cleanup.md), package profile and restore script are
-preserved. CleanYourTV is pinned as a Git submodule; initialize it only if using
-those maintenance tools:
-
-```sh
-git submodule update --init cleanyourtv
-```
-
-Private `backups/` records stay on the owner's Mac and are excluded from new
-commits. Existing historical snapshots remain in Git history.
+See the [Android guide](android/README.md), [focused verification commands](android/TESTING.md),
+[native engine](native/README.md), [playback implementation](PLAYBACK_IMPLEMENTATION.md)
+and [agent guide](AGENTS.md). Private fixture captures and build output stay ignored.

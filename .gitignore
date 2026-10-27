@@ -6,4 +6,19 @@
 backups/
 # Machine-local Android and build output; component ignores cover their own caches.
 **/local.properties
-streaming/sounds/build/
+sounds/build/
+# Fetched native sources, native and Gradle build output, and simulator caches stay local.
+native/.deps/
+native/build/
+android/.gradle/
+android/**/build/
+simulator/.cache/
+local.properties
+android/**/.cxx*/
+
+.claude/
+
+# Kotlin compiler session files and Python interpreter caches are machine local.
+android/.kotlin/
+__pycache__/
+*.pyc

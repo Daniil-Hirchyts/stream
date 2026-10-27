@@ -1,8 +1,0 @@
-.gradle/
-**/build/
-local.properties
-__pycache__/
-*.pyc
-native/target/
-sidepanel/node_modules/
-simulator/.cache/
