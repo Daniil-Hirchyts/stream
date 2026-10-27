@@ -49,9 +49,24 @@ public final class SeriesBrowseTest extends AppHarness {
         assertTrue("Show title remains near the top", title.top < dp(140));
         assertTrue("Episodes are brought into the main viewport", bounds("episode:sample:s1e1").bottom < context.getResources().getDisplayMetrics().heightPixels);
         final View[] stripButton = new View[1];
+        AtomicBoolean seasonMotion = new AtomicBoolean();
+        final android.view.ViewTreeObserver.OnDrawListener[] motionObserver = new android.view.ViewTreeObserver.OnDrawListener[1];
         browse.onActivity(activity -> stripButton[0] = activity.findViewById(R.id.page_rows).findViewWithTag("season:2"));
+        browse.onActivity(activity -> {
+            View rows = activity.findViewById(R.id.page_rows);
+            motionObserver[0] = () -> {
+                android.view.ViewGroup shelf = rows.findViewWithTag("season-shelf");
+                if (shelf != null && shelf.getChildCount() > 0) {
+                    View incoming = shelf.getChildAt(0);
+                    if (incoming.getAlpha() > .01f && incoming.getAlpha() < .99f && incoming.getTranslationX() > 0f) seasonMotion.set(true);
+                }
+            };
+            rows.getViewTreeObserver().addOnDrawListener(motionObserver[0]);
+        });
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
         waitUntil("focus alone changes season", 5000, () -> focused("season:2") && shown("episode:sample:s2e1"));
+        waitUntil("episode shelf slides and crossfades", 5000, seasonMotion::get);
+        browse.onActivity(activity -> activity.findViewById(R.id.page_rows).getViewTreeObserver().removeOnDrawListener(motionObserver[0]));
         assertFalse("Previous season is replaced", shown("episode:sample:s1e1"));
         browse.onActivity(activity -> {
             View selected = activity.findViewById(R.id.page_rows).findViewWithTag("season:2");

@@ -100,7 +100,7 @@ public final class SubtitlePreviewView extends FrameLayout {
     public void updateFrom(SharedPreferences prefs) {
         SubtitleStyle style = new SubtitleStyle(prefs);
         this.sizeIndex = style.get(SubtitleStyle.Setting.SIZE);
-        this.fontIndex = style.get(SubtitleStyle.Setting.FONT);
+        this.fontIndex = SubtitleFonts.selected(prefs);
         this.colorIndex = style.get(SubtitleStyle.Setting.COLOR);
         this.edgeIndex = style.get(SubtitleStyle.Setting.EDGE);
         this.positionIndex = style.get(SubtitleStyle.Setting.POSITION);
@@ -133,12 +133,13 @@ public final class SubtitlePreviewView extends FrameLayout {
 
     private void apply() {
         int color = SubtitleStyle.colorFor(colorIndex);
-        Typeface font = SubtitleStyle.typefaceFor(fontIndex);
+        Typeface font = SubtitleFonts.typeface(getContext(), fontIndex);
         int edgeType = edgeIndex == 0 ? CaptionStyleCompat.EDGE_TYPE_OUTLINE
                 : edgeIndex == 1 ? CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW : CaptionStyleCompat.EDGE_TYPE_NONE;
         int box = edgeIndex == 2 ? SubtitleStyle.boxColor() : Color.TRANSPARENT;
         subtitleView.setStyle(new CaptionStyleCompat(color, box, Color.TRANSPARENT, edgeType, Color.BLACK, font));
-        subtitleView.setApplyEmbeddedStyles(false);
+        androidx.media3.ui.DaniilSubtitleOutput.font(subtitleView, fontIndex);
+        androidx.media3.ui.DaniilSubtitleOutput.configure(subtitleView);
 
         float sp;
         int gapDp;

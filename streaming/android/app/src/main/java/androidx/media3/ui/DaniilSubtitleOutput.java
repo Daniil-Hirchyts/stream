@@ -20,14 +20,20 @@ import androidx.media3.common.util.UnstableApi;
 import java.text.Bidi;
 import java.util.ArrayList;
 import java.util.List;
+import tv.daniil.playback.SubtitleStyle;
+import tv.daniil.stream.ui.SubtitleFonts;
 
-/** Daniil TV's Box styling, applied after Media3 removes embedded provider styles. */
+/** Daniil TV's fonts and Box styling; semantic emphasis survives provider-style sanitization. */
 @OptIn(markerClass = UnstableApi.class)
 public final class DaniilSubtitleOutput extends FrameLayout implements SubtitleView.Output {
     private final CanvasSubtitleOutput canvas;
     private float textSize;
     private int textSizeType;
     private boolean boxed;
+    private int fontIndex = -1;
+    private List<Cue> inputCues = java.util.Collections.emptyList();
+    private CaptionStyleCompat inputStyle;
+    private float inputBottomGap;
 
     private DaniilSubtitleOutput(SubtitleView view) {
         super(view.getContext());
@@ -47,7 +53,33 @@ public final class DaniilSubtitleOutput extends FrameLayout implements SubtitleV
         }
     }
 
+    /** The shared player still owns size/colour/position; these font choices belong only to Daniil TV. */
+    public static void font(SubtitleView view, int index) {
+        if (!(view.getChildAt(0) instanceof DaniilSubtitleOutput)) throw new IllegalStateException("Subtitle output is not installed");
+        DaniilSubtitleOutput output = (DaniilSubtitleOutput) view.getChildAt(0);
+        output.fontIndex = index >= 0 && index < SubtitleFonts.VALUES.length ? index : SubtitleFonts.NOTO;
+        if (output.inputStyle != null) output.update(output.inputCues, output.inputStyle, output.textSize, output.textSizeType, output.inputBottomGap);
+    }
+
+    /** Preserve cue italics; update() removes provider font/size/colour overrides before painting. */
+    public static void configure(SubtitleView view) {
+        view.setApplyEmbeddedStyles(true); view.setApplyEmbeddedFontSizes(false);
+    }
+
     @Override public void update(List<Cue> cues, CaptionStyleCompat style, float size, int sizeType, float bottomGap) {
+        inputCues = cues; inputStyle = style; inputBottomGap = bottomGap;
+        int chosen = fontIndex;
+        if (chosen < 0) {
+            chosen = SubtitleFonts.NOTO;
+            for (int i = 1; i < SubtitleStyle.fontsCount(); i++) if (SubtitleStyle.typefaceFor(i).equals(style.typeface)) { chosen = i; break; }
+        }
+        style = new CaptionStyleCompat(style.foregroundColor, style.backgroundColor, style.windowColor,
+                style.edgeType, style.edgeColor, SubtitleFonts.typeface(getContext(), chosen));
+        List<Cue> clean = new ArrayList<>(cues.size());
+        for (Cue cue : cues) clean.add(cue.text == null ? cue : cue.buildUpon()
+                .setText(SubtitleFonts.text(getContext(), chosen, cue.text)).clearWindowColor()
+                .setTextSize(Cue.DIMEN_UNSET, Cue.TYPE_UNSET).build());
+        cues = clean;
         boxed = Color.alpha(style.backgroundColor) > 0 && style.edgeType == CaptionStyleCompat.EDGE_TYPE_NONE;
         textSize = size; textSizeType = sizeType; updatePadding();
         if (boxed) {

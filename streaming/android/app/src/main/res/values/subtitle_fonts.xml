@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="subtitle_font_noto">Noto Sans</string>
+    <string name="subtitle_font_atkinson">Atkinson Hyperlegible Next</string>
+    <string name="subtitle_font_system">System sans-serif</string>
+</resources>

@@ -179,6 +179,8 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                     });
                     androidx.media3.ui.DaniilSubtitleOutput.install(findViewById(tv.daniil.playback.R.id.subtitles));
                     screen = new PlayerScreen(this, session, this); screen.setTitle(title.name);
+                    androidx.media3.ui.DaniilSubtitleOutput.font(findViewById(R.id.subtitles), tv.daniil.stream.ui.SubtitleFonts.selected(services.playerPreferences));
+                    androidx.media3.ui.DaniilSubtitleOutput.configure(findViewById(R.id.subtitles));
                     bindRemoteFocus();
                     resolve(true); main.post(tick);
                 });
@@ -223,8 +225,8 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 for (SubtitleSource offer : unloadedOffers()) result.add(new PlayerMenus.SubtitleOffer(languageName(offer.language), () -> attachSubtitles(offer, true)));
                 return result;
             }
-            @Override public void saveStyle(SubtitleStyle.Setting setting, int index) {
-                app.persistence.execute(() -> services.store.setPreference("subtitle_" + setting.key, setting.values[index]));
+            @Override public void saveStyle(SubtitleStyle.Setting setting, String value) {
+                app.persistence.execute(() -> services.store.setPreference("subtitle_" + setting.key, value));
             }
             @Override public void visibilityChanged() { updatePlayerClock(); if (session != null) updateNextEpisode(session.snapshot()); }
             @Override public boolean developerMode() { return developerMode; }

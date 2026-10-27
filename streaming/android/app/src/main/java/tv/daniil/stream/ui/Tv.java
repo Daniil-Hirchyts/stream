@@ -141,7 +141,17 @@ public final class Tv {
     public static View button(Context context, Item.Action action, Consumer<String> focused) {
         // Glass: on Android 12+ the platter blurs the artwork behind it, as the tab bar does.
         FrameLayout button = GlassView.surface(context);
+        bindButton(button, action, focused);
+        return button;
+    }
+
+    /** Update a button's content and action without detaching its focusable surface. */
+    public static void bindButton(FrameLayout button, Item.Action action, Consumer<String> focused) {
+        Context context = button.getContext();
+        ViewGroup.LayoutParams previousLayout = button.getLayoutParams();
+        button.removeAllViews();
         button.setContentDescription(action.label);
+        button.setTooltipText(action.style == Item.Action.Style.ICON ? action.label : null);
         LinearLayout content = new LinearLayout(context);
         content.setGravity(Gravity.CENTER);
         content.setDuplicateParentStateEnabled(true);
@@ -185,7 +195,7 @@ public final class Tv {
         button.setActivated(action.selected);
         Runnable press = action.style == Item.Action.Style.CHIP ? () -> { Sounds.at(Sounds.Sound.CHIP, button); action.action.run(); } : action.action;
         control(button, action.key, press, focused, LIFT_BUTTON);
-        return button;
+        if (previousLayout != null) button.setLayoutParams(previousLayout);
     }
 
     // Context menus stay beside their opener. One surface contains the full navigation stack.

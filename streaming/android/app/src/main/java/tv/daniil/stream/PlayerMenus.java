@@ -13,6 +13,7 @@ import tv.daniil.playback.SubtitleStyle;
 import tv.daniil.playback.SubtitleTracks;
 import tv.daniil.playback.VideoQualities;
 import tv.daniil.stream.ui.SubtitlePreviewView;
+import tv.daniil.stream.ui.SubtitleFonts;
 import tv.daniil.stream.ui.Tv;
 
 /** App-owned popup presentation; Media3, cue handling and the shared session remain unchanged. */
@@ -27,7 +28,7 @@ final class PlayerMenus {
         boolean canChooseSource();
         void sources(Tv.Alert page);
         List<SubtitleOffer> offers();
-        void saveStyle(SubtitleStyle.Setting setting, int index);
+        void saveStyle(SubtitleStyle.Setting setting, String value);
         void visibilityChanged();
         boolean developerMode();
         void diagnostics(Tv.Alert page);
@@ -114,22 +115,38 @@ final class PlayerMenus {
     private void style(Tv.Alert page) {
         page.reset(); preview(page);
         for (SubtitleStyle.Setting setting : SubtitleStyle.Setting.values()) {
-            String label = activity.getString(setting.title), value = activity.getString(setting.labels[screen.style().get(setting)]);
+            String label = activity.getString(setting.title), value = setting == SubtitleStyle.Setting.FONT
+                    ? SubtitleFonts.labels(activity)[SubtitleFonts.selected(preferences)] : activity.getString(setting.labels[screen.style().get(setting)]);
             page.submenu("style:" + setting.key, label, value, child -> child.onAppear(() -> styleChoices(child, setting)));
         }
         page.scrollChoices(230);
     }
     private void styleChoices(Tv.Alert page, SubtitleStyle.Setting setting) {
-        page.reset(); SubtitlePreviewView view = preview(page); int selected = screen.style().get(setting);
-        for (int i = 0; i < setting.values.length; i++) {
+        page.reset(); SubtitlePreviewView view = preview(page);
+        boolean font = setting == SubtitleStyle.Setting.FONT;
+        int selected = font ? SubtitleFonts.selected(preferences) : screen.style().get(setting);
+        String[] values = font ? SubtitleFonts.VALUES : setting.values;
+        String[] labels = font ? SubtitleFonts.labels(activity) : new String[setting.labels.length];
+        if (!font) for (int i = 0; i < labels.length; i++) labels[i] = activity.getString(setting.labels[i]);
+        for (int i = 0; i < values.length; i++) {
             final int index = i;
-            page.choice("style:" + setting.key + ":" + i, activity.getString(setting.labels[i]), "", selected == i, () -> {
-                screen.style().set(setting, index); screen.onStyleChanged(false); host.saveStyle(setting, index); page.back();
+            page.choice("style:" + setting.key + ":" + i, labels[i], "", selected == i, () -> {
+                screen.style().set(setting, font && index >= setting.values.length ? 0 : index);
+                if (font) preferences.edit().putString("subtitle_font", values[index]).apply();
+                screen.onStyleChanged(false); restoreFont();
+                host.saveStyle(setting, values[index]); page.back();
             }, ignored -> {
                 view.preview(setting, index);
             });
         }
         page.scrollChoices(184);
+    }
+    /** The shared style resets the subtitle font and drops cue emphasis; put Daniil TV's choice back. */
+    @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
+    private void restoreFont() {
+        androidx.media3.ui.SubtitleView subtitles = activity.findViewById(R.id.subtitles);
+        androidx.media3.ui.DaniilSubtitleOutput.font(subtitles, SubtitleFonts.selected(preferences));
+        androidx.media3.ui.DaniilSubtitleOutput.configure(subtitles);
     }
     private String signature() {
         StringBuilder result = new StringBuilder();

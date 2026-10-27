@@ -31,6 +31,19 @@ public final class PlayerPopupTest extends AppHarness {
         waitUntil("committed font", 5000, () -> services.playerPreferences.getString("subtitle_font", "").equals("bold"));
         app.persistence.submit(() -> {}).get();
         assertEquals("The Settings page receives the same saved value", "bold", services.store.preference("subtitle_font", ""));
+        tap("Font", false); tap("Atkinson Hyperlegible Next", true);
+        waitUntil("bundled accessibility font committed", 5000, () -> services.playerPreferences.getString("subtitle_font", "").equals("atkinson"));
+        app.persistence.submit(() -> {}).get(); assertEquals("atkinson", services.store.preference("subtitle_font", ""));
+        tap("Color", true); tap("Yellow", false);
+        waitUntil("another style saved", 5000, () -> services.playerPreferences.getString("subtitle_color", "").equals("yellow"));
+        assertEquals("Changing another style preserves the app-only font", "atkinson", services.playerPreferences.getString("subtitle_font", ""));
+        instrumentation.runOnMainSync(() -> {
+            try {
+                android.view.ViewGroup subtitles = activity.findViewById(R.id.subtitles);
+                Field font = androidx.media3.ui.DaniilSubtitleOutput.class.getDeclaredField("fontIndex"); font.setAccessible(true);
+                assertEquals("The live renderer keeps Atkinson after shared style updates", tv.daniil.stream.ui.SubtitleFonts.ATKINSON, font.getInt(subtitles.getChildAt(0)));
+            } catch (ReflectiveOperationException e) { throw new AssertionError(e); }
+        });
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
         returned(activity);
         assertFalse("Popup dismissal preserves pause", state().playWhenReady);

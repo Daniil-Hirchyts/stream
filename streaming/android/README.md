@@ -131,7 +131,9 @@ Shelves scroll horizontally. Page titles scroll with their page.
 - **Details:** Play or Resume (with the episode), Sources, and More retain labels.
   Favourite and a film's Mark watched are circular icon buttons, with state highlights,
   accessible action names and labels that fade between separate text views on focus.
-  In a series, focusing or hovering a season changes its episodes immediately.
+  In a series, focusing or hovering a season changes its episodes immediately;
+  the episode shelf slides a little in the direction of travel and crossfades
+  (`ui.SeasonShelf`), while the season strip and its focus stay put.
   Entering seasons or episodes fades and shifts the overview into the show's
   title artwork, season strip and episode shelf. A text title is the fallback
   when no logo loads. Episode cards show Episode N, title and a description of
@@ -248,6 +250,8 @@ Shelves scroll horizontally. Page titles scroll with their page.
   gains a white rim and a deep shadow while its caption keeps its size; buttons
   grow slightly; list rows and tabs don't grow, so their text never shifts.
   Left and right never leave the content, and shelves hold focus at their ends.
+  Toggling a favourite, watched state or a Settings switch updates its block in
+  place (`PageAdapter`'s bindings), so the focused control stays the same view.
 - **Popups:** `Tv.Alert` uses one opaque panel with 22 dp corners. Menus attach
   below/above small controls, or beside episode artwork, clamped to the screen's
   safe margins. Each level measures its own content width: short lists contract,
@@ -351,13 +355,17 @@ presentation adapters give Daniil TV its look, while Daniil Cast keeps its own:
   open in the app's own popups (`PlayerMenus`, see Popups above); Back and Menu
   close them. The shared player's menu (`layout/playback_menu.xml`, rows in
   `layout/row_menu.xml`) stays hidden as its transport/caption guard.
-- **Subtitle font & style:** Standard, Bold, Condensed, Serif, Monospace,
-  Casual, Cursive or Small caps, with expanded colors (White, Yellow, Cyan,
-  Green, Magenta, Blue, Amber, Red), from the shared player's subtitle style
-  (system families every Android TV has), with a live preview card in
-  Settings → Subtitles and choice dialogs, plus the player's Subtitle style menu.
-  Daniil Cast's receiver offers the same choice on the TV; the Chrome extension
-  doesn't send fonts.
+- **Subtitle font & style:** the default is the bundled Noto Sans Medium;
+  Atkinson Hyperlegible Next (bundled, for legibility; Cyrillic falls back to
+  Noto at a matched size) and System sans-serif (the old Standard) join Bold,
+  Condensed, Serif, Monospace, Casual, Cursive and Small caps. Colours are White,
+  Yellow, Cyan, Green, Magenta, Blue, Amber and Red. `ui.SubtitleFonts` and
+  `DaniilSubtitleOutput` own the font in this app only: cue italics and bold
+  survive, provider fonts, sizes and colours don't, and the eight older saved
+  values still read the same. A live preview card sits in Settings → Subtitles
+  and the player's Subtitle style menu. See
+  [branding/SUBTITLE_FONTS.md](branding/SUBTITLE_FONTS.md) for the font sources
+  and licences. Daniil Cast's receiver keeps the shared player's fonts.
 
 Screens are built off the main thread as `ui.Page` lists of `ui.Item` blocks
 (`BrowseScreens`, `TitleScreens`, `SetupScreens`), and `ui.PageAdapter` turns

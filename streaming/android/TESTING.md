@@ -56,6 +56,7 @@ sanitizer.
 | Source ranking and torrent sources | `SourceSortTest`, `AutoSourceRankTest`, `TorrentSourcesTest` |
 | Playback budgets and estimates | `StartupWatchdogTest`, `VideoFrameWatchdogTest`, `PlaybackDemandTest`, `PlaybackCoordinatorTest`, `NextEpisodeOfferTest`, `WatchCompletionTest`, `EpisodeDateTest` |
 | Error QR reports (decodes every part, checks redaction) | `DiagnosticReportTest`, `ErrorQrPanelTest` |
+| Subtitle fonts: saved values, kept emphasis, Cyrillic fallback (API 26 and 36) | `SubtitleFontsTest` |
 | Focus growth never clipped; player timeline layout (Robolectric) | `FocusEffectsTest`, `PlayerTimelineLayoutTest` |
 
 Two are opt-in because they reach the internet: `-PuiSnapshots=true` renders
@@ -76,11 +77,11 @@ FFmpeg (`RealFilmsLiveTest`, evidence in `app/build/live-evidence/`).
 | Area | Classes |
 | --- | --- |
 | Browse, loading and recovery | `BrowseRecoveryTest` (counted retries, Reload, saved posters, Back viewports), `DiscoveryRecoveryTest`, `HomeSchedulingTest`, `LoadingSurfacesTest`, `LoadingTest`, `SearchModesTest` |
-| Navigation and focus | `NavigationChromeTest`, `ChromeContinuityTest`, `PageNavigationTest`, `TransitionFocusTest`, `BrowsePolishTest`, `InterfacePolishTest` (keyboard languages) |
+| Navigation and focus | `NavigationChromeTest`, `ChromeContinuityTest`, `PageNavigationTest`, `TransitionFocusTest`, `InPlaceFocusTest` (toggles keep the same focused view), `BrowsePolishTest`, `InterfacePolishTest` (keyboard languages) |
 | Series and new episodes | `SeriesBrowseTest` (seasons, episode menu, visible-season artwork), `NewEpisodesScreenTest` (Home row, spotlight, NEW flags, Details default, Hide) |
 | Artwork | `TitleArtworkTest` (cold, missing and late logos) |
 | Popups | `PopupInteractionTest`, `PopupMotionTest` (painted frames), `PlayerPopupTest` |
-| Player | `PlayerPresentationTest`, `PlayerLifecycleTest` (screensaver, sleep, Home), `SubtitleBoxTest`, `SubtitlePagePreviewTest`, `AutoplayInteractionTest`, `WatchCompletionInteractionTest`, `InstalledTitlePlaybackTest` |
+| Player | `PlayerPresentationTest`, `PlayerLifecycleTest` (screensaver, sleep, Home), `SubtitleBoxTest`, `SubtitlePagePreviewTest`, `SubtitleFontRenderingTest`, `AutoplayInteractionTest`, `WatchCompletionInteractionTest`, `InstalledTitlePlaybackTest` |
 | Startup and recovery | `StartupPipelineTest`, `ProgressiveRecoveryTest` |
 | Sounds | `ui.SoundAssetsTest`, plus `python3 streaming/sounds/verify.py` for the WAVs |
 

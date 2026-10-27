@@ -1046,8 +1046,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         }));
     }
     @Override public void notices() {
-        String[] files = {"androidx.txt", "libtorrent.txt", "boost.txt", "openssl.txt", "ed25519.txt", "try-signal.txt", "inter.txt", "zxing.txt", "material-icons.txt"};
-        choose("Open source notices", new String[]{"AndroidX / Media3", "libtorrent", "Boost", "OpenSSL", "Ed25519", "try_signal", "Inter typeface", "ZXing", "Material Icons"}, which -> work(() -> {
+        String[] files = {"androidx.txt", "libtorrent.txt", "boost.txt", "openssl.txt", "ed25519.txt", "try-signal.txt", "inter.txt", "zxing.txt", "material-icons.txt", "noto-sans.txt", "atkinson-hyperlegible.txt"};
+        choose("Open source notices", new String[]{"AndroidX / Media3", "libtorrent", "Boost", "OpenSSL", "Ed25519", "try_signal", "Inter typeface", "ZXing", "Material Icons", "Noto Sans", "Atkinson Hyperlegible Next"}, which -> work(() -> {
             try (java.io.InputStream input = getAssets().open("notices/" + files[which]); java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
                 byte[] buffer = new byte[8192];
                 for (int count; (count = input.read(buffer)) != -1; ) bytes.write(buffer, 0, count);

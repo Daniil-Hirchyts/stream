@@ -17,6 +17,7 @@ import tv.daniil.stream.data.InstalledAddon;
 import tv.daniil.stream.ui.Item;
 import tv.daniil.stream.ui.Item.Action;
 import tv.daniil.stream.ui.Page;
+import tv.daniil.stream.ui.SubtitleFonts;
 
 /** Onboarding, Imports, Settings, add-on management and Developer diagnostics. */
 final class SetupScreens {
@@ -77,12 +78,12 @@ final class SetupScreens {
         SubtitleStyle subtitleStyle = new SubtitleStyle(services.playerPreferences);
         for (SubtitleStyle.Setting s : SubtitleStyle.Setting.values()) {
             String setting = s.key;
-            String[] values = s.values;
-            int currentIndex = subtitleStyle.get(s);
+            String[] values = s == SubtitleStyle.Setting.FONT ? SubtitleFonts.VALUES : s.values;
+            int currentIndex = s == SubtitleStyle.Setting.FONT ? SubtitleFonts.selected(services.playerPreferences) : subtitleStyle.get(s);
+            String[] labels = s == SubtitleStyle.Setting.FONT ? SubtitleFonts.labels(context) : new String[s.labels.length];
+            if (s != SubtitleStyle.Setting.FONT) for (int i = 0; i < labels.length; i++) labels[i] = context.getString(s.labels[i]);
             String title = "Subtitle " + context.getString(s.title).toLowerCase(java.util.Locale.ROOT);
-            subtitles.add(Item.row("subtitle-" + setting, 0, title, context.getString(s.labels[currentIndex]), () -> {
-                String[] labels = new String[values.length];
-                for (int i = 0; i < values.length; i++) labels[i] = context.getString(s.labels[i]);
+            subtitles.add(Item.row("subtitle-" + setting, 0, title, labels[currentIndex], () -> {
                 nav.chooseWithPreview(title, null, labels, currentIndex, i -> nav.mutate(() -> {
                     services.playerPreferences.edit().putString("subtitle_" + setting, values[i]).apply();
                     services.store.setPreference("subtitle_" + setting, values[i]);
