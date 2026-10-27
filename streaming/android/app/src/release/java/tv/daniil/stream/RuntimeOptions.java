@@ -10,6 +10,7 @@ public final class RuntimeOptions {
     static java.util.List<String> starterAddons(Context context) { return StarterAddons.ALL; }
     /** A new install sets itself up with the starter add-ons. */
     static boolean installDefaults(Context context) { return true; }
+    static boolean checkNewEpisodes(Context context) { return true; }
     public final boolean localOnly = false;
     public final boolean publicNetworkOnly = false;
     public final String peer = "";

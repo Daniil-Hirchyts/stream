@@ -71,7 +71,7 @@ public final class ErrorQrPanelTest {
         }
     }
 
-    @Test public void reportDialogKeepsCodePaginationAndCloseInsideTvScreen() throws Exception {
+    @Test public void reportDialogKeepsTheCodeInsideTheTvScreenAndBackClosesIt() throws Exception {
         try (org.robolectric.android.controller.ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
             Activity activity = controller.get(); activity.setTheme(R.style.TvTheme);
             DiagnosticReport report = DiagnosticReport.capture(activity, "Catalogue", "Unable to load", "Provider failed", "application",
@@ -84,10 +84,11 @@ public final class ErrorQrPanelTest {
                 root.layout(0, 0, 1920, 1080);
                 Rect visible = new Rect(); assertTrue(code.getGlobalVisibleRect(visible));
                 assertEquals(code.getHeight(), visible.height()); assertEquals(report.pages.get(0), decode(code));
-                View close = alert.buttons.getChildAt(alert.buttons.getChildCount() - 1);
-                assertTrue(close.getGlobalVisibleRect(visible)); assertTrue(visible.height() >= close.getHeight());
+                assertEquals("No Close footer: Back closes popups", 0, alert.buttons.getChildCount());
                 save(root, "report-dialog.png");
-                assertTrue(close.performClick()); assertFalse(alert.dialog.isShowing());
+                alert.dialog.onBackPressed();
+                shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(2));
+                assertFalse(alert.dialog.isShowing());
             } finally { alert.dialog.dismiss(); }
         }
     }

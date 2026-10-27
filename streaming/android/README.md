@@ -23,11 +23,47 @@ Cinemeta, Internet Archive and OpenSubtitles, installed together by its Install
 button. Home, Library and Settings are tabs in a floating bar at the top; search
 opens from the same bar, and the add-on store, add-on management and Imports
 live under Settings. Details provide Play/Resume, Sources,
-watched/favourite controls and seasons/episodes. Settings manage add-ons,
+watched/favourite controls and seasons/episodes. Home also tells the viewer
+about [new episodes](#new-episodes) of the series they follow. Settings manage add-ons,
 catalogue visibility, languages, subtitle style (size, font, colour,
 background, position), cache size (128/256/512 MiB),
 autoplay and app-cache cleanup. Versions, statistics and license texts live in
 Developer views.
+
+### New episodes
+
+`NewEpisodes` announces episodes of followed series, then gets out of the way:
+
+- **Followed:** a series in the library that the viewer finished an episode of
+  in the last two years, or a favourite (even before its first episode). More
+  → Turn off new episode alerts stops it, until turned back on.
+- **New:** the series' next episode (after the furthest one finished, specials
+  aside) aired since the viewer finished the one before it and hasn't been
+  started. A viewer who is behind isn't told: they already know the later
+  episodes exist. Episodes released together with the last one watched (a whole
+  season at once) don't count; a date-only release on the day the viewer
+  finished still does. Undated episodes are never "new".
+- **Where:** a New Episodes row leads Home ("New season", "3 new episodes" or
+  "New episode"), and its card opens the series on that episode, so Play starts
+  it. The spotlight leads with the same words, and the series' posters
+  (Favourites, Library) and the new episode cards carry a small NEW flag.
+  Details' Play also defaults to the next episode rather than the first.
+- **Not forever:** a notice ends when the episode is played (30 seconds or
+  more), on More → Hide new episode, after Home has shown it on seven different
+  days, or a month after it first appeared. It never comes back for that
+  episode, so an ignored notice quietens the series until the viewer watches it
+  again; once caught up, the next episode is new again.
+- **Fresh lists:** in the background, at most twice a day per series and 24
+  series per run (most recently watched first), the app fetches each followed
+  series' metadata and saves it over the library's copy without reordering
+  Recently played. Opening a series' Details does the same. Checks rank below
+  every other provider request, Play cancels them, and a provider that fails is
+  asked again next time. Test databases and local-only instrumentation never run
+  them; `NewEpisodesTest` drives them against a loopback add-on.
+
+The state (per series: last check, alerts off, the current notice's first day
+and days shown) is one encrypted preference and forgets series that leave the
+library.
 
 ### Error QR reports
 
@@ -181,34 +217,25 @@ Shelves scroll horizontally. Page titles scroll with their page.
   by name to use it, and its times use tabular figures.
 - **Loading:** skeletons cover unknown remote content after a 160 ms delay;
   local pages and cached returns have no ghost forms/grids. Known title headers
-  and existing results remain visible. Poster placeholders use the current
-  one-line captions and Search's active column count. See the complete
-  [loading-surface audit](LOADING_UI_REVIEW.md). The activity indicator is an eight-spoke wheel after Apple's,
+  and existing results remain visible; a refresh keeps usable content. Poster
+  placeholders use the current one-line captions and Search's active column
+  count. The activity indicator is an eight-spoke wheel after Apple's,
   with fixed bars and an opacity trail advancing clockwise in distinct 128 ms
   steps (1.024 seconds per cycle). Its animated vector stays on the render
   thread while the main thread is busy.
-- **Sounds:** made, not sampled, by `streaming/sounds/sounds.py` with Rauta's
-  method (gym-lib): each moment is a short score rendered by a small synth and
-  mastered to one A-weighted loudness scale, then chosen by ear. The app plays
-  Glass, made dark and plain like a TV's own interface: low, damped single
-  tones with a felt tap and no melodies; a small slide up or down says which
-  way something went, and a completion is the same tone tapped twice.
-  Navigation has quiet ticks: focus moving (in the player's controls and menu
-  too), a row's end, typing; tabs, pages, chips, dialogs and the player's
-  pause, play, skips and menu have small sounds; favourite, watched, an add-on
-  installed, a failure, up next and a title's end have fuller ones. The start
-  screen has the one piece of music, timed to its animation: a low fifth
-  swells as the mark traces, a glass tap as it fills, a warm chord as the name
-  lands, and a soft rush of air as it zooms into Home. Ticks
-  follow only the viewer's arrows and touches, never focus a page restores, and
-  lean up to a semitone with their place across the screen. `ui.Sounds` plays
-  them as sonification (never taking audio focus) with one voice: a new sound
-  cuts a smaller or equal one, is dropped under a larger one, a held arrow ticks
-  at most every 45 ms and quick presses are spaced out; OK's select gives way
-  to a more particular sound in the same press. Off with Settings → Playback →
-  Interface sounds, or the TV's own System sounds switch.
-  `python3 streaming/sounds/sounds.py audition` writes a listening page with
-  the app's set beside Bright glass, Pure and Marimba.
+- **Sounds:** made, not sampled: **Soft**, 28 rounded plucks rendered by
+  `streaming/sounds/sounds.py` (see [its guide](../sounds/README.md)). Navigation
+  has quiet ticks (focus moving, a row's end, typing); tabs, pages, chips,
+  dialogs and the player's controls have small sounds; favourite, watched, an
+  add-on installed, a failure, up next and a title's end have fuller ones, and
+  the start screen has a short cue timed to its animation. Ticks follow only the
+  viewer's arrows and touches, never focus a page restores, and lean up to a
+  semitone with their place across the screen. `ui.Sounds` plays them as
+  sonification (never taking audio focus) with one voice: a new sound cuts a
+  smaller or equal one, is dropped under a larger one, a held arrow ticks at most
+  every 45 ms and quick presses are spaced out; OK's select gives way to a more
+  particular sound in the same press. Off with Settings → Playback → Interface
+  sounds, or the TV's own System sounds switch.
 - **Text:** short. Player steps name the step and the source; errors say what
   happened in one sentence and leave the next step to their buttons.
 - **Contrast:** small text is at least 4.5:1 on the canvas; tertiary grey is
@@ -245,7 +272,7 @@ Shelves scroll horizontally. Page titles scroll with their page.
   preview already on its page, with no duplicate preview inside the choice popup.
   Both entry points share the same labels and name effective default values. Cancelling source choices retains
   the active player and downloaded cache; selecting a source preserves pause, speed
-  and position. See `UI_CONSISTENCY_REVIEW.md` for evidence and remaining findings.
+  and position.
 
 Glass comes from cheap blurs:
 - **Artwork:** each title's artwork also has a softened layer, blurred and
@@ -270,15 +297,15 @@ a row nor reloads its art.
 The Seasons view leaves space between the title logo, season selector and cards.
 Episode captions show the episode number, title, a description limited to three
 lines and, when the provider supplies a valid date, its initial air date. Missing
-dates add no empty row. See [the series loading review](SERIES_LOADING_REVIEW.md)
-for metadata/image request timing and remaining optimization opportunities.
+dates add no empty row. Only the selected season's shelf is attached, so
+episode images load for the season on screen, not the whole series.
 An episode's action sheet uses Play or Resume according to its saved progress,
 and offers Choose source. Its on-card completion toggle reads Mark watched or
 Watched, with a season/episode-specific accessible action and no redundant badge.
 
 The shared player's sources stay unchanged: app resource overrides and app-owned
 presentation adapters give Daniil TV its look, while Daniil Cast keeps its own:
-- **Palette:** `res/values/colors.xml`, `bg_panel`, `pill` and `bg_card_soft`.
+- **Palette:** `res/values/colors.xml`, `pill` and `bg_card_soft`.
 - **Subtitle Box:** `DaniilSubtitleOutput` adds modest side padding and rounded
   corners per text line in playback and the settings preview. Other edges and
   bitmap cues retain Media3 rendering. Media3 1.11.1 exposes no public output
@@ -320,11 +347,10 @@ presentation adapters give Daniil TV its look, while Daniil Cast keeps its own:
   - Errors are a centred glass alert like the app's, with stacked full-width
     buttons. It opens with its first button focused, and OK presses the
     focused one (`WatchActivity.onKey`); the library alone would retry.
-- **Options menu:** a floating glass sheet (`layout/playback_menu.xml`,
-  `bg_panel`) below the clock: Back and Menu close it, and a
-  pointer uses the header's chevron or clicks outside. Rows use
-  `layout/row_menu.xml`, `bg_option_row`, `option_label` and `menu_icon`; the
-  focused row turns white with dark text, as everywhere else.
+- **Options menu:** tracks, audio, sources, quality, speed and subtitle style
+  open in the app's own popups (`PlayerMenus`, see Popups above); Back and Menu
+  close them. The shared player's menu (`layout/playback_menu.xml`, rows in
+  `layout/row_menu.xml`) stays hidden as its transport/caption guard.
 - **Subtitle font & style:** Standard, Bold, Condensed, Serif, Monospace,
   Casual, Cursive or Small caps, with expanded colors (White, Yellow, Cyan,
   Green, Magenta, Blue, Amber, Red), from the shared player's subtitle style
@@ -401,8 +427,9 @@ the production private-copy and native playback paths.
 catalogue rows, filtered/paginated catalogue queries, search, metadata, streams
 and subtitles. It implements the supported HTTP resources in the
 [Stremio protocol](https://github.com/Stremio/stremio-addon-sdk/blob/master/docs/protocol.md).
-No add-on JavaScript runs in the application. Cinemeta's address is an onboarding
-offer constant; constructing the store/repository installs nothing.
+No add-on JavaScript runs in the application. Constructing the repository
+installs nothing; a new install's defaults come from `StarterAddons` (see First
+run above).
 
 ### Store
 
@@ -443,7 +470,7 @@ Stremio-compatible installs from its address.
 `BuiltinAddons` answers `daniiltv://name/manifest.json` addresses inside the app,
 using the same protocol, review, installation, ordering and removal as remote
 add-ons; `AddonClient` routes them before taking a request permit, so their own
-HTTPS requests can't deadlock the pool. Internet Archive (opt-in like any other)
+HTTPS requests can't deadlock the pool. Internet Archive (a starter default, removable like any other)
 offers a "Public Domain Films" catalogue from the Archive's Feature Films
 collection and streams for `tt` IDs. Items come from the collection's own IMDb
 links and from Wikidata (IMDb ID P345 → Internet Archive ID P724). Withdrawn
@@ -458,9 +485,11 @@ from archive.org. Wikidata needs an identifying User-Agent sent before
 Many add-ons send only an info hash, with no `sources`. Outside local-only
 tests, playback then announces to `MediaSource.PUBLIC_TRACKERS` as well as DHT
 (`TorrentEngine.Source.withFallbackTrackers`); hinted trackers are used alone.
-Metadata from a public swarm may take up to 60 seconds ("Finding peers");
-after loading, a torrent has a minute to show its first frame before the
-player offers Retry or another source.
+Metadata from a public swarm may take up to 60 seconds ("Finding peers").
+Startup as a whole has a 60-second budget, pauses excluded, before the player
+offers Retry or another source; when another candidate exists, a source with no
+peers, no metadata or no frame is abandoned sooner (8, 12 and 25 seconds). See
+[playback preparation and recovery](../PLAYBACK_IMPLEMENTATION.md).
 
 Call blocking APIs from an application worker, never the UI or the repository's
 internal request pool. Create a `Cancellation` with `newRequest()` for each
@@ -527,40 +556,36 @@ separate and is never an import descriptor or library asset.
 
 ## Verification
 
+See [TESTING.md](TESTING.md) for what each suite proves and the focused
+commands. The routine gates, from the repository root:
+
 ```sh
-./streaming/simulator.sh engine-test   # 10 JNI/Media3 tests, real BitTorrent
-./streaming/simulator.sh data-test     # add-ons, encryption, persistence, imports
-./streaming/simulator.sh test          # engine, data and 10 core app tests on the verified AVD
-./streaming/simulator.sh smoke         # one visible catalogue → torrent/seek/cache/favourite flow
-./streaming/simulator.sh soak          # 30 real minutes of playback/seek cycles
-./streaming/simulator.sh site          # real screen and bounded input, port 58133
-./streaming/simulator.sh profile       # dumpsys memory/graphics and screenshot
-./streaming/simulator.sh acceptance    # extended UI, HTTP formats, tracks and failover
-./streaming/simulator.sh process-death # real process termination and resumed playback
-./streaming/simulator.sh release-test  # shrunk release JNI probe; restores debug app/test APKs
-./streaming/simulator.sh live-film     # optional: real public-domain films through the store (internet)
-./streaming/simulator.sh live-addons   # optional: current store + earlier Nuvio list, manifests/resources/reviews
-./streaming/simulator.sh live-torrents # optional: public-domain torrent playback samples
-./streaming/simulator.sh live-torrents Torrentio,TorrentClaw,Pipe # optional subset; names without spaces
-cd streaming/android
-./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:testDebugUnitTest :app:lintDebug :app:lintRelease
-./gradlew :app:testDebugUnitTest -PliveAddons=true  # optional: real films via live add-ons, archive.org and FFmpeg
-./gradlew :app:testDebugUnitTest --tests '*UiSnapshotTest' -PuiSnapshots=true  # optional: screen renders (internet)
+(cd streaming/android && ./gradlew :app:testDebugUnitTest)  # JVM: protocol, store, new episodes; no device or network
+./streaming/simulator.sh test       # engine, data and core app tests on the verified AVD
+./streaming/simulator.sh smoke      # one catalogue → torrent → player flow
 ```
 
-`UiSnapshotTest` renders the real screens at 1920×1080 with Robolectric into
-`app/build/ui-snapshots/` for design review. It uses live Cinemeta and
-Internet Archive data.
-- **Screens:** the empty Home and the starter install, Home, details,
-  Sources, Library, the store, Settings with an alert, Search, Imports, and
-  the player overlay, error alert and options menu.
-- **Skeletons and branding:** remaining full-page loading skeletons (`sk-*`), to
-  compare with its page, and the launcher icon and banner as Android draws
-  them (`00-*`).
-- **Remote check:** on each page it walks D-pad focus from the focused
-  control and fails if a visible control is unreachable or touch-only.
-- **Limits:** it doesn't replace instrumentation on the emulator, and it
-  can't show live blur.
+## Device target and budgets
+
+The intended TV is a first-generation Fire TV Stick HD: 1 GB RAM, a 32-bit ABI,
+Fire OS 7 (Android 9), H.264/HEVC/VP9 up to 1080p. Development and every test
+run on the `DaniilCast_Local_TV` emulator (Android TV 16, 4 GB, ARM64), so
+results describe the emulator, not the stick. Defaults:
+
+| Resource | Default |
+| --- | --- |
+| Active payload torrents | One |
+| Payload disk cache | 256 MiB (128/256/512 in Settings) |
+| Free-storage reserve | 512 MiB |
+| Media3 compressed-data target | 24 MiB |
+| Decoded artwork memory / disk cache | 8 / 40 MiB |
+| Provider requests | 4 concurrent, 64 queued |
+| Metadata cache | 256 entries, 8 MiB |
+
+The total-app memory target for the stick is 250 MiB; it is a target to
+measure (`./streaming/simulator.sh profile`), not a guarantee.
+
+## Build variants and branding
 
 `branding/make_brand.py` regenerates the launcher icon and the TV banner from
 one geometry: a graphite field and a frosted-glass play mark. The icon is an
@@ -578,109 +603,27 @@ Fire TV's choice of artwork can involve Appstore assets as well as APK resources
 Compare a working app on the same device before attributing a tile problem to
 sideloading alone.
 
-`:app:testDebugUnitTest` runs JVM tests of the store protocol, listing rules,
-built-in add-on, torrent discovery and source sorting without a device or network.
+## Known gaps
 
-The [test review](TESTING.md) records the 12 disabled low-value checks and the
-routine/extended split. Disabled checks carry JUnit `@Ignore` reasons; broader
-UI/settings/import coverage remains available with `acceptance`. Rewinding into evicted data is proved
-end to end by `AppFlowTest` (the engine suite keeps one whole-file read through
-a turning-over cache; metadata is checked for each hash version), and playback
-measurements run only under `profile`, not `test` or `acceptance`. Source
-ranking, retry identity and the startup deadline are unit-tested
-(`TorrentSourcesTest`, `SourcePolicyTest`, `StartupWatchdogTest`), so the
-acceptance suite keeps only the failover paths that need a real player: bounded
-automatic failover with manual choices left alone, and recovery after frames
-(position and speed kept). With
-`-PliveAddons=true` it also runs `RealFilmsLiveTest` against Stremio's
-directory, Cinemeta, Public Domain Movies, OpenSubtitles v3, archive.org and
-Wikidata with eight public-domain films; FFmpeg (when installed) checks codec,
-resolution and running time and decodes a frame 30 minutes into each film.
-Frames and a results table go to `app/build/live-evidence/`. Neither live suite
-is required: public services and swarms change.
-
-`live-addons` audits every entry returned by the current store on the verified
-emulator, supplemented by the earlier Nuvio list in the test-only asset
-`app/src/androidTest/assets/nuvio-addon-audit.json`. Personal-manifest services,
-upstream indexes and unverified names have explicit coverage records. This
-asset does not add providers to the production store.
-The audit previews real manifests, samples up to two usable catalogue/search
-resources per provider, and requests supported movie metadata, streams and
-subtitles for the public-domain 1968 *Night of the Living Dead*.
-It then opens each actual review screen and presses Install where setup is not
-required, using an isolated database and removing each accepted provider before
-the next. The report in `streaming/simulator/.cache/evidence/live-addons.json`
-records external HTTP/certificate/network failures, setup requirements and
-source counts separately from successful review installation. Source discovery
-does not establish video playback; `live-film` supplies that separate check.
-These live commands do not supply paid accounts or credentials.
-
-`live-torrents` installs each sampled provider through its review screen in an
-isolated database, then opens a supported torrent for the 1968 film. It prefers
-the public-domain directory's known copy when an index offers it, handles an
-explicit video-file choice, and records rendered playback, provider errors and
-setup requirements in `streaming/simulator/.cache/evidence/live-torrents.json`.
-One sampled torrent does not establish availability of every result from an index.
-
-For an explicitly requested title, `./streaming/simulator.sh requested-title tt1234567`
-copies only the currently accepted, enabled provider descriptors into an isolated
-test database. It samples each provider and combined automatic playback; combined
-playback also checks Up/OK options access and a seek to 30 minutes. It does not
-install new providers into owner data. Internet access is opt-in; select only a
-title authorized for this reproduction. Outcomes are in
-`streaming/simulator/.cache/evidence/requested-title.json`; runner completion alone
-does not mean every provider played. The normal fixture suites never run this probe.
-
-If public IPs work but DNS lookups fail inside the emulator, restart that verified
-AVD with an explicit resolver, for example
-`DANIIL_CAST_DNS_SERVERS=1.1.1.1,8.8.8.8 ./streaming/simulator.sh start`.
-The option applies when starting a stopped emulator; it does not reconfigure a
-running instance, disable TLS verification or change the host/physical TV DNS.
-Startup allows continued payload progress for up to three minutes after video
-preparation begins, with a one-minute transfer-stall deadline. Playback stalls
-after the first frame retain the existing deadline. Pausing before the first
-frame suspends both startup deadlines. An expired automatic source follows the
-same three-attempt failover limit as opening errors; explicit source choices
-remain explicit. Back can cancel preparation.
-
-The live torrent test uses an instrumentation-only public-network setting:
-LAN discovery and port mapping are off, and native peers, trackers and DHT nodes
-on private, loopback, link-local or other reserved addresses are filtered.
-Host and JNI regressions verify that even an explicitly supplied loopback
-seeder cannot be contacted in that mode. Release configuration does not read
-this instrumentation setting. Required suites retain their loopback-only mode.
-
-Tests use generated loopback fixtures on 58133, the real seeder on 58134, and a
-deliberately untrusted TLS fixture on 58135. The TLS test must fail certificate
-verification; no trust-store change or certificate bypass is used. Fixture code
-lives outside the app. The launcher verifies serial, emulator flag and AVD name
-before every device operation and preserves runner output in
-`streaming/simulator/.cache/evidence/`.
-
-The routine app selection excludes extended UI/settings/import paths, the long
-soak and two-phase process-death test. CI still invokes process-death separately.
-Debug app tests use isolated databases/player preferences and local-only peers.
-After installing the current debug app/test APKs and starting services,
-`streaming/simulator/process-death.sh` terminates actual playback after durable
-progress, then checks orphan recovery and resumed playback in a fresh process.
-
-The shrunk release JNI probe builds with `-PreleaseValidation=true
-:app:assembleRelease :app:assembleReleaseAndroidTest`, using the local debug
-signing key explicitly for validation; ordinary release output is unsigned.
-The launcher invokes `tv.daniil.stream.ReleaseProbeInstrumentation`, a small
-Android platform runner that does not retain AndroidX/Kotlin test dependencies
-in the shrunk application. It opens no owner database and uses explicit
-local-only native peers. Never use
-`connectedAndroidTest` to select a device. Both app and library pin the NDK so
-final release symbol stripping uses the intended toolchain.
-
-See the [validation record](../../docs/streaming-validation.md) and the
-[complete application specification](../../docs/STREAMING_APP_PLAN.md).
-
-Home and Search now share the catalogue retry policy (at most three attempts for
-transient errors, cancellable backoff). Successful provider resources are retained
-while only failed resources retry. Skeletons (or existing posters) cover the
-attempts without an extra loading/retry notice. Inline Reload and the final
-attempt count appear only after loading fails; Search distinguishes provider
-failure from an empty success. Failed Home/Search snapshots are retried when
-revisited rather than reused as fresh data. These calls remain on application workers.
+- **Endurance:** the last thirty-minute soak on the emulator failed after about
+  27 minutes (`Timed out: soak seek 159`); the cause hasn't been investigated.
+- **Formats:** VC-1 has decoder-discovery coverage only. Small 10-bit fixtures
+  prove decoding and seeking, not full-resolution throughput on a TV; HDR
+  output, Dolby Vision, unsupported extractors, damaged files and DRM can fail.
+- **Devices and providers:** nothing has run on the physical stick. Public
+  provider latency, expiring links and swarm health are outside the fixtures.
+- **Series loading:** Details parses a series' whole episode list and builds
+  every season's card models up front; building the selected season on demand
+  would save work on long series. Concurrent requests for the same uncached
+  image aren't combined, and rebinding an image doesn't cancel its download.
+- **Metadata:** reopening Details fetches its metadata again after the 60-second
+  preparation window; showing the cache first and revalidating would be faster.
+  `Title` keeps no network/studio or person data, so the app can't show the
+  original service (Netflix, Apple TV+) or person pages; add-ons such as
+  AIOMetadata and the TMDB add-on publish those fields.
+- **New episodes** rely on providers' `released` dates; a provider without dates
+  never announces anything.
+- **Search return:** Back from a search result restores the right card but not
+  its exact vertical position in the results grid (about 30 px off);
+  `BrowseRecoveryTest#searchLibraryAndHomeRestoreTheirOwnFocusAndNestedViewports`
+  fails on it, and did before the new-episode work.

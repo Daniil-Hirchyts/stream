@@ -21,6 +21,8 @@ public final class RuntimeOptions {
         return !context.getSharedPreferences("instrumentation", Context.MODE_PRIVATE).getBoolean("localOnly", false)
                 && !databaseName(context).startsWith("test-");
     }
+    /** Background new-episode checks, like the defaults, belong to the owner's app; tests call the check themselves. */
+    static boolean checkNewEpisodes(Context context) { return installDefaults(context); }
     /**
      * What onboarding offers to add. Local-only instrumentation must not reach public providers, so it offers only
      * the fixture add-ons it names (none by default).

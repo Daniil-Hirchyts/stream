@@ -21,7 +21,9 @@ interface Navigator {
     void openTitle(Title title, String video);
     void sources(Title title, String video);
     void play(Title title, String video, String sourceKey);
-    void edit(String title, String hint, String initial, Consumer<String> accept);
+    /** A one-line text entry; {@code description} explains it under the title (empty for none). */
+    void edit(String title, String description, String hint, String initial, Consumer<String> accept);
+    default void edit(String title, String hint, String initial, Consumer<String> accept) { edit(title, "", hint, initial, accept); }
     void choose(String title, String[] options, Consumer<Integer> accept);
     void options(String title, Consumer<tv.daniil.stream.ui.Tv.Alert> contents);
     default void chooseWithPreview(String title, @Nullable View header, String[] options, int selected,

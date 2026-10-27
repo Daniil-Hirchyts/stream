@@ -156,6 +156,8 @@ final class MorphDialog extends Dialog {
         if (Build.VERSION.SDK_INT >= 33 && backCallback != null) BackApi.unregister(this, backCallback);
         super.onStop();
     }
+    /** Callers check {@code Build.VERSION.SDK_INT >= 33}; the annotation lets lint see that through this class. */
+    @androidx.annotation.RequiresApi(33)
     private static final class BackApi {
         static Object register(MorphDialog dialog) {
             android.window.OnBackInvokedCallback callback = dialog::back;

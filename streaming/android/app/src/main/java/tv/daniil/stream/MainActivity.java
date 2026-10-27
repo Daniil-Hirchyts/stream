@@ -55,6 +55,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     /** Width of the centred column that lists and forms use, in dp of the 960 dp canvas. */
     private static final int COLUMN = 620;
     private static final int PICK_TORRENT = 21;
+    static final String NAME_HINT = "Choose the name shown in your library.";
     private TvApplication app;
     private TvApplication.Services services;
     private RecyclerView list;
@@ -94,6 +95,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     /** A tab was chosen: leave focus on the tab bar rather than jumping into the new page. */
     private boolean stayOnTabs;
     private boolean waitingForContentFocus;
+    /** Saved series changed while their page was loading; it rebuilds when that load finishes. */
+    private boolean libraryChanged;
     @Nullable private Runnable delayedLoading;
     private long loadStarted;
     private boolean resetLoadingContent, keepLoadingContent;
@@ -201,6 +204,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             services = value;
             browse = new BrowseScreens(this, services); titles = new TitleScreens(this, services); setup = new SetupScreens(this, this, services); store = new StoreScreens(this, services);
             // No onboarding: the app opens on Home and sets itself up with the starter add-ons in the background.
+            checkNewEpisodes();
             if (route().screen.equals("Starting") && intro != null) { introSetup(); offerIncomingFile(); return; }
             if (route().screen.equals("Starting")) root("Home"); else render();
             offerIncomingFile();
@@ -209,6 +213,25 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             });
         });
     }
+
+    /**
+     * Fetches followed series' episode lists in the background (each at most twice a day). When one changes, Home and
+     * Library rebuild from local data, keeping their provider results; one still loading rebuilds once it has finished.
+     */
+    private void checkNewEpisodes() {
+        TvApplication.Services data = services;
+        if (data == null || !RuntimeOptions.checkNewEpisodes(this)) return;
+        app.background.execute(() -> {
+            if (!NewEpisodes.check(data.store, data.addons, System.currentTimeMillis())) return;
+            main.post(() -> {
+                if (stopped || isFinishing() || services != data) return;
+                for (Route saved : retainedPages.keySet()) if (showsLibrary(saved)) dirtyPages.add(saved);
+                if (stack.isEmpty() || !showsLibrary(route())) return;
+                if (pageLoading) libraryChanged = true; else { rememberFocus(); render(true); }
+            });
+        });
+    }
+    private static boolean showsLibrary(Route route) { return route.screen.equals("Home") || route.screen.equals("Library"); }
 
     // Start screen.
     /** Starter add-ons install before Home is first built, so a first launch opens on filled shelves. */
@@ -333,7 +356,6 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         return false;
     }
     private String primaryTab(String screen) {
-        if (screen.equals("History")) return "Library";
         if (screen.equals("Imports") || screen.equals("Add-on") || screen.equals("Developer") || screen.equals("Add-ons") || screen.equals("Add-on review")) return "Settings";
         if (screen.equals("Search")) return isPrimaryTab(searchReturnTab) ? searchReturnTab : "Home";
         return isPrimaryTab(screen) ? screen : "Home";
@@ -455,7 +477,6 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             case "Home": return browse.home(request, progress, refreshData, restoring);
             case "Search": return browse.search(route, request, progress, refreshData, restoring);
             case "Library": return browse.library();
-            case "History": return browse.library();
             case "Imports": return setup.imports();
             case "Settings": return setup.settings(route);
             case "Add-on": return setup.addon(route);
@@ -467,7 +488,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             case "Sources": return titles.sources(route, request, progress);
             case "Developer": return setup.developer();
             case "Keyboard languages": return setup.keyboardLanguages();
-            default: return browse.home(request, progress);
+            default: return browse.home(request, progress, refreshData, restoring);
         }
     }
     /** Tabs are hidden during onboarding; the active tab follows the bottom of the stack. */
@@ -571,6 +592,14 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         Page previousPage = shownPage;
         shownRoute = route(); shownPage = page;
         if (!partial) { retainedPages.put(shownRoute, page); dirtyPages.remove(shownRoute); }
+        if (!partial && libraryChanged) {
+            libraryChanged = false;
+            Route changed = shownRoute;
+            if (showsLibrary(changed)) {
+                dirtyPages.add(changed);
+                main.post(() -> { if (!stopped && !stack.isEmpty() && route() == changed) { rememberFocus(); render(true); } });
+            }
+        }
         if (!partial && intro != null && shownRoute.screen.equals("Home")) introArtwork(page);
         contentReady = false;
         Route route = route();
@@ -880,12 +909,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         alert.dialog.setOnCancelListener(ignored -> { if (onCancel != null) onCancel.run(); });
         show(alert);
     }
-    @Override public void edit(String title, String hint, String initial, Consumer<String> accept) {
-        String description;
-        if (title.equals("Add add-on")) description = "Connect a catalogue or source using its manifest address.";
-        else if (title.equals("Import torrent")) description = "Paste a magnet link or a torrent URL.";
-        else if (title.toLowerCase(java.util.Locale.ROOT).contains("name") || title.startsWith("Rename")) description = "Choose the name shown in your library.";
-        else description = "";
+    @Override public void edit(String title, String description, String hint, String initial, Consumer<String> accept) {
         Tv.Alert alert = Tv.alert(this, title, description);
         EditText input = new EditText(this);
         input.setSingleLine(true); input.setHint(hint); input.setText(initial); input.setTextSize(17);
@@ -978,7 +1002,9 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             if (!missed.isEmpty()) alert("Some add-ons weren't added", String.join(", ", missed) + " didn't respond. Try again from the add-on store.");
         });
     }
-    @Override public void addAddon() { edit("Add add-on", "https://… or stremio://…/manifest.json", "", this::previewAddon); }
+    @Override public void addAddon() {
+        edit("Add add-on", "Connect a catalogue or source using its manifest address.", "https://… or stremio://…/manifest.json", "", this::previewAddon);
+    }
     @Override public void previewAddon(String input) {
         String address = AddonUrl.normalize(input);
         if (shownPage != null) showPartial(shownPage.copy().add(Item.notice(R.drawable.ic_tv_info,
@@ -1004,8 +1030,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         });
     }
     @Override public void importAddress() {
-        edit("Import torrent", "magnet:?xt=… or https://…torrent", "", address ->
-                edit("Name this import", "Title", "Imported torrent", name -> mutate(() -> services.imports.addAddress(name, address))));
+        edit("Import torrent", "Paste a magnet link or a torrent URL.", "magnet:?xt=… or https://…torrent", "", address ->
+                edit("Name this import", NAME_HINT, "Title", "Imported torrent", name -> mutate(() -> services.imports.addAddress(name, address))));
     }
     @Override public void importFile() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);
@@ -1015,7 +1041,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         }
     }
     private void importFile(Uri uri) {
-        edit("Name this import", "Title", "Imported torrent", name -> then(() -> services.imports.addFile(name, uri, scope), () -> {
+        edit("Name this import", NAME_HINT, "Title", "Imported torrent", name -> then(() -> services.imports.addFile(name, uri, scope), () -> {
             if (!stack.isEmpty() && route().screen.equals("Imports")) render(); else openImports();
         }));
     }
@@ -1108,7 +1134,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         super.onStart();
         Sounds.get(this).refresh(this);
         boolean returning = stopped; stopped = false;
-        if (returning) { if (services == null) initialize(); else render(true); }
+        if (returning) { if (services == null) initialize(); else { render(true); checkNewEpisodes(); } }
     }
     @Override protected void onDestroy() {
         cancelPageEntrance();

@@ -39,48 +39,52 @@ final class BrowseScreens {
 
     BrowseScreens(Navigator nav, TvApplication.Services services) { this.nav = nav; this.services = services; }
 
-    Page home(Cancellation scope) throws Exception { return home(scope, ignored -> {}); }
-    Page home(Cancellation scope, java.util.function.Consumer<Page> progress) throws Exception {
-        return home(scope, progress, false);
-    }
-    Page home(Cancellation scope, java.util.function.Consumer<Page> progress, boolean refresh) throws Exception {
-        return home(scope, progress, refresh, false);
-    }
     Page home(Cancellation scope, java.util.function.Consumer<Page> progress, boolean refresh, boolean restoring) throws Exception {
         List<AddonRepository.CatalogQuery> catalogues = services.addons.homeCatalogs();
         long revision = services.addons.configuration();
+        // The viewer's own shelves are read once; each partial catalogue result only adds provider shelves.
+        List<Item> own = ownShelves();
         synchronized (this) {
-            if (!refresh && homeResults != null && homeResults.fresh(revision, restoring)) return homeContent(catalogues, homeResults.result);
+            if (!refresh && homeResults != null && homeResults.fresh(revision, restoring)) return homeContent(catalogues, own, homeResults.result);
         }
-        progress.accept(homeContent(catalogues, null));
-        AddonRepository.CatalogPage found = services.addons.catalogsPage(catalogues, scope, partial -> progress.accept(homeContent(catalogues, partial)));
+        progress.accept(homeContent(catalogues, own, null));
+        AddonRepository.CatalogPage found = services.addons.catalogsPage(catalogues, scope, partial -> progress.accept(homeContent(catalogues, own, partial)));
         scope.check();
         synchronized (this) { homeResults = new SavedResults(found, revision); }
-        return homeContent(catalogues, found);
+        return homeContent(catalogues, own, found);
     }
-    private Page homeContent(List<AddonRepository.CatalogQuery> catalogues, AddonRepository.CatalogPage load) {
-        AddonRepository.Result<Title> found = load == null ? null : load.result;
-        Page page = new Page();
+    /** New Episodes, Continue Watching and Favourites, from local data. Showing them counts toward a notice's end. */
+    private List<Item> ownShelves() {
         List<Item> shelves = new ArrayList<>();
         Map<String, Title> library = new LinkedHashMap<>();
         List<Tile> favourites = new ArrayList<>();
-        for (TvStore.LibraryEntry e : services.store.library(false)) {
+        List<TvStore.LibraryEntry> saved = services.store.library(false);
+        Map<String, NewEpisodes.Notice> news = NewEpisodes.current(services.store, saved, services.store.history(false), System.currentTimeMillis(), true);
+        for (TvStore.LibraryEntry e : saved) {
             library.put(e.title.key(), e.title);
-            if (e.favourite) favourites.add(poster("favourite", e.title));
+            if (e.favourite) favourites.add(flagged(poster("favourite", e.title), news));
         }
+        List<Tile> fresh = new ArrayList<>();
+        for (NewEpisodes.Notice notice : news.values()) fresh.add(newEpisodeTile(notice));
+        if (!fresh.isEmpty()) shelves.add(Item.shelf("new-episodes", "New Episodes", "", Tile.Style.LANDSCAPE, fresh));
         List<Tile> continuing = new ArrayList<>();
-        List<String> seen = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
         for (TvStore.Progress p : services.store.history(true)) {
             Title title = library.get(p.titleKey);
-            if (title == null || seen.contains(p.titleKey)) continue;
-            seen.add(p.titleKey); continuing.add(progressTile("continue", title, p));
+            if (title != null && seen.add(p.titleKey)) continuing.add(progressTile("continue", title, p));
         }
         if (!continuing.isEmpty()) shelves.add(Item.shelf("continue-watching", "Continue Watching", "", Tile.Style.LANDSCAPE, continuing));
         if (!favourites.isEmpty()) shelves.add(Item.shelf("favourites", "Favourites", "", Tile.Style.POSTER, favourites));
+        return shelves;
+    }
+    private Page homeContent(List<AddonRepository.CatalogQuery> catalogues, List<Item> own, AddonRepository.CatalogPage load) {
+        AddonRepository.Result<Title> found = load == null ? null : load.result;
+        Page page = new Page();
+        List<Item> shelves = new ArrayList<>(own);
         boolean failed = false, stale = false;
         if (found != null) {
             for (AddonRepository.CatalogQuery query : catalogues) {
-                String key = query.addon.id + ":" + query.catalog.type + ":" + query.catalog.id;
+                String key = query.key();
                 List<Tile> tiles = new ArrayList<>();
                 for (Title t : found.byResource.getOrDefault(key, Collections.emptyList())) tiles.add(poster(key, t));
                 if (!tiles.isEmpty()) shelves.add(Item.shelf("catalogue:" + key, shelfTitle(query.catalog), "", Tile.Style.POSTER, tiles));
@@ -91,16 +95,14 @@ final class BrowseScreens {
         if (!shelves.isEmpty()) page.add(Item.spotlight(null));
         if (failed && !loading) {
             String heading = shelves.isEmpty() ? "Unable to load Home" : stale ? "Showing saved catalogues" : "Some providers are unavailable";
-            page.add(Item.notice(failed ? R.drawable.ic_tv_offline : R.drawable.ic_tv_refresh, heading, loadDetail(load),
+            page.add(Item.notice(R.drawable.ic_tv_offline, heading, loadDetail(load),
                     new Item.Action("reload-home", Item.Action.Style.SECONDARY, "Reload", nav::refresh).icon(R.drawable.ic_tv_refresh)));
-            if (shelves.isEmpty() && !loading) page.initialFocus = "reload-home";
+            if (shelves.isEmpty()) page.initialFocus = "reload-home";
         }
         if (shelves.isEmpty() && loading) page.add(Item.skeleton("Home results"));
         else if (shelves.isEmpty() && !failed) page.add(Item.message(0, "Make yourself at home",
                 "Films and series will appear here. Add catalogues or import a torrent in Settings."));
-        else if (!shelves.isEmpty()) {
-            page.addAll(shelves);
-        }
+        else page.addAll(shelves);
         page.reusable = !loading && !failed;
         // Browsing and refreshing need a catalogue; an empty Home shows only the way to add one.
         if (!catalogues.isEmpty()) page.tools = java.util.Arrays.asList(
@@ -109,13 +111,6 @@ final class BrowseScreens {
         return page;
     }
 
-    Page search(Route route, Cancellation scope) throws Exception { return search(route, scope, ignored -> {}); }
-    Page search(Route route, Cancellation scope, java.util.function.Consumer<Page> progress) throws Exception {
-        return search(route, scope, progress, false);
-    }
-    Page search(Route route, Cancellation scope, java.util.function.Consumer<Page> progress, boolean refresh) throws Exception {
-        return search(route, scope, progress, refresh, false);
-    }
     Page search(Route route, Cancellation scope, java.util.function.Consumer<Page> progress, boolean refresh, boolean restoring) throws Exception {
         String query = route.value;
         long revision = services.addons.configuration();
@@ -192,13 +187,16 @@ final class BrowseScreens {
         Page page = new Page();
         List<Tile> favourites = new ArrayList<>(), others = new ArrayList<>();
         Map<String, Title> titles = new LinkedHashMap<>();
-        for (TvStore.LibraryEntry e : services.store.library(false)) {
+        List<TvStore.LibraryEntry> saved = services.store.library(false);
+        List<TvStore.Progress> played = services.store.history(false);
+        Map<String, NewEpisodes.Notice> news = NewEpisodes.current(services.store, saved, played, System.currentTimeMillis(), false);
+        for (TvStore.LibraryEntry e : saved) {
             titles.put(e.title.key(), e.title);
-            Tile tile = poster("library", e.title);
+            Tile tile = flagged(poster("library", e.title), news);
             (e.favourite ? favourites : others).add(tile);
         }
         List<Tile> history = new ArrayList<>();
-        for (TvStore.Progress progress : services.store.history(false)) {
+        for (TvStore.Progress progress : played) {
             Title title = titles.get(progress.titleKey);
             if (title != null) history.add(progressTile("history", title, progress));
         }
@@ -212,21 +210,6 @@ final class BrowseScreens {
             page.add(Item.header("Watch history"));
             page.addAll(Item.grid("history", Tile.Style.LANDSCAPE, LANDSCAPE_COLUMNS, history));
         }
-        return page;
-    }
-
-    Page history() {
-        Page page = new Page();
-        Map<String, Title> library = new LinkedHashMap<>();
-        for (TvStore.LibraryEntry e : services.store.library(false)) library.put(e.title.key(), e.title);
-        List<Tile> tiles = new ArrayList<>();
-        for (TvStore.Progress p : services.store.history(false)) {
-            Title title = library.get(p.titleKey);
-            if (title != null) tiles.add(progressTile("history", title, p));
-        }
-        if (tiles.isEmpty()) return page.add(Item.message(R.drawable.ic_tv_movie, "No watch history yet", "Titles you play appear here."));
-        page.add(Item.header("Watch history", "Most recent first"));
-        page.addAll(Item.grid("history", Tile.Style.LANDSCAPE, LANDSCAPE_COLUMNS, tiles));
         return page;
     }
 
@@ -263,10 +246,6 @@ final class BrowseScreens {
     }
     /** Films, then Series, then everything else. */
     private static int typeOrder(String type) { return type.equals("movie") ? 0 : type.equals("series") ? 1 : 2; }
-    Page catalogue(Route route, Cancellation scope) throws Exception { return catalogue(route, scope, ignored -> {}); }
-    Page catalogue(Route route, Cancellation scope, java.util.function.Consumer<Page> progress) throws Exception {
-        return catalogue(route, scope, progress, false);
-    }
     Page catalogue(Route route, Cancellation scope, java.util.function.Consumer<Page> progress, boolean refresh) throws Exception {
         JSONArray identity = new JSONArray(route.value);
         InstalledAddon addon = null; AddonManifest.Catalog catalog = null;
@@ -324,17 +303,15 @@ final class BrowseScreens {
         boolean failed = !found.failures.isEmpty();
         page.reusable = !failed && !load.loading;
         if (failed && !load.loading) {
-            String heading = "Unable to load catalogue";
-            String detail = "Attempt " + load.attempt + " of " + AddonRepository.CatalogPage.MAX_ATTEMPTS;
-            if (failed && !load.loading) detail += ". " + catalogueFailure(found.failures.values().iterator().next());
-            if (!tiles.isEmpty()) detail += ". Showing saved entries.";
-            Item.Action reload = new Item.Action("reload-catalogue", Item.Action.Style.SECONDARY, "Reload", nav::refresh).icon(R.drawable.ic_tv_refresh);
-            page.add(Item.notice(failed ? R.drawable.ic_tv_offline : R.drawable.ic_tv_refresh, heading, detail, failed ? new Item.Action[]{reload} : new Item.Action[0]));
+            String detail = "Attempt " + load.attempt + " of " + AddonRepository.CatalogPage.MAX_ATTEMPTS
+                    + ". " + catalogueFailure(found.failures.values().iterator().next()) + (tiles.isEmpty() ? "" : ". Showing saved entries.");
+            page.add(Item.notice(R.drawable.ic_tv_offline, "Unable to load catalogue", detail,
+                    new Item.Action("reload-catalogue", Item.Action.Style.SECONDARY, "Reload", nav::refresh).icon(R.drawable.ic_tv_refresh)));
         }
         if (tiles.isEmpty() && load.loading) page.add(Item.skeleton("Catalogue results"));
         else if (tiles.isEmpty() && !failed) page.add(Item.message(R.drawable.ic_tv_movie, "No titles on this page",
                 route.page > 0 ? "Go to the previous page or change the filters." : "Try other filters."));
-        else if (!tiles.isEmpty()) page.addAll(Item.grid("catalogue-grid", Tile.Style.POSTER, POSTER_COLUMNS, tiles));
+        else page.addAll(Item.grid("catalogue-grid", Tile.Style.POSTER, POSTER_COLUMNS, tiles));
         if (paginated && !load.loading) page.add(pagination(route, "bottom", !tiles.isEmpty()));
         page.initialFocus = tiles.isEmpty() ? failed && !load.loading ? "reload-catalogue" : "refresh-catalogue" : tiles.get(0).key;
         return page;
@@ -379,6 +356,19 @@ final class BrowseScreens {
     Tile poster(String section, Title t) { return poster(section, t, ""); }
     Tile poster(String section, Title t, String subtitle) {
         return new Tile(section + ":" + t.key(), Tile.Style.POSTER, t.name, subtitle, t.poster, t, () -> nav.openTitle(t, ""));
+    }
+    /** A series poster says "New" while it has a new-episode notice. */
+    private static Tile flagged(Tile poster, Map<String, NewEpisodes.Notice> news) {
+        return poster.media != null && news.containsKey(poster.media.key()) ? poster.flag("New") : poster;
+    }
+    /** Opens the series on its first new episode, so Play starts it. */
+    private Tile newEpisodeTile(NewEpisodes.Notice notice) {
+        Title title = notice.title; Title.Episode episode = notice.episode;
+        String number = TitleScreens.shortEpisode(title, episode.id), label = notice.label();
+        String image = episode.thumbnail != null ? episode.thumbnail : title.background != null ? title.background : title.poster;
+        return new Tile("new:" + title.key() + ":" + episode.id, Tile.Style.LANDSCAPE, title.name, number + " · " + label,
+                image, title, () -> nav.openTitle(title, episode.id)).headline(label + " · " + number)
+                .description(title.name + ". " + label + ", season " + episode.season + " episode " + episode.number + ", " + episode.name);
     }
     private Tile progressTile(String section, Title title, TvStore.Progress p) {
         String episode = TitleScreens.episodeName(title, p.video);

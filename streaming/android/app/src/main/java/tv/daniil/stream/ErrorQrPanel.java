@@ -32,7 +32,7 @@ final class ErrorQrPanel extends LinearLayout {
         container.removeAllViews();
         container.setVisibility(developerMode && report != null ? View.VISIBLE : View.GONE);
         if (developerMode && report != null) {
-            ErrorQrPanel panel = new ErrorQrPanel(container.getContext(), report, null);
+            ErrorQrPanel panel = new ErrorQrPanel(container.getContext(), report);
             panel.setBackgroundResource(R.drawable.tv_dialog);
             container.addView(panel);
         }
@@ -41,15 +41,16 @@ final class ErrorQrPanel extends LinearLayout {
     static Tv.Alert alert(Context context, DiagnosticReport report) {
         Tv.Alert alert = Tv.alert(context, "Error report", (CharSequence) null);
         alert.surface.removeAllViews(); alert.surface.setPadding(0, 0, 0, 0);
-        alert.surface.addView(new ErrorQrPanel(context, report, null));
+        alert.surface.addView(new ErrorQrPanel(context, report));
         return alert;
     }
 
-    private ErrorQrPanel(Context context, DiagnosticReport report, ViewGroup closeControls) {
+    /** Back or Left closes it, as every popup; it has no Close button of its own. */
+    private ErrorQrPanel(Context context, DiagnosticReport report) {
         super(context); this.report = report;
         setOrientation(VERTICAL); setGravity(Gravity.CENTER_HORIZONTAL);
         setClipChildren(false); setClipToPadding(false);
-        int inset = Tv.dp(context, closeControls == null ? 20 : 24);
+        int inset = Tv.dp(context, 20);
         setPadding(inset, inset, inset, inset);
         LinearLayout header = new LinearLayout(context); header.setGravity(Gravity.CENTER_VERTICAL);
         header.setClipChildren(false); header.setClipToPadding(false);
@@ -60,7 +61,6 @@ final class ErrorQrPanel extends LinearLayout {
         LayoutParams referenceParams = new LayoutParams(-1, -2); referenceParams.topMargin = Tv.dp(context, 3);
         labels.addView(reference, referenceParams);
         header.addView(labels, new LayoutParams(0, -2, 1));
-        if (closeControls != null) header.addView(closeControls, new LayoutParams(Tv.dp(context, 40), Tv.dp(context, 40)));
         addView(header, new LayoutParams(-1, -2));
         image = new CodeView(context);
         LayoutParams code = new LayoutParams(Tv.dp(context, 288), Tv.dp(context, 288));
@@ -75,11 +75,6 @@ final class ErrorQrPanel extends LinearLayout {
             pager.addView(status, new LayoutParams(0, -2, 1));
             ImageView next = icon(context, "Next QR", R.id.error_qr_next, R.drawable.ic_tv_chevron, () -> change(1));
             pager.addView(next, new LayoutParams(Tv.dp(context, 48), Tv.dp(context, 48)));
-            if (closeControls != null) {
-                View close = closeControls.getChildAt(0);
-                previous.setNextFocusUpId(close.getId()); next.setNextFocusUpId(close.getId());
-                close.setNextFocusDownId(next.getId());
-            }
         } else pager.addView(status, new LayoutParams(-1, Tv.dp(context, 32)));
         LayoutParams pagerParams = new LayoutParams(Tv.dp(context, 288), -2);
         pagerParams.topMargin = Tv.dp(context, 16); addView(pager, pagerParams);

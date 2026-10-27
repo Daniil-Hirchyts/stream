@@ -21,8 +21,6 @@ public final class DesignAuditCapture extends AppHarness {
         String phase = "other";
         launch(); waitUntil("empty Home", 10000, () -> visible("Make yourself at home")); shot(phase, "22-empty-home");
         browse.onActivity(activity -> activity.root("Library")); waitUntil("empty Library", 5000, () -> visible("Your library is empty")); shot(phase, "23-empty-library");
-        // History is an intentional legacy alias for Library in MainActivity, not a separate screen.
-        browse.onActivity(activity -> activity.push(new Route("History"))); waitUntil("History alias", 5000, () -> visible("Your library is empty")); shot(phase, "24-history-alias");
         browse.onActivity(MainActivity::search); waitUntil("empty Search", 5000, () -> visible("Type a")); shot(phase, "25-empty-search");
         browse.onActivity(activity -> activity.root("Settings")); tap("Playback", false); waitUntil("Playback settings", 5000, () -> visible("Playback cache")); shot(phase, "26-playback-settings");
         tap("Subtitles", true); tap("Subtitle background", false); waitUntil("edge choices", 5000, () -> visible("Dark box")); shot(phase, "27-settings-edge");
@@ -47,7 +45,6 @@ public final class DesignAuditCapture extends AppHarness {
         tap("More", false); waitUntil("film menu", 5000, () -> visible("Remove from library")); shot(phase, "04-film-menu");
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT); returned();
         browse.onActivity(activity -> activity.root("Library")); waitUntil("Library", 5000, () -> visible("Generated Film")); shot(phase, "05-library");
-        browse.onActivity(activity -> activity.push(new Route("History"))); waitUntil("History", 5000, () -> visible("Watch history")); shot(phase, "06-history");
         browse.onActivity(activity -> activity.push(new Route("Catalogues"))); waitUntil("Browse", 5000, () -> visible("Generated films")); shot(phase, "07-browse");
         browse.onActivity(MainActivity::search); waitUntil("Search", 5000, () -> visible("Type a"));
         browse.onActivity(activity -> activity.searchInput("Generated")); waitUntil("search results", 10000, () -> visible("Generated Film")); shot(phase, "08-search-keyboard");

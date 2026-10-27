@@ -18,8 +18,8 @@ Four provider requests can run concurrently, with at most 64 queued jobs.
 Playback outranks visible navigation, which outranks preparation. Play promotes
 its existing request scope and cancels unrelated speculative/navigation work.
 Metadata discovery occupies at most two sockets and returns its first useful
-result. Ready sources can reach playback before slow providers finish; a short
-coalescing window is bounded at 250 ms. Pending discovery may supply alternatives
+result. Ready sources can reach playback before slow providers finish; after
+the first usable result, automatic Play waits at most 750 ms for better ones. Pending discovery may supply alternatives
 later. Addresses and torrent metadata snapshots stay in RAM.
 
 Play claims its entry through a bounded token handoff. Opening another Details
@@ -126,63 +126,7 @@ swarm timings. Diagnostics include first source, torrent metadata, first verifie
 read, first video, first audio and stable playback stages. Device identity checks
 remain mandatory; no physical TV or public torrent is used by required tests.
 
-See `android/DECODERS.md` for format coverage, codec build inputs and limitations.
-
-## Local evidence (2026-10-24)
-
-Final timing run: verified `DaniilCast_Local_TV`, Android TV 16/API 36,
-generated media, loopback providers/seeder, no concurrent build or device test.
-Each transport has 20 starts; the process/provider fixture is warm, while each
-torrent start creates a new engine and empty payload cache and fetches metadata
-through BitTorrent. These are local fixture measurements, not public-swarm or
-physical-TV benchmarks.
-
-| Transport | First A/V p50 | First A/V p95 | Details controls p95 |
-| --- | ---: | ---: | ---: |
-| Prepared HTTP MP4 | 985 ms | 1,299 ms | 430 ms |
-| Cold torrent engine / info hash | 4,311 ms | 4,415 ms | 152 ms |
-
-The first verified-data stage is captured by the torrent data source's transfer
-callback before video output, rather than inferred from the one-second stats
-poll. Individual traces are retained in ignored simulator evidence at
-`simulator/.cache/evidence/startup-timing.json`.
-
-Focused checks also cover real E-AC-3 5.1 → stereo PCM, automatic Dolby audio
-fallback over BitTorrent, ten audio codecs, modern/10-bit video, four legacy
-AVI codecs, software H.264 at 1080p, fresh frames after seeks, decoder/output
-failure recovery, late captions and explicit Off, manual source isolation,
-three-candidate recovery, and fast-provider handoff with a stalled provider.
-The shared receiver's three VTT/SRT/ASS seek/selection regressions pass. Current
-JNI close/reopen/cancellation tests and the shrunk-release JNI/verified-byte
-probe pass. Both ASan/UBSan and TSan pass the five focused startup/lifetime
-native checks, plus the adjacent v2 hash/eviction regression passes under ASan.
-Release packaging passes ZIP alignment, and both 64-bit ABIs have 16-KiB ELF
-load-segment alignment; all three ABIs build.
-
-VC-1 currently has decoder-discovery coverage only. The small 10-bit fixtures
-prove decoding/seek correctness, not full-resolution CPU throughput on every
-TV. Physical-TV performance, HDR display output, unsupported extractors,
-corrupt media and DRM remain outside this local verification.
-
-## Local evidence (2026-10-25)
-
-After the follow-up audit and fixes, the same verified API-36 AVD completed all
-40 startup measurements with no concurrent build or device test. Provider and
-process state is warm; preparation has a candidate before Play. Every torrent
-start creates a fresh engine, begins with an empty payload cache and receives
-metadata and media through the loopback BitTorrent seeder.
-
-| Transport (20 starts each) | First A/V p50 | First A/V p95 | Details controls p95 |
-| --- | ---: | ---: | ---: |
-| Prepared HTTP MP4 | 980 ms | 1,432 ms | 369 ms |
-| Cold torrent engine / info hash | 4,316 ms | 4,373 ms | 170 ms |
-
-All three fixture targets are met. The small differences from the previous run
-do not establish a throughput improvement; the new evidence shows that the
-correctness fixes preserve the startup targets. It does not measure application
-cold launch or internet provider/swarm latency.
-
-The [verification report](PLAYBACK_VERIFICATION.md) records repaired failure
-cases, selected checks and remaining limits. Raw timing traces and test outputs
-are retained privately in `simulator/.cache/evidence/audit-2026-10-25/`; the timing
-report is also available as `simulator/.cache/evidence/startup-timing-audit.json`.
+The last local run (25 October 2026, 20 starts per transport) met all three:
+HTTP first A/V p95 1.4 s, cold torrent p95 4.4 s, Details controls p95 under
+0.4 s. See `android/DECODERS.md` for format coverage, codec build inputs and
+limitations.

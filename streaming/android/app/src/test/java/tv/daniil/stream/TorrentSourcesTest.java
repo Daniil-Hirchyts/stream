@@ -10,7 +10,6 @@ import java.util.List;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
@@ -126,20 +125,4 @@ public final class TorrentSourcesTest {
         assertFalse(SourcePolicy.withinDeviceProfile(new androidx.media3.common.Format.Builder().setSampleMimeType("video/hevc").setWidth(3840).setHeight(2160).build()));
     }
 
-    @Ignore("One wall-clock sample under Robolectric is not a representative TV performance check; ranking correctness stays covered.")
-    @Test public void twoHundredResultsRankQuickly() throws Exception {
-        List<MediaSource> many = new ArrayList<>();
-        for (int i = 0; i < 40; i++) many.addAll(answer());
-        long start = System.nanoTime();
-        List<MediaSource> ranked = SourcePolicy.ranked(many);
-        long ms = (System.nanoTime() - start) / 1_000_000;
-        assertEquals(120, ranked.size());
-        assertTrue("Ranking 200 results took " + ms + " ms", ms < 1000);
-    }
-
-    @Ignore("Duplicate of StoreProtocolTest.torrentsWithoutTrackersAnnounceToPublicTrackersOnlyWhenAsked; object identity adds no playback proof.")
-    @Test public void fallbackTrackersAreAddedOnlyWhenNoneAreNamed() throws Exception {
-        TorrentEngine.Source named = answer().get(2).torrentSource();
-        assertSame("Named trackers are kept as they are", named, named.withFallbackTrackers(MediaSource.PUBLIC_TRACKERS));
-    }
 }

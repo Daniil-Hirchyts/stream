@@ -102,17 +102,17 @@ setup preserves userdata and enables this. Cold restart after changing hardware.
 (cd casting/native && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked)
 ```
 
-Daniil TV (see `docs/STREAMING_APP_PLAN.md` and `streaming/native/README.md`):
+Daniil TV (see `streaming/android/README.md`, `streaming/android/TESTING.md` and `streaming/native/README.md`):
 
 ```sh
 ./streaming/native/build-host.sh dev     # also asan, tsan, checks (libtorrent invariants)
 sh streaming/simulator/tests/identity.sh  # mocked wrong-device refusals
-./streaming/simulator.sh test            # engine via JNI + Media3 on the verified emulator
+./streaming/simulator.sh test            # engine via JNI + Media3, data and core app tests on the verified emulator
 ./streaming/simulator.sh data-test       # add-ons/persistence/imports; no public providers
 ./streaming/simulator.sh smoke           # real catalogue → torrent → visible player, controls and lifecycle
 ./streaming/simulator.sh soak            # thirty real minutes; no concurrent device tests
 ./streaming/simulator.sh profile         # actual PSS/RSS, graphics and screenshot evidence
-(cd streaming/android && ./gradlew :app:testDebugUnitTest)  # JVM store/protocol tests; no device or network
+(cd streaming/android && ./gradlew :app:testDebugUnitTest)  # JVM store/protocol/new-episode tests; no device or network
 ```
 
 Optional, never required (internet, public-domain films only, never the LAN or a
@@ -144,7 +144,10 @@ OpenSubtitles) and the public, unconfigured torrent sources Meteor, MediaFusion,
 Peerflix and TorrentsDB (`StarterAddons.SOURCES`). Each default is installed once: one the viewer
 removes is never added back. Never install any other catalogue or source
 provider without an explicit acceptance in Settings or the store's review page.
-Test databases and local-only instrumentation never install defaults. The Add-ons store lists
+Test databases and local-only instrumentation never install defaults or run the
+background new-episode checks (`RuntimeOptions.checkNewEpisodes`); those checks
+only re-fetch metadata of followed series from already installed add-ons, at
+most twice a day each, below every other request. The Add-ons store lists
 built-in add-ons (`daniiltv://`), lists published through `addon_catalog` and
 Stremio's directory; under local-only instrumentation it uses only the fixture
 directory, never Stremio's. Never cache playable stream addresses for resume or log
@@ -152,12 +155,12 @@ configured add-on URL paths/queries. Metadata/import/preference values use the
 app's Keystore-backed encryption; backup and device transfer are disabled. Tests
 use database-specific import directories and an untrusted loopback TLS fixture
 on 58135; certificate verification must reject it. Do not disable TLS to make it
-pass. The app now includes the standalone launcher and playback host; fixture
-providers, test content URIs and test configuration belong only to debug/tests.
+pass. Fixture providers, test content URIs and test configuration belong only
+to debug/tests.
 Its tvOS-style screens are `ui.Page`/`ui.Item` blocks built off the main thread
 and drawn by `ui.PageAdapter`. App instrumentation finds controls by their
 visible label or content description (for example Play, Resume, Sources, Add
-favourite, Install, the tab names), so keep those labels exact when
+favourite, Install, Hide new episode, the tab names), so keep those labels exact when
 restyling. Restyle the shared player for Daniil TV through app resource
 overrides, not by editing `android/playback`.
 

@@ -9,7 +9,6 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -153,23 +152,6 @@ public final class PlayerInteractionTest extends AppHarness {
         waitUntil("Mouse movement restores clock", 2000, () -> shown(R.id.player_clock));
         waitUntil("Stationary mouse does not keep the timeline open", 6000, () -> !shown(R.id.controls));
         assertTrue("Video keeps playing after the overlay hides", state().playing);
-    }
-
-    @Ignore("Exact rasterized icon geometry is a design choice; it does not verify player interaction.")
-    @Test public void playGlyphHasTheSameOpticalCentreAsPause() {
-        for (int id : new int[]{R.drawable.ic_play, tv.daniil.playback.R.drawable.ic_pause}) {
-            android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(240, 240, android.graphics.Bitmap.Config.ARGB_8888);
-            android.graphics.drawable.Drawable icon = context.getDrawable(id);
-            assertNotNull(icon); icon.setBounds(0, 0, 240, 240); icon.draw(new android.graphics.Canvas(bitmap));
-            double weight = 0, xTotal = 0, yTotal = 0;
-            for (int y = 0; y < 240; y++) for (int x = 0; x < 240; x++) {
-                int alpha = android.graphics.Color.alpha(bitmap.getPixel(x, y));
-                weight += alpha; xTotal += (x + 0.5) * alpha; yTotal += (y + 0.5) * alpha;
-            }
-            bitmap.recycle();
-            assertEquals("Glyph horizontal optical centre", 120, xTotal / weight, 4);
-            assertEquals("Glyph vertical optical centre", 120, yTotal / weight, 2);
-        }
     }
 
     private void hoverMouse(float x, float y) {

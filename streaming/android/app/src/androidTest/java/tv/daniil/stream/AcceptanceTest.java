@@ -3,7 +3,6 @@ package tv.daniil.stream;
 import static org.junit.Assert.*;
 import android.view.KeyEvent;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import java.util.ArrayList;
@@ -250,15 +249,6 @@ public final class AcceptanceTest extends AppHarness {
         waitUntil("first page", 10_000, () -> visible("Films · Page 1"));
         tap("Back", true);
         waitUntil("back to categories", 5000, () -> visible("Browse") && visible("Generated films"));
-    }
-    @Ignore("Captures a screenshot but asserts neither option visibility nor fading; use manual design review until there is a meaningful assertion.")
-    @Test public void dialogFadeKeepsFocusedRoundedOptionVisible() throws Exception {
-        launch(); tap("Settings", true); tap("Subtitles", false); tap("Subtitle color", true);
-        for (int i = 0; i < 6; i++) instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
-        instrumentation.waitForIdleSync();
-        captureUi("dialog");
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT);
-        waitUntil("dialog dismissed", 5000, () -> visible("Subtitle size"));
     }
     @Test public void searchGridKeepsFocusedCardsInsideVisibleViewport() throws Exception {
         launch(); tap("Search", true); waitUntil("keyboard ready", 5000, () -> visible("Type a"));

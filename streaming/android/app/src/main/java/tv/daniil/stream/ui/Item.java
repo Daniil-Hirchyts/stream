@@ -28,6 +28,10 @@ public final class Item {
         public String synopsis = "";
         public String releaseDate = "";
         @DrawableRes public int badge;
+        /** A short word over the artwork's corner, such as "New". */
+        public String flag = "";
+        /** What the Home spotlight leads its facts with while this tile is featured ("New season · S2 E1"). */
+        public String headline = "";
         /** The accessible label when it should differ from "title. subtitle" (a catalogue card is named by its catalogue). */
         @Nullable public String description;
 
@@ -37,6 +41,8 @@ public final class Item {
         }
         public Tile progress(float value) { progress = value; return this; }
         public Tile badge(@DrawableRes int icon) { badge = icon; return this; }
+        public Tile flag(String text) { flag = text; return this; }
+        public Tile headline(String text) { headline = text; return this; }
         public Tile description(String value) { description = value; return this; }
         public Tile episode(int number, String overview) { episodeNumber = number; synopsis = overview; return this; }
         public Tile released(String date) { releaseDate = date; return this; }

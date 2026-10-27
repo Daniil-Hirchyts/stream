@@ -5,7 +5,6 @@ import androidx.recyclerview.widget.RecyclerView;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import tv.daniil.stream.addon.Cancellation;
@@ -46,52 +45,6 @@ public final class LoadingTest extends AppHarness {
             assertTrue("Slow source request is still loading", partial);
         });
         tap("Back", true); waitUntil("back to media", 5000, () -> visible("Play") && visible("Sources"));
-    }
-    @Ignore("Asserts retained View identity and adapter internals. AppFlowTest verifies the favourite is actually saved.")
-    @Test public void favouriteUpdateRetainsDetailsAndNeverShowsPageSkeleton() throws Exception {
-        readyLibrary(); launch(); tap("Generated Film", false); waitUntil("details", 5000, () -> visible("Add favourite"));
-        AtomicBoolean skeleton = new AtomicBoolean(); View[] before = new View[1];
-        browse.onActivity(activity -> {
-            RecyclerView list = activity.findViewById(R.id.page_rows);
-            before[0] = ((android.view.ViewGroup) list.findViewHolderForAdapterPosition(0).itemView).getChildAt(0);
-            adapter(activity).registerAdapterDataObserver(new RecyclerView.AdapterDataObserver() {
-                private void inspect() { for (Item item : items(activity)) if (item.kind == Item.Kind.SKELETON) skeleton.set(true); }
-                @Override public void onChanged() { inspect(); }
-                @Override public void onItemRangeChanged(int start, int count) { inspect(); }
-                @Override public void onItemRangeInserted(int start, int count) { inspect(); }
-                @Override public void onItemRangeRemoved(int start, int count) { inspect(); }
-            });
-        });
-        tap("Add favourite", true); waitUntil("favourite updated", 5000, () -> visible("Remove favourite"));
-        assertFalse("Local changes never replace the page with a skeleton", skeleton.get());
-        browse.onActivity(activity -> {
-            RecyclerView list = activity.findViewById(R.id.page_rows);
-            assertSame("Synopsis remains mounted", before[0], ((android.view.ViewGroup) list.findViewHolderForAdapterPosition(0).itemView).getChildAt(0));
-        });
-    }
-    @Ignore("Asserts selected flags and retained View identity, not the displayed result order. SourceSortTest covers ordering; navigation tests cover Back.")
-    @Test public void sortingSourcesKeepsBackAndOnlyUpdatesSourceContent() throws Exception {
-        readyLibrary(); launch(); tap("Generated Film", false); tap("Sources", false);
-        waitUntil("source sort controls", 10000, () -> visible("Size"));
-        View[] back = new View[1]; AtomicBoolean skeleton = new AtomicBoolean();
-        browse.onActivity(activity -> {
-            back[0] = activity.findViewById(R.id.page_back); assertNotNull(back[0]);
-            adapter(activity).registerAdapterDataObserver(new RecyclerView.AdapterDataObserver() {
-                private void inspect() { for (Item item : items(activity)) if (item.kind == Item.Kind.SKELETON) skeleton.set(true); }
-                @Override public void onItemRangeInserted(int start, int count) { inspect(); }
-                @Override public void onItemRangeChanged(int start, int count) { inspect(); }
-            });
-        });
-        tap("Size", true);
-        waitUntil("source order updated", 5000, () -> {
-            AtomicBoolean selected = new AtomicBoolean();
-            browse.onActivity(activity -> { for (Item item : items(activity)) for (Item.Action action : item.actions)
-                if (action.key.equals("sort:SIZE") && action.selected) selected.set(true); });
-            return selected.get();
-        });
-        assertFalse("Sorting cached sources does not fetch or skeleton the page", skeleton.get());
-        browse.onActivity(activity -> assertSame(back[0], activity.findViewById(R.id.page_back)));
-        tap("Back", false); waitUntil("media page", 5000, () -> visible("Play"));
     }
     @Test public void pointerOverVisiblePaginationDoesNotShiftPage() throws Exception {
         readyLibrary(); launch(); tap("Browse catalogues", false); tap("Generated films", false);

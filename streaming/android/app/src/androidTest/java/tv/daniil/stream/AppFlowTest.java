@@ -4,24 +4,11 @@ import static org.junit.Assert.*;
 import android.view.KeyEvent;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.json.JSONObject;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 @RunWith(AndroidJUnit4.class)
 public final class AppFlowTest extends AppHarness {
-    @Ignore("Covered by StoreProtocolTest and addonStoreReviewsInstallsAndFiltersListedAddons, including configured-address acceptance.")
-    @Test public void emptyResourceSetupRootRequiresConfiguredAddressBeforeInstallation() throws Exception {
-        launch(); tap("Settings", true); tap("Add add-on", false);
-        enter(origin + "/addon/good/empty-setup/manifest.json"); tap("Continue", true);
-        waitUntil("empty descriptor offers setup", 10_000, () -> visible("Enter configured address"));
-        assertFalse(visible("Install")); assertTrue(services.store.addons().isEmpty());
-        tap("Enter configured address", false);
-        enter(origin + "/addon/good/configured-setup-empty/manifest.json"); tap("Continue", true);
-        tap("Install", false);
-        waitUntil("configured resources accepted", 10_000, () -> services.store.addons().size() == 1 && visible("Manage add-on"));
-    }
-
     @Test public void starterReviewRequiresAcceptanceAndKeepsSuccessfulInstallsWhenOneFails() throws Exception {
         context.getSharedPreferences("instrumentation", android.content.Context.MODE_PRIVATE).edit()
                 .putString("starterAddons", origin + "/addon/good/starter/manifest.json " + origin + "/missing-addon/manifest.json").commit();
@@ -37,14 +24,6 @@ public final class AppFlowTest extends AppHarness {
         waitUntil("installed catalogue appears on Home", 10_000, () -> visible("Generated Film"));
     }
 
-    @Ignore("Local-only harness disables starter installation; an empty test database cannot verify the real first-run experience. Preferences and input have dedicated tests.")
-    @Test public void firstRunCanSkipProvidersAndNavigateWithPointerAndRemote() throws Exception {
-        launch(); waitUntil("empty home", 10_000, () -> visible("Make yourself at home"));
-        assertTrue(services.store.addons().isEmpty()); tap("Settings", true); tap("Languages", false); tap("Audio language", false); tap("English", true);
-        waitUntil("language saved", 5000, () -> services.store.preference("audioLanguage", "").equals("eng"));
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
-        tap("Torrents", true); tap("Imports", false); waitUntil("imports screen", 5000, () -> visible("Add magnet or torrent URL"));
-    }
     @Test public void catalogueFavouritesPlaybackControlsAndEvictedRewindWork() throws Exception {
         playFilm();
         waitUntil("native statistics", 5000, () -> diagnostics().has("cache"));
@@ -61,8 +40,9 @@ public final class AppFlowTest extends AppHarness {
         instrumentation.runOnMainSync(() -> session(activity).seekTo(1000));
         waitUntil("evicted rewind", 30_000, () -> state().playing && state().positionMs >= 2500 && state().positionMs < 15_000);
         JSONObject cache = diagnostics().getJSONObject("cache"); assertTrue(cache.getLong("evicted") > 0); assertTrue(cache.getLong("allocatedBytes") <= (16L << 20));
+        // Play opens the player straight from Details, so closing it returns there.
         instrumentation.runOnMainSync(activity::finish);
-        tap("Back", false); tap("Add favourite", false);
+        tap("Add favourite", false);
         waitUntil("favourite persisted", 5000, () -> services.store.library(true).size() == 1);
     }
     @Test public void seriesResolvesItsOriginalVideoIdAndNextEpisodeIndependently() throws Exception {

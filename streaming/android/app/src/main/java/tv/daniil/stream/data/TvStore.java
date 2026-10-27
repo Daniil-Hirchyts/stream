@@ -122,13 +122,20 @@ public final class TvStore extends SQLiteOpenHelper {
     public static final class LibraryEntry {
         public final Title title;
         public final boolean favourite;
-        LibraryEntry(Title title, boolean favourite) { this.title = title; this.favourite = favourite; }
+        /** When the title was last played, favourited or remembered. */
+        public final long updatedMs;
+        public LibraryEntry(Title title, boolean favourite, long updatedMs) { this.title = title; this.favourite = favourite; this.updatedMs = updatedMs; }
     }
     public synchronized void remember(Title title) {
         ContentValues v = new ContentValues(); v.put("id", title.key());
         v.put("data", secrets.encrypt("title:" + title.key(), title.cacheJson())); v.put("updated", System.currentTimeMillis());
         SQLiteDatabase db = getWritableDatabase();
         if (db.update("library", v, "id=?", new String[]{title.key()}) == 0) db.insertOrThrow("library", null, v);
+    }
+    /** Replaces a saved title's metadata without moving it in Recently played; a title not in the library stays out. */
+    public synchronized void refresh(Title title) {
+        ContentValues v = new ContentValues(); v.put("data", secrets.encrypt("title:" + title.key(), title.cacheJson()));
+        getWritableDatabase().update("library", v, "id=?", new String[]{title.key()});
     }
     public synchronized void favourite(Title title, boolean favourite) {
         remember(title);
@@ -137,16 +144,23 @@ public final class TvStore extends SQLiteOpenHelper {
     }
     public synchronized List<LibraryEntry> library(boolean favouritesOnly) {
         List<LibraryEntry> out = new ArrayList<>();
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT id,data,favourite FROM library" + (favouritesOnly ? " WHERE favourite=1" : "") + " ORDER BY updated DESC", null)) {
-            while (c.moveToNext()) {
-                try {
-                    org.json.JSONArray key = new org.json.JSONArray(c.getString(0));
-                    Title title = Title.parse(key.getString(0), new JSONObject(secrets.decrypt("title:" + c.getString(0), c.getString(1))));
-                    if (title != null) out.add(new LibraryEntry(title, c.getInt(2) != 0));
-                } catch (JSONException e) { throw new IllegalStateException("Invalid saved title"); }
-            }
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT id,data,favourite,updated FROM library" + (favouritesOnly ? " WHERE favourite=1" : "") + " ORDER BY updated DESC", null)) {
+            while (c.moveToNext()) { LibraryEntry entry = entry(c); if (entry != null) out.add(entry); }
         }
         return out;
+    }
+    /** One saved title, or null when it isn't in the library. */
+    @Nullable public synchronized LibraryEntry entry(String titleKey) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT id,data,favourite,updated FROM library WHERE id=?", new String[]{titleKey})) {
+            return c.moveToFirst() ? entry(c) : null;
+        }
+    }
+    @Nullable private LibraryEntry entry(Cursor c) {
+        try {
+            org.json.JSONArray key = new org.json.JSONArray(c.getString(0));
+            Title title = Title.parse(key.getString(0), new JSONObject(secrets.decrypt("title:" + c.getString(0), c.getString(1))));
+            return title == null ? null : new LibraryEntry(title, c.getInt(2) != 0, c.getLong(3));
+        } catch (JSONException e) { throw new IllegalStateException("Invalid saved title"); }
     }
     public synchronized void removeLibrary(String titleKey) { getWritableDatabase().delete("library", "id=?", new String[]{titleKey}); }
 
@@ -155,7 +169,10 @@ public final class TvStore extends SQLiteOpenHelper {
         public final long positionMs, durationMs, updatedMs;
         public final boolean watched;
         Progress(Cursor c) { titleKey = c.getString(0); video = c.getString(1); positionMs = c.getLong(2); durationMs = c.getLong(3); watched = c.getInt(4) != 0; updatedMs = c.getLong(5); }
+        /** Belongs in Continue Watching: unwatched, at least 30 seconds in and not at the end. */
+        public boolean resumable() { return !watched && positionMs >= RESUMABLE_MS && (durationMs == 0 || positionMs < durationMs); }
     }
+    public static final long RESUMABLE_MS = 30_000;
     /** Natural completion is supplied explicitly, so a seek near the end alone doesn't mark watched. */
     public synchronized void progress(Title title, String video, long position, long duration, boolean completed) {
         remember(title);
@@ -176,11 +193,18 @@ public final class TvStore extends SQLiteOpenHelper {
             return c.moveToFirst() ? new Progress(c) : null;
         }
     }
+    /** Every saved video of one title, most recent first. */
+    public synchronized List<Progress> history(String titleKey) {
+        List<Progress> out = new ArrayList<>();
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT title,video,position,duration,watched,updated FROM progress WHERE title=? ORDER BY updated DESC", new String[]{titleKey})) {
+            while (c.moveToNext()) out.add(new Progress(c));
+        }
+        return out;
+    }
     public synchronized List<Progress> history(boolean continueWatching) {
         List<Progress> out = new ArrayList<>();
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT title,video,position,duration,watched,updated FROM progress"
-                + (continueWatching ? " WHERE watched=0 AND position>=30000 AND (duration=0 OR position<duration)" : "") + " ORDER BY updated DESC", null)) {
-            while (c.moveToNext()) out.add(new Progress(c));
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT title,video,position,duration,watched,updated FROM progress ORDER BY updated DESC", null)) {
+            while (c.moveToNext()) { Progress p = new Progress(c); if (!continueWatching || p.resumable()) out.add(p); }
         }
         return out;
     }

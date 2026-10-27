@@ -24,7 +24,6 @@
     <color name="tv_material">#E6202024</color>
     <!-- Contextual panels are opaque; the page behind stays untouched. -->
     <color name="tv_material_dialog">#FF29292D</color>
-    <color name="tv_material_player">#E01E1E22</color>
 
     <!-- The shared player takes the same neutral palette in this app only; Daniil Cast keeps its own. -->
     <color name="ink" tools:ignore="UnusedResources">#FF000000</color>

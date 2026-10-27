@@ -135,7 +135,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
                 item.media == null ? null : item.media.cacheJson(), item.keyboardLanguages, item.keyboardLanguage));
         for (Item.Action a : item.actions) state.add(java.util.Arrays.asList(a.key, a.label, a.text, a.detail, a.icon, a.style, a.selected));
         for (Item.Tile t : item.tiles) state.add(java.util.Arrays.asList(t.key, t.title, t.subtitle, t.image, t.style, t.episodeNumber, t.synopsis, t.releaseDate,
-                t.progress, t.badge, t.description, t.block, t.colorIndex, t.media == null ? null : t.media.cacheJson()));
+                t.progress, t.badge, t.flag, t.headline, t.description, t.block, t.colorIndex, t.media == null ? null : t.media.cacheJson()));
         if (item.children != null) for (Item child : item.children) state.add(snapshot(child));
         if (item.panes != null) for (Map.Entry<String, List<Item>> pane : item.panes.entrySet()) {
             state.add(pane.getKey()); for (Item row : pane.getValue()) state.add(snapshot(row));
@@ -262,7 +262,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         final TextView title = Tv.onArtwork(Tv.oneLine(Tv.bold(context, "", 34)));
         final TextView meta = Tv.onArtwork(Tv.oneLine(Tv.text(context, "", 14, R.color.tv_text_on_artwork)));
         final TextView description = Tv.onArtwork(Tv.lines(Tv.text(context, "", 15, R.color.tv_text), 2));
-        String key = "";
+        String key = "", shownHeadline = "";
         Runnable open;
         Title shown;
 
@@ -284,14 +284,21 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             ((LinearLayout.LayoutParams) logo.getLayoutParams()).topMargin = dp(6);
             meta.setPadding(0, dp(10), 0, 0); description.setPadding(0, dp(8), 0, 0);
         }
-        void show(@Nullable Title media, String tileKey, Runnable action) {
+        void show(@Nullable Title media, String tileKey, Runnable action, String headline) {
             key = tileKey; open = action;
-            if (media == null || media == shown) return;
-            shown = media;
-            root.setContentDescription(media.name);
+            if (media == null || media == shown && headline.equals(shownHeadline)) return;
+            shown = media; shownHeadline = headline;
+            root.setContentDescription(headline.isEmpty() ? media.name : media.name + ". " + headline);
             title.setText(media.name); gone(title, false);
             String facts = metaLine(media, false), type = kind(media);
-            meta.setText(type.isEmpty() ? facts : facts.isEmpty() ? type : type + "  ·  " + facts); gone(meta, meta.getText().length() == 0);
+            String lead = headline.isEmpty() ? type : headline;
+            android.text.SpannableStringBuilder line = new android.text.SpannableStringBuilder(lead.isEmpty() ? facts : facts.isEmpty() ? lead : lead + "  ·  " + facts);
+            // A headline (new episodes) reads first, in white semibold, ahead of the usual facts.
+            if (!headline.isEmpty()) {
+                line.setSpan(new FontSpan(Tv.Font.SEMIBOLD.get(context)), 0, lead.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                line.setSpan(new android.text.style.ForegroundColorSpan(context.getColor(R.color.tv_text)), 0, lead.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            meta.setText(line); gone(meta, line.length() == 0);
             description.setText(media.description); gone(description, media.description.isEmpty());
             logo.setImageDrawable(null); gone(logo, true);
             if (media.logo != null) {
@@ -308,13 +315,20 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         spotlight = new Spotlight();
         Item.Tile first = featured;
         if (first == null) for (Item i : items) if (!i.tiles.isEmpty()) { first = i.tiles.get(0); break; }
-        if (first != null) spotlight.show(first.media, first.key, first.action);
-        else if (item.media != null) spotlight.show(item.media, "", null);
+        if (first != null) spotlight.show(first.media, first.key, first.action, first.headline);
+        else if (item.media != null) spotlight.show(item.media, "", null, "");
         return spotlight.root;
     }
     private void feature(Item.Tile tile) {
         if (spotlight == null || tile.media == null) return;
-        featured = tile; spotlight.show(tile.media, tile.key, tile.action);
+        featured = tile; spotlight.show(tile.media, tile.key, tile.action, tile.headline);
+    }
+    /** A typeface for part of a line; {@code TypefaceSpan(Typeface)} needs API 28. */
+    private static final class FontSpan extends android.text.style.MetricAffectingSpan {
+        private final android.graphics.Typeface typeface;
+        FontSpan(android.graphics.Typeface typeface) { this.typeface = typeface; }
+        @Override public void updateDrawState(android.text.TextPaint paint) { paint.setTypeface(typeface); }
+        @Override public void updateMeasureState(android.text.TextPaint paint) { paint.setTypeface(typeface); }
     }
 
     static String kind(Title title) {
@@ -741,7 +755,8 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         if (tile.block) return block(tile, width);
         LinearLayout root = new LinearLayout(context); root.setOrientation(LinearLayout.VERTICAL);
         root.setClipChildren(false); root.setClipToPadding(false);
-        root.setContentDescription(tile.description != null ? tile.description : tile.subtitle.isEmpty() ? tile.title : tile.title + ". " + tile.subtitle);
+        String described = tile.description != null ? tile.description : tile.subtitle.isEmpty() ? tile.title : tile.title + ". " + tile.subtitle;
+        root.setContentDescription(tile.flag.isEmpty() ? described : described + ". " + tile.flag);
         FrameLayout frame = new AspectFrame(context, style == Item.Tile.Style.POSTER ? 1.5f : 0.5625f);
         root.setTag(R.id.popup_anchor, frame);
         frame.setBackgroundResource(R.drawable.tv_artwork); frame.setClipToOutline(true);
@@ -774,6 +789,14 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             badge.setBackgroundResource(R.drawable.tv_badge); badge.setPadding(dp(5), dp(5), dp(5), dp(5));
             FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(dp(26), dp(26), Gravity.TOP | Gravity.END);
             p.setMargins(0, dp(7), dp(7), 0); frame.addView(badge, p);
+        }
+        if (!tile.flag.isEmpty()) {
+            TextView flag = Tv.oneLine(Tv.heading(context, tile.flag, 10.5f, R.color.tv_on_focus));
+            flag.setTag("tile-flag"); flag.setAllCaps(true); flag.setLetterSpacing(0.06f);
+            flag.setBackgroundResource(R.drawable.tv_flag); flag.setPadding(dp(7), dp(2), dp(7), dp(2));
+            flag.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.START);
+            p.setMargins(dp(7), dp(7), 0, 0); frame.addView(flag, p);
         }
         int fill = ViewGroup.LayoutParams.MATCH_PARENT;
         root.addView(frame, new LinearLayout.LayoutParams(fill, ViewGroup.LayoutParams.WRAP_CONTENT));

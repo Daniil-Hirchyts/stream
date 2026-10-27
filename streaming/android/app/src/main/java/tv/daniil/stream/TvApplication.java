@@ -16,6 +16,8 @@ public final class TvApplication extends Application {
     public final ExecutorService playbackLoader = Executors.newSingleThreadExecutor();
     /** Stats must not queue behind blocking catalogue/subtitle requests. No native lifetime work runs here. */
     public final ExecutorService playbackTelemetry = Executors.newSingleThreadExecutor();
+    /** Quiet provider checks (new episodes) that must never hold up a page build. */
+    public final ExecutorService background = Executors.newSingleThreadExecutor();
     private Services services;
     /** Last developer report is process-local: no history, saved stream URLs or files to clean up. */
     volatile DiagnosticReport lastErrorReport;

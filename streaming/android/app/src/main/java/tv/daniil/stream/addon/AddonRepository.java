@@ -47,6 +47,8 @@ public final class AddonRepository implements AutoCloseable {
         public CatalogQuery(InstalledAddon addon, AddonManifest.Catalog catalog, Map<String, String> extras) {
             this.addon = addon; this.catalog = catalog; this.extras = Collections.unmodifiableMap(new LinkedHashMap<>(extras));
         }
+        /** The catalogue's identity among results ({@link Result#byResource}), whatever its filters. */
+        public String key() { return addon.id + ":" + catalog.type + ":" + catalog.id; }
     }
     /** One category page load, including visible retry progress. Only transient failures are retried. */
     public static final class CatalogPage {
@@ -140,13 +142,16 @@ public final class AddonRepository implements AutoCloseable {
         return queries;
     }
     public Result<Title> search(String text, Cancellation scope) throws AddonException { return search(text, scope, ignored -> {}); }
+    /** One attempt, without the retries {@link #searchPage} adds. */
     public Result<Title> search(String text, Cancellation scope, java.util.function.Consumer<Result<Title>> progress) throws AddonException {
-        List<CatalogQuery> queries = new ArrayList<>();
-        for (InstalledAddon a : store.addons()) if (a.enabled) for (AddonManifest.Catalog c : a.manifest.catalogs) {
-            if (c.searchable() && a.manifest.handles("catalog", c.type, null)) queries.add(new CatalogQuery(a, c, Collections.singletonMap("search", text)));
-        }
-        Result<Title> remote = catalogs(queries, scope, partial -> progress.accept(searchResults(text, partial)));
+        Result<Title> remote = catalogs(searchQueries(text), scope, partial -> progress.accept(searchResults(text, partial)));
         return searchResults(text, remote);
+    }
+    private List<CatalogQuery> searchQueries(String text) {
+        List<CatalogQuery> queries = new ArrayList<>();
+        for (InstalledAddon a : store.addons()) if (a.enabled) for (AddonManifest.Catalog c : a.manifest.catalogs)
+            if (c.searchable() && a.manifest.handles("catalog", c.type, null)) queries.add(new CatalogQuery(a, c, Collections.singletonMap("search", text)));
+        return queries;
     }
     private Result<Title> searchResults(String text, Result<Title> remote) {
         LinkedHashMap<String, Title> deduplicated = new LinkedHashMap<>();
@@ -159,11 +164,7 @@ public final class AddonRepository implements AutoCloseable {
     }
     /** Home/Search retry only failed resources. Successful shelves survive later attempts. */
     public CatalogPage searchPage(String text, Cancellation scope, java.util.function.Consumer<CatalogPage> progress) throws AddonException {
-        List<CatalogQuery> queries = new ArrayList<>();
-        for (InstalledAddon a : store.addons()) if (a.enabled) for (AddonManifest.Catalog c : a.manifest.catalogs)
-            if (c.searchable() && a.manifest.handles("catalog", c.type, null))
-                queries.add(new CatalogQuery(a, c, Collections.singletonMap("search", text)));
-        CatalogPage page = catalogsPage(queries, scope, partial -> progress.accept(
+        CatalogPage page = catalogsPage(searchQueries(text), scope, partial -> progress.accept(
                 new CatalogPage(searchResults(text, partial.result), partial.attempt, partial.loading)));
         return new CatalogPage(searchResults(text, page.result), page.attempt, false);
     }
@@ -175,7 +176,7 @@ public final class AddonRepository implements AutoCloseable {
         List<Integer> pending = new ArrayList<>();
         for (int i = 0; i < queries.size(); i++) {
             CatalogQuery query = queries.get(i);
-            String key = query.addon.id + ":" + query.catalog.type + ":" + query.catalog.id;
+            String key = query.key();
             positions.put(key, i); pending.add(i);
             List<Title> saved = Collections.emptyList();
             String cached = store.cached(query.addon.address.resource("catalog", query.catalog.type, query.catalog.id, query.extras));
@@ -236,7 +237,7 @@ public final class AddonRepository implements AutoCloseable {
         scope.check();
         long revision = configuration;
         String address = query.addon.address.resource("catalog", query.catalog.type, query.catalog.id, query.extras);
-        String key = query.addon.id + ":" + query.catalog.type + ":" + query.catalog.id;
+        String key = query.key();
         CachedCatalog cached;
         synchronized (catalogPages) { cached = catalogPages.get(address); }
         if (!refresh && cached != null && SystemClock.elapsedRealtime() - cached.saved < CATALOG_FRESH_MS)
@@ -281,7 +282,7 @@ public final class AddonRepository implements AutoCloseable {
         List<Callable<Part<Title>>> tasks = new ArrayList<>();
         List<String> keys = new ArrayList<>();
         for (CatalogQuery q : queries) {
-            String key = q.addon.id + ":" + q.catalog.type + ":" + q.catalog.id; keys.add(key);
+            String key = q.key(); keys.add(key);
             tasks.add(() -> catalog(q, scope, deadline, key));
         }
         return collect(tasks, keys, scope, deadline, progress);

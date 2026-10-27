@@ -122,15 +122,18 @@ public final class StoreProtocolTest {
         MediaSource bare = MediaSource.list("p", new JSONObject("{\"streams\":[{\"name\":\"1080p\",\"infoHash\":\"11ea02584fa6351956f35671962ab46354d99060\",\"fileIdx\":0}]}")).get(0);
         assertEquals(MediaSource.Kind.TORRENT, bare.kind);
         assertEquals(0, bare.fileIndex);
-        assertEquals(0, trackers(bare.torrentSource()).size());
-        assertEquals(Arrays.asList(MediaSource.PUBLIC_TRACKERS), trackers(bare.torrentSource().withFallbackTrackers(MediaSource.PUBLIC_TRACKERS)));
+        assertEquals(0, trackers(bare.torrentSource(), "trackers").size());
+        // Fallbacks travel separately; the engine announces to them only for a bare info hash naming no tracker.
+        TorrentEngine.Source fallback = bare.torrentSource().withFallbackTrackers(MediaSource.PUBLIC_TRACKERS);
+        assertEquals(0, trackers(fallback, "trackers").size());
+        assertEquals(Arrays.asList(MediaSource.PUBLIC_TRACKERS), trackers(fallback, "fallbackTrackers"));
         MediaSource hinted = MediaSource.list("p", new JSONObject("{\"streams\":[{\"infoHash\":\"11ea02584fa6351956f35671962ab46354d99060\","
                 + "\"sources\":[\"tracker:udp://tracker.example.org:80/announce\",\"dht:11ea02584fa6351956f35671962ab46354d99060\"]}]}")).get(0);
-        assertEquals(Collections.singletonList("udp://tracker.example.org:80/announce"), trackers(hinted.torrentSource().withFallbackTrackers(MediaSource.PUBLIC_TRACKERS)));
+        assertEquals(Collections.singletonList("udp://tracker.example.org:80/announce"), trackers(hinted.torrentSource().withFallbackTrackers(MediaSource.PUBLIC_TRACKERS), "trackers"));
         for (String tracker : MediaSource.PUBLIC_TRACKERS) assertTrue(tracker, tracker.matches("(udp|http)://[a-z0-9.-]+:[0-9]+/announce"));
     }
-    private static List<String> trackers(TorrentEngine.Source source) throws Exception {
-        java.lang.reflect.Field field = TorrentEngine.Source.class.getDeclaredField("trackers");
+    private static List<String> trackers(TorrentEngine.Source source, String name) throws Exception {
+        java.lang.reflect.Field field = TorrentEngine.Source.class.getDeclaredField(name);
         field.setAccessible(true);
         return Arrays.asList((String[]) field.get(source));
     }

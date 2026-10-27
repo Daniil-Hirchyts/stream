@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A tile's word over its artwork ("New"): a small white capsule, legible on light and dark frames. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/tv_text" />
+    <corners android:radius="@dimen/tv_radius_capsule" />
+</shape>

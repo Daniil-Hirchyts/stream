@@ -60,9 +60,8 @@ H.264/HEVC/VP9/AV1), Xvid/MP42/MP43/MJPEG AVI, 1080p software rendering,
 forward/backward seeks requiring fresh frames, PCM output, late captions and
 bounded runtime recovery. VC-1 currently has native discovery coverage only;
 no generated VC-1 decoding fixture is available. It records the initialized decoder names in private local evidence.
-No public providers or swarms are needed.
-See the [verification report](../PLAYBACK_VERIFICATION.md) for the audit,
-focused checks and remaining hardware/format limits.
+No public providers or swarms are needed. Hardware and format limits are
+listed under Known gaps in the [app guide](README.md#known-gaps).
 
 ## Third-party notices
 

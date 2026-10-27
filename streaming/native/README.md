@@ -3,7 +3,7 @@
 C++17 code that lets the TV play a torrent while it downloads, keeping only a
 bounded window of it on disk. Built into `libdaniiltv.so` for the app (through
 `streaming/android/torrent`) and into `dtv-fixture` and `dtv-tests` for this
-computer. Plan: [docs/STREAMING_APP_PLAN.md](../../docs/STREAMING_APP_PLAN.md).
+computer.
 
 | Path | Role |
 | --- | --- |

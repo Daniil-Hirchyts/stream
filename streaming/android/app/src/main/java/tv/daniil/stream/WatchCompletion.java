@@ -5,7 +5,10 @@ final class WatchCompletion {
     private WatchCompletion() {}
 
     static boolean offerOnExit(long position, long duration, boolean watched) {
-        return !watched && duration > 0 && position >= 30_000 && position < duration
-                && duration - position <= Math.min(180_000, duration / 10);
+        return !watched && position >= 30_000 && position < duration && nearlyFinished(position, duration);
+    }
+    /** Stopped in the closing minutes: at most the last tenth, capped at three minutes (usually the credits). */
+    static boolean nearlyFinished(long position, long duration) {
+        return duration > 0 && duration - position <= Math.min(180_000, duration / 10);
     }
 }

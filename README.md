@@ -12,10 +12,10 @@ desktop helper.
 ./streaming/simulator.sh soak     # Thirty real minutes of playback and seeks
 ```
 
-See the [Android app guide](streaming/android/README.md),
-[complete specification](docs/STREAMING_APP_PLAN.md), and
-[validation record](docs/streaming-validation.md). The development target is
-the explicitly verified local Android TV emulator. Physical Fire TV testing
+See the [Android app guide](streaming/android/README.md), its
+[testing guide](streaming/android/TESTING.md) and the
+[streaming engine](streaming/native/README.md). The development target is the
+explicitly verified local Android TV emulator. Physical Fire TV testing
 requires separate authorization.
 
 Daniil Cast sends video from a Chrome tab to an Android/Fire TV receiver. The
