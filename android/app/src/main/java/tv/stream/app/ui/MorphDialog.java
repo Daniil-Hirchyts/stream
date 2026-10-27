@@ -212,15 +212,18 @@ final class MorphDialog extends Dialog {
     }
     /** Keep the same attachment edge through nested pages; changing height must never flip the menu across its opener. */
     private Rect target(int width, int height) {
-        int inset = dp(24), topInset = dp(72), gap = dp(10); Rect source = source();
-        if (source.isEmpty()) return rect((root.getWidth() - width) / 2, topInset + (root.getHeight() - topInset - inset - height) / 2, width, height);
+        int inset = dp(24), topInset = dp(72), leftInset = inset, gap = dp(10); Rect source = source();
+        // Menus follow the page's inset, including the wider Search/Details/Sources layouts.
+        if (owner instanceof tv.stream.app.MainActivity) leftInset += ((tv.stream.app.MainActivity) owner).contentStart();
+        if (source.isEmpty()) return rect(leftInset + (root.getWidth() - leftInset - inset - width) / 2,
+                topInset + (root.getHeight() - topInset - inset - height) / 2, width, height);
         if (attachment < 0) {
             if (artwork && root.getWidth() - inset - source.right >= width + gap) attachment = RIGHT;
-            else if (artwork && source.left - inset >= width + gap) attachment = LEFT;
+            else if (artwork && source.left - leftInset >= width + gap) attachment = LEFT;
             else if (root.getHeight() - inset - source.bottom >= height + gap) attachment = BELOW;
             else if (source.top - topInset >= height + gap) attachment = ABOVE;
             else if (root.getWidth() - inset - source.right >= width + gap) attachment = RIGHT;
-            else if (source.left - inset >= width + gap) attachment = LEFT;
+            else if (source.left - leftInset >= width + gap) attachment = LEFT;
             else attachment = OVER;
         }
         int x = source.left, y = source.top;
@@ -229,7 +232,7 @@ final class MorphDialog extends Dialog {
         else if (attachment == RIGHT) x = source.right + gap;
         else if (attachment == LEFT) x = source.left - width - gap;
         else { x = source.right - width; y = source.centerY() - height / 2; }
-        x = Math.max(inset, Math.min(root.getWidth() - inset - width, x));
+        x = Math.max(leftInset, Math.min(root.getWidth() - inset - width, x));
         y = Math.max(topInset, Math.min(root.getHeight() - inset - height, y));
         return rect(x, y, width, height);
     }

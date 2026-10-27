@@ -3,8 +3,8 @@
     python3 branding/make_brand.py app/src/main/res <preview directory>
 
 The look follows Apple's glass icons: a graphite field lit softly from above and one glass play mark, translucent,
-lighter at its edges, with a bright rim and a soft shadow. Needs Pillow, and Inter Display SemiBold (SIL Open Font
-License) at FONT for the banner's wordmark.
+lighter at its edges, with a bright rim and a soft shadow. Uses Pillow and the bundled Geist Sans SemiBold
+(SIL Open Font License) for the banner's wordmark. FONT can override the face.
 """
 import math, os, sys
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
@@ -217,7 +217,7 @@ os.makedirs(PREVIEW, exist_ok=True)
 icon.resize((432, 432), Image.LANCZOS).save(f"{PREVIEW}/icon-preview.png")
 
 # TV banner: 320x180 dp. The mark and the wordmark centred as one group.
-font_path = os.environ.get("FONT", "/usr/share/fonts/opentype/inter/InterDisplay-SemiBold.otf")
+font_path = os.environ.get("FONT", os.path.join(os.path.dirname(__file__), "../app/src/main/res/font/geist_semibold.ttf"))
 for folder, w in (("drawable-mdpi", 160), ("drawable-hdpi", 240), ("drawable-xhdpi", 320), ("drawable-xxhdpi", 480), ("drawable-xxxhdpi", 640)):
     W, H = w * SS, w * 9 // 16 * SS
     font = ImageFont.truetype(font_path, round(H * 0.24))

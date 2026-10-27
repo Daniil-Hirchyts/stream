@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Tab bar items: white when focused, a soft capsule for the current tab, otherwise bare text. -->
-<selector xmlns:android="http://schemas.android.com/apk/res/android">
+<!-- Rail items: white when focused, a soft capsule for the current tab or under a pointer, otherwise bare. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:enterFadeDuration="150" android:exitFadeDuration="200">
     <item android:state_focused="true"><shape><solid android:color="@color/tv_focus" /><corners android:radius="@dimen/tv_radius_capsule" /></shape></item>
     <item android:state_pressed="true"><shape><solid android:color="@color/tv_focus_pressed" /><corners android:radius="@dimen/tv_radius_capsule" /></shape></item>
+    <item android:state_activated="true" android:state_hovered="true"><shape><solid android:color="@color/tv_platter_selected_hover" /><corners android:radius="@dimen/tv_radius_capsule" /></shape></item>
+    <item android:state_hovered="true"><shape><solid android:color="@color/tv_platter_hover" /><corners android:radius="@dimen/tv_radius_capsule" /></shape></item>
     <item android:state_activated="true"><shape><solid android:color="@color/tv_platter_selected" /><corners android:radius="@dimen/tv_radius_capsule" /></shape></item>
     <item><shape><solid android:color="#00000000" /><corners android:radius="@dimen/tv_radius_capsule" /></shape></item>
 </selector>

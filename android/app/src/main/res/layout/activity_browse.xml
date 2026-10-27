@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Artwork and page content fill the screen; the translucent header floats above both. -->
+<!-- Full-screen artwork, a page-owned viewport and a morphing navigation popup. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/browse_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:clipChildren="false"
     android:background="@drawable/tv_canvas">
     <eightbitlab.com.blurview.BlurTarget
         android:id="@+id/blur_target"
@@ -38,211 +39,65 @@
             android:alpha="0"
             android:background="@drawable/tv_scrim" />
     </eightbitlab.com.blurview.BlurTarget>
-    <!-- Not clipping: a parent that clips cuts each child at its own bounds, which would crop a focused control's
-         growth (Back, the page tools). -->
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:clipChildren="false">
+    <!-- The page spans the screen: its rail inset is the page gutter, and scrolled shelves fade out under the rail. -->
+    <tv.stream.app.ui.PageViewport android:id="@+id/browse_content"
+        android:layout_width="match_parent" android:layout_height="match_parent" android:clipChildren="true">
         <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/page_rows"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipChildren="false"
-            android:clipToPadding="false"
-            android:paddingTop="80dp"
-            android:paddingBottom="40dp"
-            android:scrollbars="none" />
-        <View
-            android:id="@+id/scroll_fade"
-            android:layout_width="match_parent"
-            android:layout_height="72dp"
-            android:layout_gravity="top"
-            android:alpha="0"
-            android:background="@drawable/tv_scroll_fade"
-            android:importantForAccessibility="no" />
-        <!-- The floating tab bar (tvOS): one blurred capsule, search first, centred; it slides away while content scrolls. -->
-        <FrameLayout
-            android:id="@+id/top_bar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:clipChildren="false"
-            android:clipToPadding="false"
-            android:paddingStart="48dp"
-            android:paddingTop="18dp"
-            android:paddingEnd="48dp"
-            android:paddingBottom="10dp">
-            <tv.stream.app.ui.GlassView
-                android:id="@+id/top_bar_controls"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:background="@drawable/tv_tabs"
-                android:clipChildren="false"
-                android:clipToPadding="false"
-                android:elevation="6dp"
-                android:padding="4dp">
-                <LinearLayout
-                    android:id="@+id/tab_cluster"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:clipChildren="false"
-                    android:clipToPadding="false"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-                    <FrameLayout
-                        android:id="@+id/search_button"
-                        android:layout_width="38dp"
-                        android:layout_height="38dp"
-                        android:layout_marginEnd="2dp"
-                        android:background="@drawable/tv_tab"
-                        android:contentDescription="Search">
-                        <ImageView
-                            android:layout_width="20dp"
-                            android:layout_height="20dp"
-                            android:layout_gravity="center"
-                            android:duplicateParentState="true"
-                            android:importantForAccessibility="no"
-                            android:src="@drawable/ic_tv_search"
-                            android:tint="@color/tv_tab_text" />
-                    </FrameLayout>
-                    <LinearLayout
-                        android:id="@+id/navigation"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:clipChildren="false"
-                        android:clipToPadding="false"
-                        android:orientation="horizontal" />
-                </LinearLayout>
-            </tv.stream.app.ui.GlassView>
-            <tv.stream.app.ui.GlassView
-                android:id="@+id/search_expanded"
-                android:layout_width="640dp"
-                android:layout_height="48dp"
-                android:layout_gravity="center"
-                android:background="@drawable/tv_tabs"
-                android:clipChildren="false"
-                android:clipToPadding="false"
-                android:elevation="6dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="5dp"
-                android:visibility="gone">
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:clipChildren="false"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:importantForAccessibility="no"
-                        android:src="@drawable/ic_tv_search"
-                        android:tint="@color/tv_text_secondary" />
-                    <TextView
-                        android:id="@+id/search_query"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="12dp"
-                        android:layout_weight="1"
-                        android:contentDescription="Search"
-                        android:ellipsize="end"
-                        android:maxLines="1"
-                        android:text="Search films, series and imports"
-                        android:textColor="@color/tv_text_secondary"
-                        android:textSize="17sp" />
-                    <FrameLayout
-                        android:id="@+id/search_keyboard"
-                        android:layout_width="38dp"
-                        android:layout_height="38dp"
-                        android:layout_marginEnd="4dp"
-                        android:background="@drawable/tv_utility_button"
-                        android:contentDescription="Hide keyboard">
-                        <ImageView android:layout_width="20dp" android:layout_height="20dp"
-                            android:layout_gravity="center" android:duplicateParentState="true"
-                            android:importantForAccessibility="no" android:src="@drawable/ic_tv_keyboard"
-                            android:tint="@color/tv_on_glass" />
-                    </FrameLayout>
-                    <FrameLayout
-                        android:id="@+id/search_close"
-                        android:layout_width="38dp"
-                        android:layout_height="38dp"
-                        android:background="@drawable/tv_button_round"
-                        android:contentDescription="Close search">
-                        <ImageView
-                            android:layout_width="18dp"
-                            android:layout_height="18dp"
-                            android:layout_gravity="center"
-                            android:duplicateParentState="true"
-                            android:importantForAccessibility="no"
-                            android:src="@drawable/ic_tv_close"
-                            android:tint="@color/tv_on_glass" />
-                    </FrameLayout>
-                </LinearLayout>
-            </tv.stream.app.ui.GlassView>
-        </FrameLayout>
-        <!-- Shared navigation is outside scrolling content and the sliding tab bar. -->
-        <FrameLayout
-            android:id="@+id/page_back"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_gravity="top|start"
-            android:layout_marginTop="22dp"
-            android:layout_marginStart="48dp"
-            android:background="@drawable/tv_utility_button"
-            android:contentDescription="Back"
-            android:elevation="8dp"
-            android:visibility="gone">
-            <ImageView android:layout_width="20dp" android:layout_height="20dp"
-                android:layout_gravity="center" android:rotation="180"
-                android:src="@drawable/ic_tv_chevron" android:tint="@color/tv_on_glass_secondary"
-                android:duplicateParentState="true" android:importantForAccessibility="no" />
-        </FrameLayout>
-        <!-- The clock sits beside the page tools, at the screen's top right corner. -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:layout_gravity="top|right"
-            android:layout_marginTop="22dp"
-            android:layout_marginEnd="48dp"
-            android:clipChildren="false"
-            android:clipToPadding="false"
-            android:elevation="8dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-        <LinearLayout
-            android:id="@+id/home_tools"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:clipChildren="false"
-            android:clipToPadding="false"
-            android:orientation="horizontal"
-            android:visibility="gone">
-            <FrameLayout android:id="@+id/home_browse" android:layout_width="40dp" android:layout_height="40dp"
-                android:background="@drawable/tv_utility_button" android:contentDescription="Browse catalogues">
-                <ImageView android:layout_width="19dp" android:layout_height="19dp" android:layout_gravity="center"
-                    android:src="@drawable/ic_tv_list" android:tint="@color/tv_on_glass_secondary"
-                    android:duplicateParentState="true" android:importantForAccessibility="no" />
-            </FrameLayout>
+            android:id="@+id/page_rows" android:layout_width="match_parent" android:layout_height="match_parent"
+            android:clipChildren="false" android:clipToPadding="false"
+            android:paddingTop="76dp" android:paddingBottom="32dp" android:scrollbars="none" />
+        <View android:id="@+id/scroll_fade" android:layout_width="match_parent" android:layout_height="72dp"
+            android:alpha="0" android:background="@drawable/tv_scroll_fade" android:importantForAccessibility="no" />
+    </tv.stream.app.ui.PageViewport>
+    <!-- Pointer/touch entry when the rail is hidden. Back remains above this transparent edge target. -->
+    <View android:id="@+id/navigation_reveal" android:layout_width="32dp" android:layout_height="match_parent"
+        android:contentDescription="Open navigation" android:visibility="gone" />
+    <!-- Back and Refresh remain circular icon-only controls, independent of the rail's width. -->
+    <FrameLayout android:id="@+id/page_back" android:layout_width="40dp" android:layout_height="40dp"
+        android:layout_marginStart="40dp" android:layout_marginTop="24dp"
+        android:background="@drawable/tv_utility_button" android:contentDescription="Back" android:visibility="gone">
+        <ImageView android:layout_width="18dp" android:layout_height="18dp" android:layout_gravity="center"
+            android:rotation="180" android:src="@drawable/ic_tv_chevron" android:tint="@color/tv_on_glass_secondary"
+            android:duplicateParentState="true" android:importantForAccessibility="no" />
+    </FrameLayout>
+    <LinearLayout android:id="@+id/browse_toolbar" android:layout_width="wrap_content" android:layout_height="40dp"
+        android:layout_gravity="top|end" android:layout_marginTop="24dp" android:layout_marginEnd="40dp"
+        android:gravity="center_vertical" android:orientation="horizontal" android:clipChildren="false" android:clipToPadding="false">
+        <FrameLayout android:id="@+id/home_tools" android:layout_width="40dp" android:layout_height="40dp"
+            android:clipChildren="false" android:visibility="gone">
             <FrameLayout android:id="@+id/home_refresh" android:layout_width="40dp" android:layout_height="40dp"
-                android:layout_marginStart="8dp" android:background="@drawable/tv_utility_button" android:contentDescription="Refresh">
+                android:background="@drawable/tv_utility_button" android:contentDescription="Refresh">
                 <ImageView android:layout_width="18dp" android:layout_height="18dp" android:layout_gravity="center"
                     android:src="@drawable/ic_tv_refresh" android:tint="@color/tv_on_glass_secondary"
                     android:duplicateParentState="true" android:importantForAccessibility="no" />
             </FrameLayout>
-        </LinearLayout>
-        <TextClock
-            android:id="@+id/clock"
-            style="@style/Text.Time"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:importantForAccessibility="no"
-            android:shadowColor="#B3000000"
-            android:shadowDy="1"
-            android:shadowRadius="6"
-            android:textColor="@color/tv_text_secondary"
-            android:visibility="gone" />
-        </LinearLayout>
-    </FrameLayout>
+        </FrameLayout>
+        <TextClock android:id="@+id/clock" style="@style/Text.Time"
+            android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="16dp"
+            android:singleLine="true" android:importantForAccessibility="no" android:visibility="gone"
+            android:shadowColor="#B3000000" android:shadowDy="1" android:shadowRadius="6"
+            android:textColor="@color/tv_text_secondary" />
+    </LinearLayout>
+    <!-- Like contextual menus, an outside click dismisses navigation without activating the page beneath it. -->
+    <View android:id="@+id/navigation_dismiss" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:contentDescription="Close navigation" android:visibility="gone" />
+    <tv.stream.app.ui.NavigationRail android:id="@+id/top_bar"
+        android:layout_width="56dp" android:layout_height="match_parent"
+        android:layout_marginStart="32dp" android:layout_marginTop="24dp" android:layout_marginBottom="24dp"
+        android:clipChildren="false" android:clipToPadding="false">
+        <tv.stream.app.ui.GlassView android:id="@+id/top_bar_controls"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical" android:background="@drawable/tv_rail"
+            android:padding="6dp" android:elevation="6dp" android:clipChildren="false" android:clipToPadding="false">
+            <LinearLayout android:id="@+id/tab_cluster"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:clipChildren="false" android:clipToPadding="false">
+                <FrameLayout android:id="@+id/search_button" android:layout_width="match_parent" android:layout_height="44dp"
+                    android:background="@drawable/tv_tab" android:contentDescription="Search" />
+                <LinearLayout android:id="@+id/navigation"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:clipChildren="false" android:clipToPadding="false" />
+            </LinearLayout>
+        </tv.stream.app.ui.GlassView>
+    </tv.stream.app.ui.NavigationRail>
 </FrameLayout>

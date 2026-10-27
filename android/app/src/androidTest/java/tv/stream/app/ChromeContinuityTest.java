@@ -32,7 +32,7 @@ public final class ChromeContinuityTest extends AppHarness {
         Rect clock = clockBounds(R.id.clock);
         browse.onActivity(activity -> {
             View tools = activity.findViewById(R.id.home_tools); Rect bounds = new Rect(); tools.getGlobalVisibleRect(bounds);
-            assertTrue("Tools sit left of the clock", bounds.right < clock.left);
+            assertTrue("Refresh sits left of the clock", bounds.right < clock.left);
             assertFalse("Default Home has no Back button", activity.findViewById(R.id.page_back).isShown());
         });
         tap("Refresh", true); SystemClock.sleep(100);
@@ -59,7 +59,7 @@ public final class ChromeContinuityTest extends AppHarness {
         waitUntil("watched", 5000, () -> visible("Mark unwatched"));
         browse.onActivity(activity -> assertTrue(activity.findViewById(R.id.page_rows).findViewWithTag("watched").isActivated()));
         screenshot("chrome-circular-actions.png");
-        tap("Back", true); waitUntil("home restored", 5000, () -> visible("Browse catalogues"));
+        tap("Back", true); waitUntil("home restored", 5000, () -> visible("Browse"));
         browse.onActivity(activity -> invoke(activity, "loading"));
         browse.onActivity(activity -> assertTrue("Navigation loading keeps the clock steady", activity.findViewById(R.id.clock).isShown()));
         browse.onActivity(MainActivity::refresh);
@@ -77,7 +77,7 @@ public final class ChromeContinuityTest extends AppHarness {
         SystemClock.sleep(950);
         for (int i = 0; i < 5; i++) { screenshot("chrome-intro-" + i + ".png"); SystemClock.sleep(140); }
         browse.onActivity(activity -> {
-            ((ViewGroup) intro[0].getParent()).removeView(intro[0]);
+            if (intro[0].getParent() instanceof ViewGroup) ((ViewGroup) intro[0].getParent()).removeView(intro[0]);
             setIntro(activity, null);
             invoke(activity, "updateClock");
             assertTrue("Browse clock returns after startup", activity.findViewById(R.id.clock).isShown());
@@ -115,8 +115,7 @@ public final class ChromeContinuityTest extends AppHarness {
         browse.onActivity(activity -> assertTrue(activity.getCurrentFocus().getGlobalVisibleRect(before)));
         pointer(before.centerX(), before.centerY(), true);
         waitUntil("details", 10000, () -> visible("Play"));
-        // A re-fetch would replace the saved shelf with empty Home; Back must use the retained page.
-        for (tv.stream.app.data.InstalledAddon addon : services.store.addons()) services.addons.remove(addon.id);
+        // A re-fetch would replace these injected shelves with fixture Home; Back must use the retained page.
         tap("Back", false);
         waitUntil("same card focus", 5000, () -> focused("row1:7"));
         SystemClock.sleep(1500);
@@ -147,7 +146,7 @@ public final class ChromeContinuityTest extends AppHarness {
             assertTrue("Player actions sit left of the clock", button.right < initial.left);
         });
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
-        waitUntil("player menu", 5000, () -> visible("Options"));
+        waitUntil("player menu", 5000, () -> visible("Settings"));
         assertEquals(initial, clockBounds(R.id.player_clock));
         SystemClock.sleep(400);
         screenshot("chrome-player-menu-clock.png");

@@ -52,7 +52,7 @@
                 style="@style/Text.Title"
                 android:layout_width="0dp"
                 android:layout_marginStart="18dp"
-                android:textSize="21sp"
+                android:textSize="18sp"
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:maxLines="1" />

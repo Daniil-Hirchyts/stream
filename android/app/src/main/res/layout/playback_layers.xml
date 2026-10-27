@@ -103,7 +103,7 @@
                 android:background="@drawable/tv_utility_button"
                 android:contentDescription="@string/hint_back"
                 android:defaultFocusHighlightEnabled="false"
-                android:padding="10dp"
+                android:padding="11dp"
                 android:rotation="180"
                 android:src="@drawable/ic_tv_chevron"
                 android:tint="@color/tv_on_glass_secondary" />
@@ -154,7 +154,7 @@
                 android:layout_marginStart="24dp"
                 android:background="@drawable/tv_button_round"
                 android:contentDescription="Mark watched"
-                android:padding="10dp"
+                android:padding="11dp"
                 android:src="@drawable/ic_tv_check"
                 android:tint="@color/tv_on_glass" />
 
@@ -166,7 +166,7 @@
                 android:layout_marginStart="12dp"
                 android:background="@drawable/tv_button_round"
                 android:contentDescription="@string/player_audio_subtitles"
-                android:padding="10dp"
+                android:padding="11dp"
                 android:src="@drawable/ic_tv_subtitles"
                 android:tint="@color/tv_on_glass" />
 
@@ -179,7 +179,7 @@
                 android:layout_marginStart="12dp"
                 android:background="@drawable/tv_button_round"
                 android:contentDescription="@string/player_settings"
-                android:padding="10dp"
+                android:padding="11dp"
                 android:src="@drawable/ic_tv_settings"
                 android:tint="@color/tv_on_glass" />
 
@@ -430,7 +430,7 @@
                 android:id="@+id/error_title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:fontFamily="@font/inter_medium"
+                android:fontFamily="@font/geist_medium"
                 android:gravity="start"
                 android:paddingStart="12dp"
                 android:paddingEnd="12dp"

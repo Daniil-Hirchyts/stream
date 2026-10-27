@@ -56,7 +56,7 @@ public final class DiscoveryRecoveryTest extends AppHarness {
             waitUntil("remote reaches recovery", 5000, () -> focus().equals("reload-search"));
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT);
             waitUntil("Left returns to keyboard", 5000, () -> focus().startsWith("keyboard:"));
-            tap("Hide keyboard", true);
+            browse.onActivity(activity -> ((tv.stream.app.ui.PageAdapter) ((androidx.recyclerview.widget.RecyclerView) activity.findViewById(R.id.page_rows)).getAdapter()).toggleSearchKeyboard());
             waitUntil("full search can reach recovery", 5000, () -> focus().equals("reload-search"));
             server.unavailable = false; server.emptySearch = true;
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);

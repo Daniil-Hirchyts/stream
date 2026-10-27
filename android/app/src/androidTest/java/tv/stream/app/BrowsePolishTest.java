@@ -49,7 +49,7 @@ public final class BrowsePolishTest extends AppHarness {
                 AtomicBoolean current = new AtomicBoolean();
                 browse.onActivity(activity -> {
                     android.widget.TextView globe = activity.findViewById(R.id.page_rows).findViewWithTag("keyboard:Language");
-                    current.set(globe != null && globe.getText().toString().equals(code.toUpperCase(java.util.Locale.ROOT)));
+                    current.set(globe != null && globe.getText().toString().equals(tv.stream.app.ui.KeyboardLanguages.name(code)));
                 }); return current.get();
             });
             alignedKeys(letters.substring(0, 1));
@@ -85,12 +85,13 @@ public final class BrowsePolishTest extends AppHarness {
                 assertEquals("Each row ends in the same column", edge, other.getChildAt(other.getChildCount() - 1).getRight());
                 for (int j = 0; j < other.getChildCount(); j++) {
                     View key = other.getChildAt(j);
-                    assertTrue("Every cell is an actual key, with no blank spacers", key instanceof android.widget.TextView && key.isFocusable());
+                    // Delete is an icon key; every other key carries its caption.
+                    boolean icon = "Delete last character".contentEquals(key.getContentDescription());
+                    assertTrue("Every cell is an actual key, with no blank spacers", (icon || key instanceof android.widget.TextView) && key.isFocusable());
                     assertEquals("Different label sizes must not offset key backgrounds", other.getChildAt(0).getTop(), key.getTop());
                     assertEquals("Keys share a height", row.getChildAt(0).getHeight(), key.getHeight());
                     assertEquals("Focus does not distort wide keys", 1f, key.getScaleX(), 0.001f);
-                    android.widget.TextView text = (android.widget.TextView) key;
-                    assertEquals("Key captions fit", 0, text.getLayout().getEllipsisCount(0));
+                    if (!icon) assertEquals("Key captions fit", 0, ((android.widget.TextView) key).getLayout().getEllipsisCount(0));
                     if (j > 0) assertEquals("Only the designed gap separates keys", tv.stream.app.ui.Tv.dp(context, 4), key.getLeft() - other.getChildAt(j - 1).getRight());
                 }
             }

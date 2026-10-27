@@ -18,6 +18,9 @@
     <color name="tv_platter">#24FFFFFF</color>
     <color name="tv_platter_low">#12FFFFFF</color>
     <color name="tv_platter_selected">#3DFFFFFF</color>
+    <!-- Under a pointer: a soft platter, brighter again over the current tab. -->
+    <color name="tv_platter_hover">#2EFFFFFF</color>
+    <color name="tv_platter_selected_hover">#57FFFFFF</color>
     <color name="tv_chip_selected">#E0FFFFFF</color>
     <color name="tv_focus_pressed">#D9FFFFFF</color>
     <color name="tv_material_thin">#52222227</color>

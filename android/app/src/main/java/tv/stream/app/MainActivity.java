@@ -10,7 +10,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -40,6 +39,8 @@ import tv.stream.app.ui.Artwork;
 import tv.stream.app.ui.Backdrop;
 import tv.stream.app.ui.Failures;
 import tv.stream.app.ui.IntroView;
+import tv.stream.app.ui.NavigationRail;
+import tv.stream.app.ui.PageViewport;
 import tv.stream.app.ui.Item;
 import tv.stream.app.ui.Page;
 import tv.stream.app.ui.PageAdapter;
@@ -51,7 +52,7 @@ import tv.stream.app.ui.Tv;
  * route render owns a cancellable provider scope and a generation, so late results never reach a newer screen.
  */
 public final class MainActivity extends Activity implements Navigator, PageAdapter.Listener {
-    private static final String[] TABS = {"Home", "Library", "Settings"};
+    private static final String[] TABS = {"Home", "Browse", "Library", "Settings"};
     /** Width of the centred column that lists and forms use, in dp of the 960 dp canvas. */
     private static final int COLUMN = 620;
     private static final int PICK_TORRENT = 21;
@@ -63,16 +64,15 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private Artwork artwork;
     private Backdrop backdrop;
     private LinearLayout navigation;
-    private View topBar, topBarControls, searchButton, searchExpandedView, searchClose, searchKeyboard, scrollFade, pageBack, pageTools;
+    private NavigationRail topBar;
+    private View searchButton, scrollFade, pageBack, pageTools;
     private PageAdapter.Layout pageLayout;
-    private boolean topBarHidden;
     @Nullable private Route shownRoute;
     @Nullable private Page shownPage;
     private final java.util.Set<Route> dirtyPages = new java.util.HashSet<>();
     private final java.util.Map<Route, Page> retainedPages = new java.util.IdentityHashMap<>();
     private final java.util.Map<String, Route> tabRoots = new java.util.HashMap<>();
     private long renderedConfiguration = -1;
-    private TextView searchQuery;
     private android.widget.TextClock clock;
     private String clockFormat = "off";
     private boolean pageLoading = true;
@@ -92,9 +92,9 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private boolean searchExpanded;
     private String searchReturnTab = "Home";
     @Nullable private Runnable searchDebounce;
-    /** A tab was chosen: leave focus on the tab bar rather than jumping into the new page. */
-    private boolean stayOnTabs;
+    /** A tab was chosen: keep focus in the rail until Right enters its content. */
     private boolean waitingForContentFocus;
+    private boolean leftPressed;
     /** Saved series changed while their page was loading; it rebuilds when that load finishes. */
     private boolean libraryChanged;
     @Nullable private Runnable delayedLoading;
@@ -141,41 +141,35 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         navigation = findViewById(R.id.navigation);
         topBar = findViewById(R.id.top_bar);
         scrollFade = findViewById(R.id.scroll_fade);
-        topBarControls = findViewById(R.id.top_bar_controls);
         searchButton = findViewById(R.id.search_button);
-        searchExpandedView = findViewById(R.id.search_expanded);
-        searchQuery = findViewById(R.id.search_query);
-        searchClose = findViewById(R.id.search_close);
-        searchKeyboard = findViewById(R.id.search_keyboard);
         pageBack = findViewById(R.id.page_back);
         pageTools = findViewById(R.id.home_tools);
         clock = findViewById(R.id.clock);
-        pageBack.setTooltipText("Back");
+        topBar.decorate((FrameLayout) searchButton, R.drawable.ic_tv_search, "Search");
+        View reveal = findViewById(R.id.navigation_reveal);
+        reveal.setOnClickListener(view -> focusNavigation());
+        reveal.setFocusable(false);
+        View dismiss = findViewById(R.id.navigation_dismiss);
+        dismiss.setOnClickListener(view -> dismissNavigation());
+        dismiss.setFocusable(false);
         Tv.control(pageBack, "nav:back", this::pageBack, key -> {}, Tv.LIFT_ICON, false);
-        pageBack.setNextFocusLeftId(R.id.page_back); pageBack.setNextFocusUpId(R.id.page_back);
-        pageBack.setOnKeyListener((view, code, event) -> {
-            if (code != KeyEvent.KEYCODE_DPAD_DOWN) return false;
-            if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                View target = stack.isEmpty() ? null : list.findViewWithTag(route().focus);
-                if (target != null) target.requestFocus(); else focusFirst();
-            }
-            return true;
-        });
+        wireUtility(pageBack);
+        for (View utility : new View[]{pageBack, findViewById(R.id.home_refresh)}) Tv.hover(utility, () -> Tv.LIFT_ICON);
         searchButton.setDefaultFocusHighlightEnabled(false);
-        searchClose.setDefaultFocusHighlightEnabled(false);
         for (String screen : TABS) navigation.addView(tab(screen));
-        // The tab bar's ends hold focus rather than dropping into whatever content lies beyond them.
-        View lastTab = navigation.getChildAt(TABS.length - 1);
-        lastTab.setNextFocusRightId(lastTab.getId());
-        searchButton.setNextFocusLeftId(R.id.search_button);
-        // tvOS: the tab bar slides away while content scrolls and returns when focus reaches it or the page is at its top.
         list.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override public void onScrolled(RecyclerView view, int dx, int dy) { updateTopBar(); }
         });
-        list.getViewTreeObserver().addOnGlobalFocusChangeListener((old, now) -> updateTopBar());
-        Tv.control(searchButton, "nav:search", this::search, key -> {}, Tv.LIFT_ICON, false);
-        Tv.control(searchClose, "search:close", this::closeSearch, key -> {}, Tv.LIFT_ICON, false);
-        Tv.control(searchKeyboard, "search:keyboard", () -> adapter.toggleSearchKeyboard(), key -> {}, Tv.LIFT_ICON, false);
+        // Parents finish recording their focused descendant after this callback returns.
+        list.getViewTreeObserver().addOnGlobalFocusChangeListener((old, now) -> {
+            // The initial focus is assigned before contentReady. Capture it when it leaves the page as well,
+            // so the rail and toolbar return to that control rather than the first filter or row.
+            if (contentReady && !stack.isEmpty() && shownRoute == route() && insidePage(old) && old.getTag() instanceof String)
+                route().focus = adapter.persistentFocus((String) old.getTag());
+            main.post(this::updateTopBar);
+        });
+        Tv.control(searchButton, "nav:search", () -> { search(); enterContent(); }, key -> {}, topBar::lift, false);
+        Tv.hover(searchButton, topBar::lift);
         if (android.os.Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackPressed);
         if (saved != null) {
@@ -188,15 +182,16 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         loading();
         initialize();
     }
-    private TextView tab(String screen) {
-        TextView tab = Tv.heading(this, screen, 15.5f, R.color.tv_tab_text);
-        tab.setId(View.generateViewId());
-        tab.setGravity(Gravity.CENTER); tab.setBackgroundResource(R.drawable.tv_tab); tab.setContentDescription(screen);
-        tab.setPadding(Tv.dp(this, 17), 0, Tv.dp(this, 17), 0);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, Tv.dp(this, 38));
-        params.setMarginStart(Tv.dp(this, 2)); params.setMarginEnd(Tv.dp(this, 2));
-        tab.setLayoutParams(params);
-        Tv.control(tab, "nav:" + screen, () -> { Sounds.play(Sounds.Sound.TAB); stayOnTabs = true; root(screen); }, key -> {}, Tv.LIFT_BUTTON, false);
+    private View tab(String screen) {
+        FrameLayout tab = new FrameLayout(this);
+        int icon = screen.equals("Home") ? R.drawable.ic_tv_home : screen.equals("Browse") ? R.drawable.ic_tv_explore
+                : screen.equals("Library") ? R.drawable.ic_tv_library : R.drawable.ic_tv_settings;
+        topBar.decorate(tab, icon, screen);
+        tab.setId(View.generateViewId()); tab.setBackgroundResource(R.drawable.tv_tab);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 44));
+        params.topMargin = Tv.dp(this, 6); tab.setLayoutParams(params);
+        Tv.control(tab, "nav:" + screen, () -> { Sounds.play(Sounds.Sound.TAB); root(screen); enterContent(); }, key -> {}, topBar::lift, false);
+        Tv.hover(tab, topBar::lift);
         return tab;
     }
     private void initialize() {
@@ -300,13 +295,14 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         Route route = route(); route.scroll = list.getLayoutManager().onSaveInstanceState();
         route.childScroll.clear(); route.childScroll.putAll(adapter.scrollPositions());
         View focus = getCurrentFocus();
-        if (insidePage(focus) && focus.getTag() instanceof String) route.focus = (String) focus.getTag();
+        if (insidePage(focus) && focus.getTag() instanceof String) route.focus = adapter.persistentFocus((String) focus.getTag());
     }
     private void pageBack() {
         if (stack.size() > 1 || searchExpanded) { onBackPressed(); return; }
         if (!route().screen.equals("Home")) root("Home"); else finish();
     }
     @Override public void root(String screen) {
+        if (screen.equals("Catalogues")) screen = "Browse";
         if (screen.equals("Search")) { search(); return; }
         if (services == null) return;
         searchExpanded = false;
@@ -320,7 +316,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     @Override public void search() {
         if (services == null) return;
         if (!stack.isEmpty() && stack.get(0).screen.equals("Search")) {
-            searchExpanded = true; syncSearchQuery(); chrome(route().screen); return;
+            searchExpanded = true; chrome(route().screen); return;
         }
         searchReturnTab = stack.isEmpty() ? "Home" : primaryTab(stack.get(0).screen);
         searchExpanded = true;
@@ -331,7 +327,6 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         for (Route saved : stack) if (saved.screen.equals("Search")) {
             saved.value = value;
         }
-        syncSearchQuery();
         if (stack.isEmpty() || !route().screen.equals("Search")) return;
         if (searchDebounce != null) main.removeCallbacks(searchDebounce);
         cancelWork();
@@ -356,17 +351,10 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         return false;
     }
     private String primaryTab(String screen) {
+        if (screen.equals("Catalogues") || screen.equals("Catalogue")) return "Browse";
         if (screen.equals("Imports") || screen.equals("Add-on") || screen.equals("Developer") || screen.equals("Add-ons") || screen.equals("Add-on review")) return "Settings";
         if (screen.equals("Search")) return isPrimaryTab(searchReturnTab) ? searchReturnTab : "Home";
         return isPrimaryTab(screen) ? screen : "Home";
-    }
-    private void syncSearchQuery() {
-        if (searchQuery == null) return;
-        String value = "";
-        for (Route saved : stack) if (saved.screen.equals("Search")) value = saved.value;
-        boolean empty = value.isEmpty();
-        searchQuery.setText(empty ? "Search films, series and imports" : value);
-        searchQuery.setTextColor(getColor(empty ? R.color.tv_text_secondary : R.color.tv_text));
     }
     @Override public void push(Route next) { Sounds.play(Sounds.Sound.OPEN); rememberFocus(); stack.add(next); enterDirection = 1; render(); }
     @Override public void back() { onBackPressed(); }
@@ -396,7 +384,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         }
         if (!route.screen.equals("Details") && !route.screen.equals("Sources")) services.preparation.leave();
         if (shownRoute != route) adapter.restoreScrollPositions(route.childScroll);
-        if (shownRoute != route && !stayOnTabs) {
+        if (shownRoute != route) {
             // Hold focus before removing the clicked card. Skeletons have no controls; letting the framework
             // choose a fallback here briefly highlights Home before the page's Play button arrives.
             waitingForContentFocus = true;
@@ -413,7 +401,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         if (shownRoute != route && retained != null) show(retained);
         if (restoreOnly && retained != null && !dirty && retained.reusable) return;
         boolean updating = shownRoute == route && shownPage != null;
-        if (!updating) { loading(); topBarHidden = true; updateTopBar(); }
+        if (!updating) { loading(); updateTopBar(); }
         else if (route.screen.equals("Search") && !(restoreOnly && retained != null)) loading();
         int mine = generation;
         Consumer<Page> progress = partial -> main.post(() -> {
@@ -482,7 +470,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             case "Add-on": return setup.addon(route);
             case "Add-ons": return store.store(route, request, progress);
             case "Add-on review": return store.review(route, request);
-            case "Catalogues": return browse.catalogues();
+            case "Browse": case "Catalogues": return browse.catalogues();
             case "Catalogue": return browse.catalogue(route, request, progress, refreshData);
             case "Details": return titles.details(route, request, progress);
             case "Sources": return titles.sources(route, request, progress);
@@ -491,36 +479,116 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             default: return browse.home(request, progress, refreshData, restoring);
         }
     }
-    /** Tabs are hidden during onboarding; the active tab follows the bottom of the stack. */
+    /** Browse chrome is persistent; search keeps its editor in the content viewport. */
     private void chrome(String screen) {
         boolean tabs = !screen.equals("Starting");
-        boolean expanded = tabs && searchExpanded;
-        topBarControls.setVisibility(tabs && !expanded ? View.VISIBLE : View.INVISIBLE);
-        searchExpandedView.setVisibility(expanded ? View.VISIBLE : View.GONE);
-        String rootScreen = stack.isEmpty() ? "Home" : primaryTab(stack.get(0).screen);
-        for (int i = 0; i < navigation.getChildCount(); i++) navigation.getChildAt(i).setActivated(TABS[i].equals(rootScreen));
-        boolean canGoBack = !screen.equals("Starting") && (stack.size() > 1 || searchExpanded
-                || !(screen.equals("Home") || screen.equals("Library") || screen.equals("Settings")));
+        String rootScreen = stack.isEmpty() ? "Home" : stack.get(0).screen;
+        searchButton.setActivated(rootScreen.equals("Search"));
+        for (int i = 0; i < navigation.getChildCount(); i++)
+            navigation.getChildAt(i).setActivated(!rootScreen.equals("Search") && TABS[i].equals(primaryTab(rootScreen)));
+        boolean canGoBack = tabs && (stack.size() > 1 || searchExpanded
+                || !isPrimaryTab(screen));
         pageBack.setVisibility(canGoBack ? View.VISIBLE : View.GONE);
-        View lastTab = navigation.getChildAt(TABS.length - 1);
-        if (shownRoute != route()) {
-            lastTab.setNextFocusRightId(lastTab.getId());
-            pageTools.setVisibility(View.GONE);
-        }
-        pageBack.setNextFocusRightId(currentTab().getId());
-        searchButton.setNextFocusLeftId(canGoBack ? R.id.page_back : R.id.search_button);
-        pageLayout.navigationTarget(canGoBack ? pageBack : currentTab());
-        syncSearchQuery();
+        if (shownRoute != route()) pageTools.setVisibility(View.GONE);
+        // Shelves fade out under the rail; with the rail hidden they run cleanly to the screen edge.
+        ((PageViewport) findViewById(R.id.browse_content)).fade(hiddenNavigation() ? 0 : contentStart());
+        wireRail(); updateTopBar();
     }
-    /** Hides the tab bar once content has scrolled under it, unless it has focus; shows it again at the top. */
+    /** Page composition owns visibility; scrolling and opening navigation never change the page's geometry. */
+    private boolean hiddenNavigation() {
+        if (stack.isEmpty()) return true;
+        switch (route().screen) {
+            case "Starting": case "Search": case "Details": case "Sources": return true;
+            default: return false;
+        }
+    }
+    private int contentInset() { return hiddenNavigation() ? NavigationRail.HIDDEN_CONTENT_START : NavigationRail.CONTENT_START; }
+    private boolean searchPage() { return !stack.isEmpty() && route().screen.equals("Search"); }
+    /** Where the page's content starts, in pixels: clear of the rail, or of the screen edge when the rail is hidden. */
+    public int contentStart() { return Tv.dp(this, contentInset()); }
     private void updateTopBar() {
+        // A rebound keyboard can restore focus before RecyclerView has attached every holder.
+        if (list.isComputingLayout()) { list.post(this::updateTopBar); return; }
         int offset = list.computeVerticalScrollOffset();
-        scrollFade.setAlpha(Math.min(1f, offset / (float) Tv.dp(this, 32)));
-        boolean hide = !searchExpanded && !topBar.hasFocus() && !pageBack.hasFocus() && offset > Tv.dp(this, 24);
-        if (hide == topBarHidden) return;
-        topBarHidden = hide;
-        topBar.animate().cancel();
-        topBar.animate().translationY(hide ? -topBar.getHeight() : 0).alpha(hide ? 0f : 1f).setDuration(hide ? 220 : 260).start();
+        scrollFade.setAlpha(!stack.isEmpty() && route().screen.equals("Search") ? 0f : Math.min(1f, offset / (float) Tv.dp(this, 32)));
+        if (!dialogs.isEmpty()) return;
+        boolean starting = stack.isEmpty() || route().screen.equals("Starting");
+        boolean search = searchPage();
+        NavigationRail.State state = starting || search ? NavigationRail.State.HIDDEN : topBar.hasFocus()
+                ? topBar.state() == NavigationRail.State.EXPANDED ? NavigationRail.State.EXPANDED : NavigationRail.State.WRAPPED
+                : hiddenNavigation() ? NavigationRail.State.HIDDEN : NavigationRail.State.WRAPPED;
+        topBar.overlaysContent(hiddenNavigation());
+        topBar.state(state);
+        if (search) topBar.setVisibility(View.INVISIBLE);
+        findViewById(R.id.navigation_reveal).setVisibility(!starting && !search && state == NavigationRail.State.HIDDEN ? View.VISIBLE : View.GONE);
+        findViewById(R.id.navigation_dismiss).setVisibility(state == NavigationRail.State.EXPANDED ? View.VISIBLE : View.GONE);
+    }
+    private void focusNavigation() {
+        if (searchPage()) return;
+        rememberFocus();
+        // Entering navigation only transfers focus. A separate Left press opens its labels.
+        topBar.state(NavigationRail.State.WRAPPED);
+        currentTab().requestFocus();
+        updateTopBar();
+    }
+    private void dismissNavigation() { enterContent(); updateTopBar(); }
+    /** Only destinations belong to the rail; utilities retain their own top-corner focus paths. */
+    private void wireRail() {
+        List<View> controls = new ArrayList<>(); controls.add(searchButton);
+        for (int i = 0; i < navigation.getChildCount(); i++) controls.add(navigation.getChildAt(i));
+        for (int i = 0; i < controls.size(); i++) {
+            View control = controls.get(i);
+            control.setNextFocusUpId(controls.get(Math.max(0, i - 1)).getId());
+            control.setNextFocusDownId(controls.get(Math.min(controls.size() - 1, i + 1)).getId());
+            control.setNextFocusLeftId(control.getId());
+            control.setOnKeyListener((view, code, event) -> {
+                if (code == KeyEvent.KEYCODE_DPAD_LEFT) {
+                    if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                        topBar.state(NavigationRail.State.EXPANDED);
+                        updateTopBar();
+                    }
+                    return true;
+                }
+                if (code == KeyEvent.KEYCODE_DPAD_UP && view == searchButton && pageBack.isShown()) {
+                    if (event.getAction() == KeyEvent.ACTION_DOWN) pageBack.requestFocus();
+                    return true;
+                }
+                if (code != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
+                if (event.getAction() == KeyEvent.ACTION_DOWN) enterContent();
+                return true;
+            });
+        }
+    }
+    private void wireUtility(View control) {
+        control.setNextFocusUpId(control.getId());
+        control.setOnKeyListener((view, code, event) -> {
+            if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN) enterContent();
+                return true;
+            }
+            if (code == KeyEvent.KEYCODE_DPAD_LEFT) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                    if (view != pageBack && pageBack.isShown()) pageBack.requestFocus(); else focusNavigation();
+                }
+                return true;
+            }
+            if (code == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN && view == pageBack && pageTools.isShown()) findViewById(R.id.home_refresh).requestFocus();
+                return true;
+            }
+            return false;
+        });
+    }
+    private void enterContent() {
+        if (stack.isEmpty()) return;
+        topBar.state(hiddenNavigation() ? NavigationRail.State.HIDDEN : NavigationRail.State.WRAPPED);
+        View target = list.findViewWithTag(route().focus);
+        if (target != null && target.isShown() && target.isFocusable()) target.requestFocus();
+        else {
+            View first = firstFocusable(list);
+            if (first != null) first.requestFocus();
+            else list.requestFocus(); // Right can collapse the rail even on an empty or still-loading page.
+        }
     }
     private void showPartial(Page page) {
         cancelLoading();
@@ -536,40 +604,16 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         } else show(page, true);
     }
     private void show(Page page) { show(page, false); }
-    /** Page actions share Home's fixed toolbar. Refresh always occupies the rightmost slot. */
+    /** Refresh is always icon-only, fixed beside the clock at the top right. */
     private void bindTools(Page page) {
-        List<View> visible = new ArrayList<>();
-        int[] ids = {R.id.home_browse, R.id.home_refresh};
-        int[] icons = {R.drawable.ic_tv_list, R.drawable.ic_tv_refresh};
-        for (int i = 0; i < ids.length; i++) {
-            View tool = findViewById(ids[i]); Item.Action action = null;
-            for (Item.Action candidate : page.tools) if (candidate.icon == icons[i]) { action = candidate; break; }
-            tool.setVisibility(action == null ? View.GONE : View.VISIBLE);
-            if (action == null) { tool.setTag(null); continue; }
-            tool.setContentDescription(action.label); tool.setTooltipText(action.label);
-            Runnable run = action.action;
-            Tv.control(tool, action.key, () -> {
-                if (tool.getId() == R.id.home_refresh) animateRefresh(tool);
-                run.run();
-            }, key -> {}, Tv.LIFT_ICON, false);
-            tool.setOnKeyListener((view, code, event) -> {
-                if (code != KeyEvent.KEYCODE_DPAD_DOWN) return false;
-                if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                    View target = list.findViewWithTag(route().focus);
-                    if (target != null) target.requestFocus(); else focusFirst();
-                }
-                return true;
-            });
-            visible.add(tool);
-        }
-        pageTools.setVisibility(visible.isEmpty() ? View.GONE : View.VISIBLE);
-        View lastTab = navigation.getChildAt(TABS.length - 1);
-        lastTab.setNextFocusRightId(visible.isEmpty() ? lastTab.getId() : visible.get(0).getId());
-        for (int i = 0; i < visible.size(); i++) {
-            View tool = visible.get(i);
-            tool.setNextFocusLeftId(i == 0 ? lastTab.getId() : visible.get(i - 1).getId());
-            tool.setNextFocusRightId(i + 1 < visible.size() ? visible.get(i + 1).getId() : tool.getId());
-        }
+        View tool = findViewById(R.id.home_refresh); Item.Action action = null;
+        for (Item.Action candidate : page.tools) if (candidate.icon == R.drawable.ic_tv_refresh) { action = candidate; break; }
+        pageTools.setVisibility(action == null ? View.GONE : View.VISIBLE);
+        if (action == null) { tool.setTag(null); return; }
+        tool.setContentDescription(action.label);
+        Runnable run = action.action;
+        Tv.control(tool, action.key, () -> { animateRefresh(tool); run.run(); }, key -> {}, Tv.LIFT_ICON, false);
+        wireUtility(tool);
     }
     private void animateRefresh(View tool) {
         View icon = ((ViewGroup) tool).getChildAt(0);
@@ -621,9 +665,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
                 && (pageBack.hasFocus() || topBar.hasFocus() || pageTools.hasFocus());
         // Restore the route's focus; otherwise start on the page's first choice, unless the user is on the tabs.
         String wanted = !route.focus.isEmpty() ? route.focus : page.initialFocus != null ? page.initialFocus : "";
-        boolean tabs = stayOnTabs && navigation.hasFocus();
-        stayOnTabs = false;
-        if (wanted.isEmpty() && !tabs && page.firstTile() != null) wanted = page.firstTile();
+        if (wanted.isEmpty() && page.firstTile() != null) wanted = page.firstTile();
         if (adapter.set(items, preserveNavigation ? "" : wanted)) {
             if (!partial) finishContentFocusWait();
             contentReady = true; return;
@@ -654,7 +696,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
                     contentReady = true;
                 });
                 return;
-            } else if (!tabs) focusFirst();
+            } else focusFirst();
             contentReady = true;
         });
     }
@@ -673,7 +715,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     private void focusFirst() {
         View first = firstFocusable(list);
         if (first != null) first.requestFocus();
-        else if (!navigation.hasFocus()) currentTab().requestFocus();
+        else if (!navigation.hasFocus()) focusNavigation();
     }
     @Nullable private static View firstFocusable(View view) {
         if (view.getVisibility() != View.VISIBLE) return null;
@@ -685,6 +727,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         return null;
     }
     private View currentTab() {
+        if (!stack.isEmpty() && stack.get(0).screen.equals("Search")) return searchButton;
         String rootScreen = stack.isEmpty() ? "Home" : primaryTab(stack.get(0).screen);
         for (int i = 0; i < TABS.length; i++) if (TABS[i].equals(rootScreen)) return navigation.getChildAt(i);
         return navigation.getChildAt(0);
@@ -707,6 +750,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             if (current.screen.equals("Search") && browse != null) {
                 Item search = browse.searchLoading(current);
                 String focus = current.focus.isEmpty() ? "keyboard:a" : current.focus;
+                // Search's own gutter and top before its pane is bound: the previous page's include the rail's inset.
+                gutters(false); contentTop(false);
                 // Typing updates the results beside the keyboard; the focused key stays focused and keeps being remembered.
                 if (adapter.set(java.util.Collections.singletonList(search), focus)) contentReady = true;
                 return;
@@ -737,16 +782,14 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             default: return false;
         }
     }
-    /** Pages start below the tab bar; Home's spotlight runs under it. */
+    /** Reserve the top toolbar; Home artwork uses the full height. */
     private void contentTop(boolean spotlight) {
-        int headerHeight = topBar.getHeight();
-        if (headerHeight == 0) headerHeight = Tv.dp(this, 76);
-        list.setPadding(list.getPaddingLeft(), spotlight ? 0 : headerHeight + Tv.dp(this, 2), list.getPaddingRight(), list.getPaddingBottom());
+        list.setPadding(0, Tv.dp(this, spotlight ? 0 : 76), 0, list.getPaddingBottom());
     }
     private void gutters(boolean narrow) {
-        float widthDp = getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density;
-        int side = narrow ? Math.max(48, Math.round((widthDp - COLUMN) / 2)) : 48;
-        adapter.gutter(side, side);
+        float widthDp = getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density - contentInset();
+        int side = narrow ? Math.max(24, Math.round((widthDp - COLUMN) / 2)) : 24;
+        adapter.gutter(contentInset() + side, narrow ? side : 40);
     }
     private static boolean hasPageSkeleton(String screen) {
         switch (screen) {
@@ -847,8 +890,6 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             if (item.kind == Item.Kind.KEYBOARD) item.keyboardVisible = visible;
         Page retained = retainedPages.get(route());
         if (retained != null) for (Item item : retained.items) if (item.kind == Item.Kind.KEYBOARD) item.keyboardVisible = visible;
-        searchKeyboard.setContentDescription(visible ? "Hide keyboard" : "Show keyboard");
-        searchKeyboard.setTooltipText(visible ? "Hide keyboard" : "Show keyboard");
     }
 
     // Workers.
@@ -863,7 +904,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     @Override public void mutate(Callable<?> task) { then(task, () -> { invalidateLocalPages(); rememberFocus(); render(); }); }
     private void invalidateLocalPages() {
         for (Route saved : retainedPages.keySet())
-            if (!saved.screen.equals("Catalogue") && !saved.screen.equals("Catalogues")) dirtyPages.add(saved);
+            if (!saved.screen.equals("Catalogue") && !saved.screen.equals("Catalogues") && !saved.screen.equals("Browse")) dirtyPages.add(saved);
     }
     @Override public void then(Callable<?> task, Runnable after) { work(() -> { task.call(); return true; }, ignored -> after.run()); }
 
@@ -884,7 +925,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     // Contextual panels share one navigation model: Back/Left returns a level or dismisses the root.
     private void show(Tv.Alert alert) {
         Dialog dialog = alert.dialog;
-        dialogs.add(dialog); dialog.setOnDismissListener(ignored -> dialogs.remove(dialog));
+        dialogs.add(dialog); dialog.setOnDismissListener(ignored -> { dialogs.remove(dialog); main.post(this::updateTopBar); });
         alert.show();
     }
     /** Long text (licences) scrolls inside the alert, left-aligned for reading. */
@@ -947,6 +988,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         show(alert);
         alert.dialog.setOnDismissListener(dialog -> {
             dialogs.remove(dialog);
+            main.post(this::updateTopBar);
             if (!accepted[0] && header == null) {
                 View view = list.findViewWithTag("subtitle-preview");
                 if (view instanceof tv.stream.app.ui.SubtitlePreviewView)
@@ -1046,8 +1088,8 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         }));
     }
     @Override public void notices() {
-        String[] files = {"androidx.txt", "libtorrent.txt", "boost.txt", "openssl.txt", "ed25519.txt", "try-signal.txt", "inter.txt", "zxing.txt", "material-icons.txt", "noto-sans.txt", "atkinson-hyperlegible.txt"};
-        choose("Open source notices", new String[]{"AndroidX / Media3", "libtorrent", "Boost", "OpenSSL", "Ed25519", "try_signal", "Inter typeface", "ZXing", "Material Icons", "Noto Sans", "Atkinson Hyperlegible Next"}, which -> work(() -> {
+        String[] files = {"androidx.txt", "libtorrent.txt", "boost.txt", "openssl.txt", "ed25519.txt", "try-signal.txt", "geist.txt", "geist-icons.txt", "zxing.txt", "material-icons.txt", "noto-sans.txt", "atkinson-hyperlegible.txt"};
+        choose("Open source notices", new String[]{"AndroidX / Media3", "libtorrent", "Boost", "OpenSSL", "Ed25519", "try_signal", "Geist Sans", "Geist UI icons", "ZXing", "Material Icons", "Noto Sans", "Atkinson Hyperlegible Next"}, which -> work(() -> {
             try (java.io.InputStream input = getAssets().open("notices/" + files[which]); java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
                 byte[] buffer = new byte[8192];
                 for (int count; (count = input.read(buffer)) != -1; ) bytes.write(buffer, 0, count);
@@ -1082,15 +1124,14 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     }
 
     // Lifecycle and Back.
-    /** tvOS order: Back leaves a pushed screen, then moves to the tab bar, then Home, then exits. */
+    /** Back dismisses navigation first, then restores the overview/previous screen, Home or the launcher. */
     @Override public void onBackPressed() {
         if (intro != null) { finish(); return; }
+        if (topBar.hasFocus()) { Sounds.play(Sounds.Sound.BACK); dismissNavigation(); return; }
         if (returnToSeriesOverview()) { Sounds.play(Sounds.Sound.BACK); return; }
         if (stack.size() > 1) { Sounds.play(Sounds.Sound.BACK); cancelWork(); stack.remove(stack.size() - 1); enterDirection = -1; render(true); return; }
         if (searchExpanded && !stack.isEmpty() && stack.get(0).screen.equals("Search")) { Sounds.play(Sounds.Sound.BACK); closeSearch(); return; }
-        boolean tabs = topBarControls.getVisibility() == View.VISIBLE && services != null;
-        if (tabs && !navigation.hasFocus()) { Sounds.play(Sounds.Sound.BACK); currentTab().requestFocus(); return; }
-        if (tabs && !route().screen.equals("Home")) { Sounds.play(Sounds.Sound.BACK); root("Home"); return; }
+        if (services != null && !route().screen.equals("Home")) { Sounds.play(Sounds.Sound.BACK); root("Home"); return; }
         finish();
     }
     /**
@@ -1100,25 +1141,60 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         // Nothing beneath the start screen is visible yet, so only Back reaches the app.
         if (intro != null && event.getKeyCode() != KeyEvent.KEYCODE_BACK) return true;
+        if (event.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) leftPressed = true;
+            else if (event.getAction() == KeyEvent.ACTION_UP) {
+                // Android can consume the first down while leaving pointer mode on an empty viewport.
+                // Replay that missing move once, matching the popup navigation's pointer/remote handoff.
+                if (!leftPressed && !event.isCanceled()) {
+                    boolean handled = dispatchKeyEvent(KeyEvent.changeAction(event, KeyEvent.ACTION_DOWN));
+                    leftPressed = false;
+                    return handled;
+                }
+                leftPressed = false;
+            }
+        }
         boolean move = event.getAction() == KeyEvent.ACTION_DOWN && Sounds.arrow(event.getKeyCode());
         if (move) Sounds.input();
-        if (move && !stack.isEmpty() && route().screen.equals("Search") && adapter.searchKey(event.getKeyCode())) return true;
         View before = getCurrentFocus();
         if (move && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP && before != null
                 && String.valueOf(before.getTag()).startsWith("season:") && returnToSeriesOverview()) return true;
-        if (move && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP && waitingForContentFocus && before == list) {
-            View entry = pageBack.getVisibility() == View.VISIBLE ? pageBack : currentTab();
-            if (entry.isShown()) { entry.requestFocus(); finishContentFocusWait(); return true; }
+        if (move && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT && (before == list || before == null) && services != null) {
+            focusNavigation();
+            if (waitingForContentFocus) finishContentFocusWait();
+            return true;
         }
-        boolean handled = super.dispatchKeyEvent(event);
-        View after = getCurrentFocus();
-        if (move && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP && insidePage(before) && !insidePage(after)) {
-            View entry = pageBack.getVisibility() == View.VISIBLE ? pageBack : currentTab();
-            if (entry.isShown()) { entry.requestFocus(); handled = true; }
+        // Search owns keyboard ↔ results and Settings owns category ↔ pane before an edge enters the rail.
+        boolean handled;
+        adapter.arrowing(move);
+        try {
+            if (move && !topBar.hasFocus() && !stack.isEmpty() && route().screen.equals("Search") && adapter.searchKey(event.getKeyCode())) return true;
+            handled = super.dispatchKeyEvent(event);
+        } finally { adapter.arrowing(false); }
+        if (move && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT && insidePage(before) && leftContentEdge(before)
+                && (getCurrentFocus() == before || !insidePage(getCurrentFocus()))) {
+            focusNavigation(); handled = true;
         }
         if (move && event.getRepeatCount() == 0 && before != null && getCurrentFocus() == before)
             main.postDelayed(() -> { if (!stopped && getCurrentFocus() == before) Sounds.play(Sounds.Sound.EDGE); }, 90);
         return handled;
+    }
+
+    /** Do not steal a shelf's asynchronous scroll to a previous off-screen card. */
+    private boolean leftContentEdge(View focused) {
+        for (View child = focused; child != null && child != list; ) {
+            if (child.getParent() instanceof RecyclerView) {
+                RecyclerView row = (RecyclerView) child.getParent();
+                RecyclerView.LayoutManager layout = row.getLayoutManager();
+                int position = row.getChildAdapterPosition(child);
+                if (layout instanceof androidx.recyclerview.widget.GridLayoutManager) {
+                    int columns = ((androidx.recyclerview.widget.GridLayoutManager) layout).getSpanCount();
+                    if (position >= 0 && position % columns != 0) return false;
+                } else if (layout != null && layout.canScrollHorizontally() && position != 0) return false;
+            }
+            child = child.getParent() instanceof View ? (View) child.getParent() : null;
+        }
+        return true;
     }
 
     private boolean insidePage(@Nullable View view) {

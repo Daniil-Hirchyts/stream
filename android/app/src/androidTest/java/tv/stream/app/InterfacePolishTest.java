@@ -1,6 +1,7 @@
 package tv.stream.app;
 
 import static org.junit.Assert.*;
+import android.graphics.Rect;
 import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
@@ -22,6 +23,12 @@ public final class InterfacePolishTest extends AppHarness {
         tap("Search", true); waitUntil("English keys", 5000, () -> visible("Type a"));
         tap("Type a", false); tap("Type b", true);
         waitUntil("typed query", 5000, () -> query().equals("ab"));
+        AtomicInteger queryTop = new AtomicInteger(), keysTop = new AtomicInteger();
+        AtomicInteger shortest = new AtomicInteger(Integer.MAX_VALUE), tallest = new AtomicInteger();
+        browse.onActivity(activity -> {
+            queryTop.set(bounds(activity.findViewById(R.id.search_query)).top);
+            keysTop.set(bounds(activity.findViewById(R.id.page_rows).findViewWithTag("keyboard-keys")).top);
+        });
         for (String code : tv.stream.app.ui.KeyboardLanguages.CODES) {
             waitUntil("language " + code, 5000, () -> visible(tv.stream.app.ui.KeyboardLanguages.name(code)));
             assertFalse("Speech input was removed", visible("Voice input"));
@@ -30,6 +37,13 @@ public final class InterfacePolishTest extends AppHarness {
                 browse.onActivity(activity -> {
                     ViewGroup keys = activity.findViewById(R.id.page_rows).findViewWithTag("keyboard-keys");
                     assertNotNull(keys);
+                    assertEquals("The query stays anchored at the top", queryTop.get(), bounds(activity.findViewById(R.id.search_query)).top);
+                    Rect keyboard = bounds(keys);
+                    assertEquals("Different languages and character pages grow down from the same top", keysTop.get(), keyboard.top);
+                    View rows = activity.findViewById(R.id.page_rows);
+                    assertTrue("Every key stays inside the bottom safe area", keyboard.bottom <= bounds(rows).bottom - rows.getPaddingBottom());
+                    shortest.set(Math.min(shortest.get(), keys.getHeight()));
+                    tallest.set(Math.max(tallest.get(), keys.getHeight()));
                     for (int r = 0; r < keys.getChildCount(); r++) {
                         ViewGroup row = (ViewGroup) keys.getChildAt(r);
                         assertTrue(row.getChildCount() > 0);
@@ -42,6 +56,7 @@ public final class InterfacePolishTest extends AppHarness {
             }
             tap("Change keyboard language", true);
         }
+        assertTrue("The fixed anchor was checked across different keyboard heights", tallest.get() > shortest.get());
         assertEquals("Changing layouts preserves the query", "ab", query());
         tap("Type z", false); waitUntil("still editable", 5000, () -> query().equals("abz"));
         screenshot("keyboard-languages.png");
@@ -77,7 +92,7 @@ public final class InterfacePolishTest extends AppHarness {
         });
         waitUntil("old and new icon captions fade separately", 1500, () -> outgoingFaded.get() && incomingFaded.get());
         SystemClock.sleep(250); screenshot("icon-caption-transition.png");
-        tap("Back", false); waitUntil("Home restored", 5000, () -> visible("Browse catalogues"));
+        tap("Back", false); waitUntil("Home restored", 5000, () -> visible("Browse"));
         browse.onActivity(activity -> activity.findViewById(R.id.browse_root).getViewTreeObserver().removeOnPreDrawListener(listener));
         assertEquals("No hidden-clock frame during reload or navigation", 0, hidden.get());
     }
@@ -106,6 +121,10 @@ public final class InterfacePolishTest extends AppHarness {
     private String query() {
         AtomicReference<String> value = new AtomicReference<>();
         browse.onActivity(activity -> value.set(((TextView) activity.findViewById(R.id.search_query)).getText().toString())); return value.get();
+    }
+    private Rect bounds(View view) {
+        int[] point = new int[2]; view.getLocationOnScreen(point);
+        return new Rect(point[0], point[1], point[0] + view.getWidth(), point[1] + view.getHeight());
     }
     private boolean clockShown() {
         AtomicInteger shown = new AtomicInteger(); browse.onActivity(activity -> shown.set(activity.findViewById(R.id.clock).isShown() ? 1 : 0)); return shown.get() == 1;

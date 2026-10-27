@@ -124,7 +124,7 @@ public final class BrowseRecoveryTest extends AppHarness {
             waitUntil("search results", 5000, () -> visible("Film 00"));
             ageSnapshots(); openAndReturn("search", 36, true);
             assertEquals("Back does not repeat search", 1, server.searchRequests.get());
-            tap("Close search", true); browse.onActivity(activity -> activity.root("Home"));
+            browse.onActivity(activity -> activity.root("Home"));
             waitUntil("Home shelf", 5000, () -> visible("Film 00"));
             String homeKey = services.store.addons().get(0).id + ":movie:browse";
             ageSnapshots(); openAndReturn(homeKey, 14, true);
@@ -139,7 +139,7 @@ public final class BrowseRecoveryTest extends AppHarness {
         }
         launch(); waitUntil("fixture Home", 10000, () -> visible("Film 00")); return server;
     }
-    private void gallery() { tap("Browse catalogues", true); tap("Test films", true); waitUntil("category grid", 5000, () -> visible("Film 00")); }
+    private void gallery() { tap("Browse", true); tap("Test films", true); waitUntil("category grid", 5000, () -> visible("Film 00")); }
     private Title title(CatalogServer server, int index) throws Exception { return Title.parse(services.store.addons().get(0).id, server.title(index)); }
     private String tileKey(String section, CatalogServer server, int index) {
         try { return section + ":" + title(server, index).key(); } catch (Exception e) { throw new AssertionError(e); }

@@ -3,4 +3,6 @@
     <item name="page_binding" type="id" />
     <item type="id" name="popup_navigation" />
     <item type="id" name="popup_anchor" />
+    <!-- The query text in Search's keyboard field. -->
+    <item type="id" name="search_query" />
 </resources>

@@ -47,7 +47,7 @@ public final class LoadingTest extends AppHarness {
         tap("Back", true); waitUntil("back to media", 5000, () -> visible("Play") && visible("Sources"));
     }
     @Test public void pointerOverVisiblePaginationDoesNotShiftPage() throws Exception {
-        readyLibrary(); launch(); tap("Browse catalogues", false); tap("Generated films", false);
+        readyLibrary(); launch(); tap("Browse", false); tap("Generated films", false);
         browse.onActivity(activity -> {
             RecyclerView list = activity.findViewById(R.id.page_rows);
             list.scrollToPosition(adapter(activity).getItemCount() - 1);

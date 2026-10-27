@@ -207,15 +207,16 @@ public final class AcceptanceTest extends AppHarness {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); tap("Settings", true);
         tap("Languages", false); tap("Audio language", false); tap("Russian", true); tap("Subtitle language", false); tap("English", true);
         tap("Subtitles", true);
-        for (String[] setting : new String[][]{{"size", "large"}, {"font", "condensed"}, {"color", "yellow"}, {"edge", "outline"}, {"position", "raised"}}) {
-            tap("Subtitle " + setting[0], false); tap(setting[1], true);
+        // {preference, option, row label}: the edge style's row is labelled Background.
+        for (String[] setting : new String[][]{{"size", "large", "size"}, {"font", "condensed", "font"}, {"color", "yellow", "color"}, {"edge", "outline", "background"}, {"position", "raised", "position"}}) {
+            tap("Subtitle " + setting[2], false); tap(setting[1], true);
             waitUntil("style saved", 5000, () -> setting[1].equals(services.playerPreferences.getString("subtitle_" + setting[0], "")));
         }
         tap("Playback", false); tap("Playback cache", false); tap("128 MiB", true); waitUntil("cache preference", 5000, () -> services.cacheBytes() == (128L << 20));
         tap("Play next episode", false); waitUntil("autoplay preference", 5000, () -> services.store.preference("autoplay", "true").equals("false"));
-        tap("Clear app playback and metadata cache", true); tap("About", false); tap("Developer", false); tap("Open source notices", true); tap("libtorrent", false);
+        tap("Clear app playback and metadata cache", true); tap("About", false); tap("Developer mode", false); tap("Developer", false); tap("Open source notices", true); tap("libtorrent", false);
         waitUntil("license text", 5000, () -> visible("Open source notices")); instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
-        tap("Settings", false); tap("Local fixtures", true); tap("Remove add-on", false);
+        tap("Settings", false); tap("Add-ons", false); tap("Local fixtures", true); tap("Remove add-on", false);
         waitUntil("addon removed", 5000, () -> services.store.addons().isEmpty());
         assertEquals("rus", services.store.preference("audioLanguage", "")); assertEquals("eng", services.store.preference("subtitleLanguage", ""));
     }
@@ -227,8 +228,8 @@ public final class AcceptanceTest extends AppHarness {
         waitUntil("Card focus restored", 10_000, () -> { java.util.concurrent.atomic.AtomicBoolean focused = new java.util.concurrent.atomic.AtomicBoolean(); browse.onActivity(activity -> focused.set(activity.getCurrentFocus() != null && String.valueOf(activity.getCurrentFocus().getTag()).contains("fixture:film"))); return focused.get(); });
         tap("Search", true); waitUntil("search keyboard", 5000, () -> visible("Type g"));
         for (char c : "generated".toCharArray()) tap("Type " + c, c % 2 == 0);
-        waitUntil("search results", 10_000, () -> visible("Generated Film")); captureUi("search"); tap("Close search", false);
-        tap("Browse catalogues", true); captureUi("categories"); tap("Generated films", false);
+        waitUntil("search results", 10_000, () -> visible("Generated Film")); captureUi("search"); tap("Back", false);
+        tap("Browse", true); captureUi("categories"); tap("Generated films", false);
         tap("Generated", true); captureUi("catalogue-header");
         for (int step = 0; step < 3; step++) {
             java.util.concurrent.atomic.AtomicBoolean reached = new java.util.concurrent.atomic.AtomicBoolean();

@@ -71,7 +71,7 @@ public final class DesignAuditCapture extends AppHarness {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); playerReturned();
         control(R.id.control_settings, false); waitUntil("player settings", 5000, () -> visible("Speed")); shot(phase, "19-player-settings");
         tap("Subtitle style", true); waitUntil("style menu", 5000, () -> visible("Font")); shot(phase, "20-player-style");
-        tap("Font", false); waitUntil("font choices", 5000, () -> visible("Standard")); shot(phase, "21-player-font");
+        tap("Font", false); waitUntil("font choices", 5000, () -> visible(context.getString(R.string.subtitle_font_noto))); shot(phase, "21-player-font");
         instrumentation.runOnMainSync(watch()::finish);
     }
     private void returned() { waitUntil("browse window returns", 5000, () -> { AtomicBoolean focus = new AtomicBoolean(); browse.onActivity(activity -> focus.set(activity.hasWindowFocus())); return focus.get(); }); }

@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<selector xmlns:android="http://schemas.android.com/apk/res/android">
+<!-- Back and page tools: white when focused, a soft circle under a pointer, otherwise bare. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:enterFadeDuration="150" android:exitFadeDuration="200">
     <item android:state_focused="true"><shape><solid android:color="@color/tv_focus"/><corners android:radius="20dp"/></shape></item>
     <item android:state_pressed="true"><shape><solid android:color="@color/tv_focus_pressed"/><corners android:radius="20dp"/></shape></item>
+    <item android:state_hovered="true"><shape><solid android:color="@color/tv_platter_hover"/><corners android:radius="20dp"/></shape></item>
     <item android:drawable="@android:color/transparent"/>
 </selector>

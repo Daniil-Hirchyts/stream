@@ -110,7 +110,7 @@ final class SetupScreens {
 
         String clock = clockFormat(services);
         boolean playerClock = playerClock(services);
-        category(categories, panes, "settings:clock", R.drawable.ic_tv_settings, "Clock", Arrays.asList(
+        category(categories, panes, "settings:clock", R.drawable.ic_tv_clock, "Clock", Arrays.asList(
                 Item.row("clock", 0, "Clock", tv.stream.app.ui.Clock.name(clock),
                         () -> nav.choose("Clock", tv.stream.app.ui.Clock.NAMES,
                                 i -> nav.mutate(() -> { services.store.setPreference("clock", tv.stream.app.ui.Clock.VALUES[i]); return null; }))),

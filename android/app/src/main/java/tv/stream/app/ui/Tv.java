@@ -18,6 +18,7 @@ import android.widget.TextView;
 import androidx.annotation.ColorRes;
 import androidx.annotation.Nullable;
 import java.util.function.Consumer;
+import java.util.function.DoubleSupplier;
 import tv.stream.app.R;
 
 /**
@@ -40,11 +41,10 @@ public final class Tv {
     public static int dp(Context context, float value) { return Math.round(value * context.getResources().getDisplayMetrics().density); }
 
     /**
-     * The app's type: Inter, the open typeface closest to Apple's SF, at three weights for text (regular, medium for
-     * headings and controls, semibold for emphasis) and its Display cut for large titles.
+     * Geist Sans: regular for body text, medium for headings and controls, semibold for emphasis and titles.
      */
     public enum Font {
-        REGULAR(R.font.inter_regular), MEDIUM(R.font.inter_medium), SEMIBOLD(R.font.inter_semibold), DISPLAY(R.font.inter_display_semibold);
+        REGULAR(R.font.geist_regular), MEDIUM(R.font.geist_medium), SEMIBOLD(R.font.geist_semibold);
         final int resource;
         private Typeface typeface;
         Font(int resource) { this.resource = resource; }
@@ -53,8 +53,23 @@ public final class Tv {
             return typeface;
         }
     }
-    /** Titles from this size up use the Display cut, drawn for large sizes. */
-    private static final float DISPLAY_SP = 24;
+    /** Repeated interface roles: size and weight stay consistent across content, lists and menus. */
+    public enum Type {
+        HERO(32, Font.SEMIBOLD, -.015f), TITLE(28, Font.SEMIBOLD, -.015f), SECTION(18, Font.SEMIBOLD, -.005f),
+        CONTROL(15, Font.MEDIUM, 0), BODY(15, Font.REGULAR, 0), META(13, Font.MEDIUM, 0),
+        CAPTION(13.5f, Font.MEDIUM, 0), EYEBROW(11.5f, Font.MEDIUM, .12f),
+        MENU_TITLE(14, Font.MEDIUM, 0), VALUE(14, Font.REGULAR, 0);
+        final float size, tracking;
+        final Font font;
+        Type(float size, Font font, float tracking) { this.size = size; this.font = font; this.tracking = tracking; }
+    }
+    public static TextView type(Context context, String value, Type role, @ColorRes int color) {
+        TextView view = text(context, value, role.size, color);
+        view.setTypeface(role.font.get(context)); view.setLetterSpacing(role.tracking);
+        return view;
+    }
+    /** Large titles use tighter tracking; smaller emphasized text stays closer to its natural spacing. */
+    private static final float TITLE_SP = 24;
 
     public static TextView text(Context context, String value, float sp, @ColorRes int color) {
         TextView view = new TextView(context);
@@ -70,9 +85,8 @@ public final class Tv {
     }
     public static TextView bold(Context context, String value, float sp) {
         TextView view = text(context, value, sp, R.color.tv_text);
-        boolean display = sp >= DISPLAY_SP;
-        view.setTypeface((display ? Font.DISPLAY : Font.SEMIBOLD).get(context));
-        view.setLetterSpacing(display ? -0.005f : -0.01f);
+        view.setTypeface(Font.SEMIBOLD.get(context));
+        view.setLetterSpacing(sp >= TITLE_SP ? -0.015f : -0.005f);
         return view;
     }
     /**
@@ -98,6 +112,11 @@ public final class Tv {
     }
 
     public static void control(View view, String key, Runnable action, Consumer<String> focused, float lift, boolean raise) {
+        control(view, key, action, focused, () -> lift, raise);
+    }
+
+    /** {@code lift} is read at every change, for a control whose shape, and so its growth, changes. */
+    public static void control(View view, String key, Runnable action, Consumer<String> focused, DoubleSupplier lift, boolean raise) {
         view.setTag(key);
         view.setFocusable(true); view.setFocusableInTouchMode(true); view.setClickable(true);
         view.setDefaultFocusHighlightEnabled(false);
@@ -111,8 +130,28 @@ public final class Tv {
             focused.accept(key); Sounds.click(); View previous = ACTIVATING.get(); ACTIVATING.set(v);
             try { action.run(); } finally { if (previous == null) ACTIVATING.remove(); else ACTIVATING.set(previous); }
         });
-        view.setOnFocusChangeListener((v, has) -> { if (has) { focused.accept(key); Sounds.focus(v); } animate(v, has, lift, raise); });
-        animate(view, view.isFocused(), lift, raise);
+        view.setOnFocusChangeListener((v, has) -> { if (has) { focused.accept(key); Sounds.focus(v); } animate(v, has, (float) lift.getAsDouble(), raise); });
+        animate(view, view.isFocused(), (float) lift.getAsDouble(), raise);
+    }
+
+    /**
+     * A pointer over a {@link #control} grows it exactly as focus does (as the player's buttons do), and its
+     * background's hovered state fades in a soft platter. It never moves focus, so the remote keeps its place.
+     * Call it after {@link #control}, whose focus listener it extends.
+     */
+    public static void hover(View control, DoubleSupplier lift) {
+        control.setOnHoverListener((view, event) -> {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_HOVER_ENTER) animate(view, true, (float) lift.getAsDouble(), false);
+            else if (action == MotionEvent.ACTION_HOVER_EXIT) animate(view, view.isFocused(), (float) lift.getAsDouble(), false);
+            return false; // The view still records its hovered state for the drawables.
+        });
+        View.OnFocusChangeListener focus = control.getOnFocusChangeListener();
+        control.setOnFocusChangeListener((view, has) -> {
+            if (focus != null) focus.onFocusChange(view, has);
+            // Focus leaving a control the pointer is still over keeps its growth.
+            if (!has && view.isHovered()) animate(view, true, (float) lift.getAsDouble(), false);
+        });
     }
 
     /** tvOS focus: the focused control grows and floats above its neighbours. */
@@ -160,7 +199,7 @@ public final class Tv {
             case ICON: {
                 button.setTooltipText(action.label);
                 button.setBackgroundResource(R.drawable.tv_button_round);
-                content.addView(icon(context, action.icon, 22, R.color.tv_on_glass));
+                content.addView(icon(context, action.icon, 20, R.color.tv_on_glass));
                 button.setLayoutParams(new LinearLayout.LayoutParams(height, height));
                 button.addView(content, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                 break;
@@ -173,16 +212,17 @@ public final class Tv {
                 content.setPadding(pad, 0, pad, 0);
                 content.setMinimumWidth(dp(context, action.style == Item.Action.Style.PRIMARY ? 148 : chip ? 44 : 96));
                 if (action.icon != 0) {
-                    ImageView icon = icon(context, action.icon, chip ? 18 : 20, R.color.tv_on_glass);
+                    ImageView icon = icon(context, action.icon, chip ? 16 : 18, R.color.tv_on_glass);
                     ((LinearLayout.LayoutParams) icon.getLayoutParams()).rightMargin = dp(context, 8);
                     content.addView(icon);
                 }
-                TextView label = oneLine(heading(context, action.shown(), chip ? 14.5f : 16, chip ? R.color.tv_chip_text : R.color.tv_on_glass));
+                TextView label = oneLine(heading(context, action.shown(), chip ? 14 : 15, chip ? R.color.tv_chip_text : R.color.tv_on_glass));
+                if (action.style == Item.Action.Style.PRIMARY) { label.setTextSize(16); label.setTypeface(Font.SEMIBOLD.get(context)); }
                 label.setDuplicateParentStateEnabled(true);
                 content.addView(label);
                 // A short value after the label: a chip's current filter, or the episode a Play button starts.
                 if (!action.detail.isEmpty()) {
-                    TextView value = oneLine(text(context, action.detail, chip ? 14.5f : 16, chip ? R.color.tv_chip_text_secondary : R.color.tv_on_glass_secondary));
+                    TextView value = oneLine(text(context, action.detail, chip ? 14 : 15, chip ? R.color.tv_chip_text_secondary : R.color.tv_on_glass_secondary));
                     value.setDuplicateParentStateEnabled(true);
                     value.setPadding(dp(context, 6), 0, 0, 0);
                     content.addView(value);
@@ -264,10 +304,10 @@ public final class Tv {
             row.setMinimumHeight(dp(context, 44)); row.setPadding(dp(context, 12), dp(context, 11), dp(context, 12), dp(context, 11));
             row.setContentDescription(detail.isEmpty() ? label : label + ". " + detail); row.setBackgroundResource(R.drawable.tv_dialog_button);
             if (glyph != 0) {
-                ImageView icon = icon(context, glyph, 20, R.color.tv_on_glass);
+                ImageView icon = icon(context, glyph, 18, R.color.tv_on_glass);
                 ((LinearLayout.LayoutParams) icon.getLayoutParams()).rightMargin = dp(context, 12); row.addView(icon);
             }
-            TextView text = lines(text(context, label, 15, R.color.tv_on_glass), 2);
+            TextView text = lines(type(context, label, Type.CONTROL, R.color.tv_on_glass), 2);
             text.setDuplicateParentStateEnabled(true);
             LinearLayout column = new LinearLayout(context); column.setOrientation(LinearLayout.VERTICAL); column.setDuplicateParentStateEnabled(true);
             column.addView(text);
@@ -277,7 +317,7 @@ public final class Tv {
             }
             row.addView(column, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
             if (trailing != 0) {
-                ImageView mark = icon(context, trailing, 16, R.color.tv_on_glass);
+                ImageView mark = icon(context, trailing, 14, R.color.tv_on_glass);
                 ((LinearLayout.LayoutParams) mark.getLayoutParams()).leftMargin = dp(context, 10); row.addView(mark);
             }
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -344,7 +384,7 @@ public final class Tv {
             TextView breadcrumb = oneLine(text(context, parent, 11.5f, R.color.tv_text_tertiary));
             breadcrumb.setPadding(0, 0, 0, dp(context, 5)); header.addView(breadcrumb);
         }
-        TextView heading = heading(context, title, 16, R.color.tv_text_secondary);
+        TextView heading = type(context, title, Type.MENU_TITLE, R.color.tv_text_secondary);
         heading.setTag("popup-title"); heading.setMaxLines(2); heading.setEllipsize(TextUtils.TruncateAt.END); heading.setLineSpacing(0, 1.12f);
         header.addView(heading, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         surface.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));

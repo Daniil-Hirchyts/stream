@@ -27,7 +27,7 @@ public final class LoadingSurfacesTest extends AppHarness {
             server.homeGate.countDown(); SystemClock.sleep(250);
             assertTrue("Late catalogue work keeps Library in place", visible("Your library is empty"));
             tap("Home", true); waitUntil("Home has actual posters", 10000, () -> visible("Film 00"));
-            tap("Browse catalogues", true); waitUntil("local category index", 5000, () -> visible("Test films"));
+            tap("Browse", true); waitUntil("local category index", 5000, () -> visible("Test films"));
             assertFalse("Category index reads the installed manifest, without a fake grid", anySkeleton());
         }
     }

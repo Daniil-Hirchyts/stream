@@ -21,8 +21,8 @@ The launcher label is Stream; the application ID is `tv.stream.app`. It opens
 straight on Home without onboarding. First launch installs the owner-approved
 starter catalogues and sources once; a removed default is never installed again.
 The store also offers a reviewed installation page for Cinemeta, Internet Archive
-and OpenSubtitles. Home, Library and Settings are tabs in a floating bar at the top; search
-opens from the same bar, and the add-on store, add-on management and Imports
+and OpenSubtitles. Home, Browse, Library and Settings sit in a centred vertical rail on the left; search
+opens from the same rail, and the add-on store, add-on management and Imports
 live under Settings. Details provide Play/Resume, Sources,
 watched/favourite controls and seasons/episodes. Home also tells the viewer
 about [new episodes](#new-episodes) of the series they follow. Settings manage add-ons,
@@ -113,15 +113,29 @@ Shelves scroll horizontally. Page titles scroll with their page.
   again on the next start. If Home is still empty, a quiet text message points to Settings for
   catalogues and imports. Test databases and local-only instrumentation install
   no defaults, so tests never reach public providers.
-- **Tab bar:** Search, Home, Library and Settings sit in one borderless floating pill.
-  Search and pagination capsules use the same borderless treatment. It slides away once content scrolls under it and returns when focus reaches it
-  or the page is back at its top. Content scrolling up fades into the top edge.
-- **Clock:** a small clock stays in the same top-right corner on browse pages,
-  paused player controls and player menus. It remains visible through browse
-  reloads and navigation; startup, player loading and active playback keep the
-  screen clear. Toolbar actions sit to its left. Refresh rotates its icon
-  when clicked. Settings → Clock sets its
-  format (Automatic, 24-hour, 12-hour or Off) and whether the player shows it.
+- **Navigation rail:** Search, Home, Browse, Library and Settings share a vertically centred glass rail.
+  Wrapped is the default on Home, Browse, catalogues, Library, Settings and its management pages, including
+  while scrolling. Search, Details and Sources hide the rail to give their keyboard, action row or source list
+  more room. The wrapped rail is 56 dp wide with 6 dp insets around
+  circular 44 × 44 dp controls and 6 dp gaps. Expansion morphs to a compact 144 dp over 240 ms, revealing
+  labels while the icons stay fixed. Its width fits the longest measured label plus icon spacing and
+  trailing padding, growing beyond 144 dp for larger text. Expanded navigation overlays the existing page as a contextual popup,
+  using the same opaque material, 22 dp corners and shadow as the other menus. Opening and closing it never
+  moves/resizes the page, its controls or its scroll position. No navigation gradient or dimmer is used.
+  The wrapped content viewport begins at 104 dp; pages with hidden navigation reclaim that space at 16 dp.
+  Search always hides the rail and its reveal target; Back leaves Search. On other pages, first Left focuses
+  the wrapped rail, revealing it where it is hidden; a second, separate Left opens
+  the labels. Focus and Up/Down alone never expand it, and held-key repeats do not count as a second press.
+  A transparent 32 dp left-edge target also supports clicks/touch. Browse uses a compass icon.
+  Browse is a primary page with catalogue categories, not a Home toolbar action.
+- **Toolbar:** Back remains an icon-only circle at the top left. Refresh is always icon-only at
+  the top right, beside the clock, with 40 dp controls and safe insets of 24 dp above and 40 dp
+  from the sides. Refresh's icon rotates when clicked; its accessible label follows the page.
+  Neither Back nor Refresh acquires a visible label in any navigation state.
+- **Clock:** the browse clock uses one line at the top right. It remains visible through reloads
+  and navigation; startup hides it. Player clocks retain their top-right placement on paused
+  controls and menus; player loading and active playback keep the picture clear.
+  Settings → Clock sets its format (Automatic, 24-hour, 12-hour or Off) and whether the player shows it.
 - **Settings:** a split view. Seven categories sit on the left: Add-ons,
   Torrents, Languages, Subtitles, Playback, Clock and About.
   - The focused category's rows show on the right and change as focus moves.
@@ -181,13 +195,18 @@ Shelves scroll horizontally. Page titles scroll with their page.
   spotlight shows again), using each block's last measured height once the top
   blocks have been recycled. A block that fills the page (Search, Settings)
   scrolls inside itself and never moves the page.
-- **Search:** typing replaces only the results beside the keyboard, so the
-  focused key never moves. Results fade out at the column's top and bottom.
-  Moving Right into results fades the keyboard out and expands the grid to six
+- **Search:** typing replaces only the four-column results beside the keyboard, so the
+  focused key never moves and posters keep readable widths. Results clip cleanly at the column's top and bottom.
+  Moving Right into results slides the keyboard out and expands the grid to six
   columns. Left from the leading column restores the editing layout; Right
-  returns to the selected result. The header's keyboard icon also switches modes
-  by mouse/touch. The 260 ms bounds/fade transition preserves the query and
-  selection without another provider request, and Back retains the active mode.
+  returns to the selected result. There is no search bar or mode button: the typed
+  text heads the keyboard as plain text and leaves with it, so the full layout is
+  only results. A pointer or touch tap on a result keeps the keyboard, since a pointer
+  has no other way to bring it back. Back closes Search. Results fade out before the
+  column change and back in after layout, so films never travel over other rows.
+  The transition preserves the query and selection without another provider request,
+  and Back retains the active mode. Left within a keyboard row selects its previous key
+  and stops at the leading edge. Navigation stays hidden for keyboard, results, loading and empty states.
 - **Alerts:** compact action rows use meaningful icons and an inset white focus
   fill. There is no Close/Cancel footer; Back or Left pops a nested level or closes
   the root. A click outside also dismisses it. Text-entry cancellation keeps edits
@@ -198,6 +217,8 @@ Shelves scroll horizontally. Page titles scroll with their page.
   Italian, Portuguese, Russian and Ukrainian layouts. The globe key cycles the
   enabled languages; with one language it opens their settings. Its key fills the
   bottom row and shows the language name. Search uses typed input; there is no voice mode.
+  The query and first key row have fixed top positions; extra rows grow downward when a language
+  or character page changes, instead of vertically centring the keyboard again.
   Space and Delete fill unused cells in the last character row. A five-character
   tail spreads evenly across the row and puts Space/Delete on their own full row,
   so no language or character page adds blank spacer keys. Page switches and Clear
@@ -210,14 +231,24 @@ Shelves scroll horizontally. Page titles scroll with their page.
   (half of tvOS points):
   - 10 dp for buttons, rows, fields and artwork; 8 dp for keycaps and 6 dp for the search keyboard.
   - 16 dp for cards and 24 dp for sheets.
-  - Capsules for floating and filter controls (tab bar, tabs, chips, search
-    field); circles for icon buttons.
-- **Type:** Inter, the open typeface closest to Apple's SF, bundled and
-  subset to Latin, Greek and Cyrillic by `branding/make_fonts.sh` (other
-  scripts fall back to the system font). Regular for text, Medium for
-  headings and controls, SemiBold for emphasis, and the Display cut for
-  titles from 24 sp. The player's type scale (`Text.*` styles) is overridden
-  by name to use it, and its times use tabular figures.
+  - 28 dp for the morphing rail; capsules for its rows and chips; circles for icon buttons.
+- **Type:** Geist Sans, bundled at Regular (400) for body text and supporting values,
+  Medium (500) for labels, captions and small metadata, and SemiBold (600) for
+  titles, section headings and primary actions. Hero/page/section titles use
+  32/28/18 sp; control labels use 15–16 sp, body text 15 sp, values 14 sp and metadata
+  13 sp. Player titles use 20 sp, its loading title 28 sp and clocks 14.5 sp. The full
+  upstream faces preserve their character coverage; other scripts fall back to
+  the system font. The player uses the same family through app resource overrides,
+  with tabular figures for times. `branding/make_fonts.sh` restores the pinned faces.
+- **Icons:** the MIT-licensed Geist UI collection (`geist-org/icons`), converted
+  to native 24-unit vectors with round 2-unit TV outlines and optical sizing per shape.
+  Filled icons retain their original lighter rim. Navigation, actions,
+  menus and player controls share this set. Keyboard and subtitle icons are
+  original matching drawings for concepts absent upstream. This is the open
+  Geist UI collection, separate from Vercel's private Geist design-system icons.
+  `python3 branding/make_geist.py all` regenerates fonts, vectors and bundled
+  notices from pinned revisions with SHA-256 verification; sources and mapping
+  are documented in [branding/GEIST.md](branding/GEIST.md).
 - **Loading:** skeletons cover unknown remote content after a 160 ms delay;
   local pages and cached returns have no ghost forms/grids. Known title headers
   and existing results remain visible; a refresh keeps usable content. Poster
@@ -244,13 +275,20 @@ Shelves scroll horizontally. Page titles scroll with their page.
 - **Contrast:** small text is at least 4.5:1 on the canvas; tertiary grey is
   60% white. Facts over artwork use a brighter grey, and all text that can sit
   over artwork carries a soft shadow.
-- **Remote:** every control is reachable with the D-pad. Up from the first
-  row of any page reaches the tab bar, and the Home spotlight is a touch-only
-  shortcut that never takes focus.
+- **Remote:** Left from the content's left edge focuses the current destination in the wrapped rail.
+  A second Left unwraps it into the navigation popup.
+  Up/Down traverse the five destinations; the endpoints hold focus. Up from the first content row
+  reaches Back or Refresh where available; utility Down restores content and utility Left returns
+  towards Back or navigation.
+  Right or Back from either navigation state restores the route's remembered control without leaving the page.
+  Clicking outside dismisses it without activating the page beneath; choosing a destination closes it onto that page.
+  Settings first returns from its pane to the selected category; Search first returns from results
+  to its keyboard. Back closes a popup (including navigation), restores the series overview or pops a subpage;
+  on another root page it returns Home, and on Home it exits. The Home spotlight remains a touch-only shortcut.
 - **Focus:** the focused control turns white with dark text. Artwork grows,
   gains a white rim and a deep shadow while its caption keeps its size; buttons
   grow slightly; list rows and tabs don't grow, so their text never shifts.
-  Left and right never leave the content, and shelves hold focus at their ends.
+  Right holds at shelf ends; Left only enters the rail from the first card. Up/Down move through content and the separate toolbar.
   Toggling a favourite, watched state or a Settings switch updates its block in
   place (`PageAdapter`'s bindings), so the focused control stays the same view.
 - **Popups:** `Tv.Alert` uses one opaque panel with 22 dp corners. Menus attach
@@ -265,7 +303,7 @@ Shelves scroll horizontally. Page titles scroll with their page.
   position. Back/Left returns one level; at the root either closes the popup.
   Short secondary headers and icon rows share aligned insets, with no redundant
   footer or Back header button. Long value lists scroll below a pinned header and
-  preview; message-only panels scroll their content. Popups leave the clock header clear.
+  preview; message-only panels scroll their content. Browse popups clear the left rail and clock; player popups clear the top-right clock.
   Outside presses dismiss; no blur, tint or dim layer changes the background.
   Reduced motion follows Android's animator setting. Playback failures share the
   compact surface and Back/Left exit, retaining Retry and Choose source.
@@ -284,7 +322,7 @@ Glass comes from cheap blurs:
   fading in towards the bottom where text, buttons and shelves sit, so
   translucent controls over it read as glass. Sources shows the artwork fully
   blurred.
-- **Live, on Android 12+ only:** the tab bar and search field, and the
+- **Live, on Android 12+ only:** the navigation rail, and the
   buttons, chips and notices on a page, blur what is behind them
   (`GlassView`: a small RenderEffect GPU pass per surface while the picture
   behind it changes, none while the screen is still). Earlier versions,
@@ -599,10 +637,10 @@ measure (`./simulator.sh profile`), not a guarantee.
 `branding/make_brand.py` regenerates the launcher icon and the TV banner from
 one geometry: a graphite field and a frosted-glass play mark. The icon is an
 adaptive vector with a monochrome layer; the separate 16:9 banner is PNGs at five
-densities with the wordmark in Inter Display SemiBold. The application declares
+densities with the wordmark in Geist Sans SemiBold. The application declares
 the adaptive icon and TV banner separately; the launcher activity inherits them.
 Do not wrap the banner in a padded square icon: that makes the artwork smaller.
-`branding/make_fonts.sh` regenerates the bundled Inter subsets.
+`branding/make_fonts.sh` restores the bundled Geist Sans faces.
 
 For a separate installation alongside Stream, build with
 `./gradlew :app:assembleDebug -PseparateTvApp=true` from `android`.

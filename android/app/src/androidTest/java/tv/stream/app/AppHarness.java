@@ -135,10 +135,12 @@ public abstract class AppHarness {
         pointer(bounds.centerX(), bounds.centerY(), mouse);
     }
     void tap(String label, boolean mouse) {
+        revealNavigationFor(label, mouse);
         long end = SystemClock.elapsedRealtime() + 30_000;
         while (!visible(label) && SystemClock.elapsedRealtime() < end) {
             SystemClock.sleep(500);
             if (!visible(label)) {
+                if (revealNavigationFor(label, mouse)) continue;
                 boolean moved = false;
                 for (android.view.accessibility.AccessibilityWindowInfo window : instrumentation.getUiAutomation().getWindows()) if (window.isFocused()) moved |= scroll(window.getRoot());
                 if (!moved || !visible(label)) swipeBrowse();
@@ -160,6 +162,12 @@ public abstract class AppHarness {
             if (!bounds.equals(rectangle)) { bounds.set(rectangle); stable = SystemClock.elapsedRealtime(); }
         }
         pointer(bounds.centerX(), bounds.centerY(), mouse);
+    }
+    /** Hidden destinations use the same edge entry a pointer/touch viewer uses, before selecting a tab. */
+    private boolean revealNavigationFor(String label, boolean mouse) {
+        if (!(label.equals("Search") || label.equals("Home") || label.equals("Browse") || label.equals("Library") || label.equals("Settings"))) return false;
+        if (targetNode(label) != null || !visible("Open navigation")) return false;
+        tap("Open navigation", mouse); return true;
     }
     private AccessibilityNodeInfo targetNode(String label) {
         // A shelf heading can have the same text as its card. Only match labels inside an actual click target,

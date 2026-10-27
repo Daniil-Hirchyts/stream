@@ -89,13 +89,28 @@ FFmpeg (`RealFilmsLiveTest`, evidence in `app/build/live-evidence/`).
 | Area | Classes |
 | --- | --- |
 | Browse, loading and recovery | `BrowseRecoveryTest` (counted retries, Reload, saved posters, Back viewports), `DiscoveryRecoveryTest`, `HomeSchedulingTest`, `LoadingSurfacesTest`, `LoadingTest`, `SearchModesTest` |
-| Navigation and focus | `NavigationChromeTest`, `ChromeContinuityTest`, `PageNavigationTest`, `TransitionFocusTest`, `InPlaceFocusTest` (toggles keep the same focused view), `BrowsePolishTest`, `InterfacePolishTest` (keyboard languages) |
+| Navigation and focus | `VerticalNavigationTest`, `NavigationChromeTest`, `ChromeContinuityTest`, `PageNavigationTest`, `TransitionFocusTest`, `InPlaceFocusTest` (toggles keep the same focused view), `BrowsePolishTest`, `InterfacePolishTest` (keyboard languages) |
 | Series and new episodes | `SeriesBrowseTest` (seasons, episode menu, visible-season artwork), `NewEpisodesScreenTest` (Home row, spotlight, NEW flags, Details default, Hide) |
 | Artwork | `TitleArtworkTest` (cold, missing and late logos) |
 | Popups | `PopupInteractionTest`, `PopupMotionTest` (painted frames), `PlayerPopupTest` |
 | Player | `PlayerPresentationTest`, `PlayerLifecycleTest` (screensaver, sleep, Home), `SubtitleBoxTest`, `SubtitlePagePreviewTest`, `SubtitleFontRenderingTest`, `AutoplayInteractionTest`, `WatchCompletionInteractionTest`, `InstalledTitlePlaybackTest` |
 | Startup and recovery | `StartupPipelineTest`, `ProgressiveRecoveryTest` |
 | Sounds | `ui.SoundAssetsTest`, plus `python3 sounds/verify.py` for the WAVs |
+
+`VerticalNavigationTest` checks page-specific hidden/wrapped defaults (independent of scrolling), circular button geometry,
+first-Left wrapped focus, second-Left expansion, wrapped Up/Down and held-key repeat handling,
+painted overlay morph frames with fixed page/poster bounds, outside-click/Back dismissal, pointer reveal,
+compact measured label widths and larger-text expansion without ellipses or content movement,
+icon-only toolbar controls, focus restoration and Settings/Search handoffs,
+clock formats, empty/error screens, subpages and menu clearance. Its PNGs are saved in
+app-private `files/vertical-navigation/`.
+
+`SearchModesTest` checks horizontal keyboard navigation, navigation remaining hidden for remote/pointer/touch,
+plain result clipping, grid fades with no visible row crossings during column changes,
+rapid reversals, activity recreation during both transition phases, selected-film restoration
+and mode switches without repeating provider requests.
+`InterfacePolishTest#keyboardLanguagesKeepTheQueryAndFillEveryRowWithoutVoiceInput` checks all eight
+languages and three character pages, including fixed query/key top anchors and bottom safe-area clearance.
 
 `DesignAuditCapture` is a screenshot utility, not a test: `after`,
 `otherStates` and `providerFailures` write PNGs to app-private
@@ -152,3 +167,6 @@ services change, so a result describes that run only.
 
 If public IPs work but DNS fails inside the emulator, start the stopped AVD with
 `STREAM_DNS_SERVERS=1.1.1.1,8.8.8.8 ./simulator.sh start`.
+
+`./simulator.sh start` draws with the host GPU. On a machine without a usable GPU,
+start it with `STREAM_GPU=swiftshader ./simulator.sh start` (software rendering, slower).

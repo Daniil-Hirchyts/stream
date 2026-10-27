@@ -51,11 +51,11 @@ public final class TransitionFocusTest extends AppHarness {
         CountDownLatch release = holdPageWork();
         try {
             tap("Generated Film", false);
-            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
-            waitUntil("viewer selected Back", 3000, () -> "nav:back".equals(focusTag()));
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT);
+            waitUntil("viewer selected the rail", 3000, () -> "nav:Home".equals(focusTag()));
         } finally { release.countDown(); }
         waitUntil("details finished", 10000, () -> visible("Play"));
         instrumentation.waitForIdleSync();
-        assertEquals("Late content keeps the viewer's navigation choice", "nav:back", focusTag());
+        assertEquals("Late content keeps the viewer's navigation choice", "nav:Home", focusTag());
     }
 }

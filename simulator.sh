@@ -184,7 +184,9 @@ start_emulator() {
   [ "$state" != offline ] || { fail "$SERIAL is offline; close its window before restarting it."; return 1; }
   "$SIM_DIR/setup.sh" "$SDK_ROOT" "$AVD_NAME" || return 1
   mkdir -p "$STATE_DIR" || return 1
-  set -- -avd "$AVD_NAME" -port "$PORT" -no-snapshot -gpu swiftshader -feature -Vulkan -no-metrics -crash-report-mode never
+  # The windowed emulator draws with the host GPU; software rendering makes the glass blur and motion stutter.
+  # STREAM_GPU=swiftshader suits a host without a usable GPU (headless CI starts its own in simulator/ci.sh).
+  set -- -avd "$AVD_NAME" -port "$PORT" -no-snapshot -gpu "${STREAM_GPU:-host}" -feature -Vulkan -no-metrics -crash-report-mode never
   # Opt-in DNS override for hosts whose resolver is unreachable from the emulator's virtual network.
   if [ -n "${STREAM_DNS_SERVERS:-}" ]; then set -- "$@" -dns-server "$STREAM_DNS_SERVERS"; fi
   node "$SIM_DIR/detach.mjs" "$STATE_DIR/emulator.log" "$SDK_ROOT/emulator/emulator" "$@" || return 1

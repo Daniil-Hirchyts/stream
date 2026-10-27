@@ -67,7 +67,7 @@ public final class IntroView extends View {
         }
         stroke.setStyle(Paint.Style.STROKE); stroke.setStrokeJoin(Paint.Join.ROUND); stroke.setStrokeCap(Paint.Cap.ROUND);
         stroke.setColor(Color.WHITE);
-        name.setTypeface(androidx.core.content.res.ResourcesCompat.getFont(context, R.font.inter_display_semibold));
+        name.setTypeface(androidx.core.content.res.ResourcesCompat.getFont(context, R.font.geist_semibold));
         name.setColor(context.getColor(R.color.tv_text)); name.setLetterSpacing(0.12f);
         name.setTextAlign(Paint.Align.CENTER);
         android.graphics.Path parsed = androidx.core.graphics.PathParser.createPathFromPathData(MARK);

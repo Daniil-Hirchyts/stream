@@ -104,9 +104,8 @@ final class BrowseScreens {
                 "Films and series will appear here. Add catalogues or import a torrent in Settings."));
         else page.addAll(shelves);
         page.reusable = !loading && !failed;
-        // Browsing and refreshing need a catalogue; an empty Home shows only the way to add one.
-        if (!catalogues.isEmpty()) page.tools = java.util.Arrays.asList(
-                new Item.Action("browse", Item.Action.Style.SECONDARY, "Browse catalogues", () -> nav.push(new Route("Catalogues"))).icon(R.drawable.ic_tv_list),
+        // Browse is a primary destination; Home only exposes its contextual Refresh action.
+        if (!catalogues.isEmpty()) page.tools = java.util.Collections.singletonList(
                 new Item.Action("refresh", Item.Action.Style.ICON, "Refresh", nav::refresh).icon(R.drawable.ic_tv_refresh));
         return page;
     }
