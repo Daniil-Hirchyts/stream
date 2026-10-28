@@ -95,6 +95,22 @@ public final class StoreTest {
         store.clearMetadata(); assertNull(store.cached("secret-request-address")); assertEquals(1, store.history(true).size());
     }
 
+    @Test public void unreadableCachedMetadataIsRefetchedWithoutHidingPrivateDataErrors() throws Exception {
+        Title title = title("fixture"); store.favourite(title, true); store.setPreference("audioLanguage", "eng");
+        store.cache("broken", "old");
+        store.getWritableDatabase().execSQL("UPDATE metadata_cache SET data=?", new Object[]{new SecretBox().encrypt("wrong-scope", "old")});
+        store.cache("healthy", "good");
+        assertNull("An unauthenticated cache entry is a miss", store.cached("broken"));
+        assertEquals("Other cache entries remain readable", "good", store.cached("healthy"));
+        assertEquals("Saved library remains readable", 1, store.library(true).size());
+        assertEquals("Preferences remain readable", "eng", store.preference("audioLanguage", ""));
+        store.cache("broken", "fresh"); assertEquals("A fresh response replaces the unreadable entry", "fresh", store.cached("broken"));
+        store.getWritableDatabase().execSQL("UPDATE preferences SET data=? WHERE name=?",
+                new Object[]{new SecretBox().encrypt("wrong-scope", "eng"), "audioLanguage"});
+        try { store.preference("audioLanguage", ""); fail("Private preference corruption must be reported"); }
+        catch (IllegalStateException expected) { /* Only disposable cache failures are recoverable. */ }
+    }
+
     @Test public void metadataCacheStaysBoundedAcrossManyLargeEntries() {
         char[] chars = new char[1 << 20]; Arrays.fill(chars, 'x'); String value = new String(chars);
         for (int i = 0; i < 9; i++) store.cache("large-" + i, value);

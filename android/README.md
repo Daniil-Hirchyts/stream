@@ -104,7 +104,7 @@ Shelves scroll horizontally. Page titles scroll with their page.
 
 
 - **First run:** no onboarding and no setup. On its first start the app
-  installs the starter add-ons (Cinemeta, Internet Archive, OpenSubtitles)
+  installs the starter add-ons (Cinemeta and OpenSubtitles)
   and the torrent sources Meteor, MediaFusion, Peerflix and TorrentsDB (their
   public, unconfigured addresses) in the background from their current
   manifests, and refreshes Home when they arrive. An add-on already installed
@@ -525,7 +525,7 @@ Stremio-compatible installs from its address.
 `BuiltinAddons` answers `stream://name/manifest.json` addresses inside the app,
 using the same protocol, review, installation, ordering and removal as remote
 add-ons; `AddonClient` routes them before taking a request permit, so their own
-HTTPS requests can't deadlock the pool. Internet Archive (a starter default, removable like any other)
+HTTPS requests can't deadlock the pool. Internet Archive (available to install from the store)
 offers a "Public Domain Films" catalogue from the Archive's Feature Films
 collection and streams for `tt` IDs. Items come from the collection's own IMDb
 links and from Wikidata (IMDb ID P345 → Internet Archive ID P724). Withdrawn

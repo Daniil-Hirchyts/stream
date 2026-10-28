@@ -271,7 +271,16 @@ public final class TvStore extends SQLiteOpenHelper {
             db.execSQL("DELETE FROM metadata_cache WHERE id IN (SELECT id FROM metadata_cache ORDER BY updated,id LIMIT 1)");
         }
     }
-    @Nullable public synchronized String cached(String requestKey) { return read("metadata_cache", "id", hash(requestKey)); }
+    @Nullable public synchronized String cached(String requestKey) {
+        try { return read("metadata_cache", "id", hash(requestKey)); }
+        catch (IllegalArgumentException malformed) { return null; }
+        catch (IllegalStateException unreadable) {
+            // Cached metadata can be fetched again; an authentication failure here must not block Home.
+            // Other private data still reports decryption failures rather than being silently discarded.
+            if (unreadable.getCause() instanceof java.security.GeneralSecurityException) return null;
+            throw unreadable;
+        }
+    }
     public synchronized void clearMetadata() { getWritableDatabase().delete("metadata_cache", null, null); }
 
     private void save(String table, String keyColumn, String key, String text) {

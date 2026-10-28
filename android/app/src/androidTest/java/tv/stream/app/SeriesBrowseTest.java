@@ -76,6 +76,11 @@ public final class SeriesBrowseTest extends AppHarness {
         assertEquals("Show title stays in position", title, bounds("series-header"));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
         waitUntil("Down enters selected season's episodes", 5000, () -> focused("episode:sample:s2e1"));
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+        waitUntil("episode actions", 5000, () -> visible("Mark watched"));
+        tap("Mark watched", false);
+        waitUntil("season two episode stays selected after marking", 10000, () -> focused("episode:sample:s2e1") && shown("season:2"));
+        assertFalse("Marking does not return to season one", shown("episode:sample:s1e1"));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
         waitUntil("Up preserves selected season", 5000, () -> focused("season:2"));
         hover(bounds("season:1"));

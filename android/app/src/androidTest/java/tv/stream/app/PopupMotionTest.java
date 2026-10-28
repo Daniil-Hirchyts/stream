@@ -16,9 +16,102 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Test;
 import tv.stream.app.ui.Tv;
+import tv.stream.app.ui.Item;
 
 /** Actual painted frames and rapid remote navigation, not just final animation properties. */
 public final class PopupMotionTest extends AppHarness {
+    @Test public void focusedOpenerRemainsWhiteThroughoutOpeningAndClosing() throws Exception {
+        launch(); waitUntil("Home", 10000, () -> visible("Make yourself at home"));
+        AtomicReference<Tv.Alert> menu = new AtomicReference<>();
+        AtomicReference<View> button = new AtomicReference<>();
+        browse.onActivity(activity -> {
+            Item.Action action = new Item.Action("test-popup", Item.Action.Style.ICON, "Settings", () -> {
+                Tv.Alert alert = Tv.alert(activity, "Settings", (View) null); menu.set(alert);
+                alert.button("speed", "Speed", () -> {}); alert.show();
+            }).icon(R.drawable.ic_tv_settings);
+            View control = Tv.button(activity, action, ignored -> {}); button.set(control);
+            android.widget.FrameLayout.LayoutParams layout = new android.widget.FrameLayout.LayoutParams(Tv.dp(context, 44), Tv.dp(context, 44), android.view.Gravity.TOP | android.view.Gravity.RIGHT);
+            layout.topMargin = Tv.dp(context, 24); layout.rightMargin = Tv.dp(context, 100);
+            activity.addContentView(control, layout); control.requestFocus();
+        });
+        SystemClock.sleep(300);
+        Rect source = new Rect();
+        instrumentation.runOnMainSync(() -> assertTrue(button.get().getGlobalVisibleRect(source)));
+        List<Bitmap> screenFrames = new java.util.concurrent.CopyOnWriteArrayList<>();
+        List<Integer> screenColours = new java.util.concurrent.CopyOnWriteArrayList<>();
+        List<Integer> screenWidths = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.concurrent.atomic.AtomicBoolean recording = new java.util.concurrent.atomic.AtomicBoolean(true);
+        Thread capture = new Thread(() -> {
+            while (recording.get() && screenFrames.size() < 80) {
+                Bitmap screen = instrumentation.getUiAutomation().takeScreenshot();
+                if (screen == null) continue;
+                int x = source.left + source.width() / 4, y = source.centerY();
+                screenColours.add(screen.getPixel(x, y));
+                int left = source.centerX(), right = left;
+                while (left > source.left - 8 && android.graphics.Color.red(screen.getPixel(left - 1, source.top + source.height() / 3)) > 230) left--;
+                while (right < source.right + 8 && android.graphics.Color.red(screen.getPixel(right + 1, source.top + source.height() / 3)) > 230) right++;
+                screenWidths.add(right - left);
+                int margin = Tv.dp(context, 12);
+                int l = Math.max(0, source.left - margin), t = Math.max(0, source.top - margin);
+                int r = Math.min(screen.getWidth(), source.right + margin), b = Math.min(screen.getHeight(), source.bottom + margin);
+                screenFrames.add(Bitmap.createBitmap(screen, l, t, r - l, b - t)); screen.recycle();
+            }
+        }, "popup-screen-capture");
+        capture.start();
+        waitUntil("initial screen frame", 5000, () -> !screenFrames.isEmpty());
+        List<Bitmap> frames = new java.util.concurrent.CopyOnWriteArrayList<>();
+        List<Integer> colours = new java.util.concurrent.CopyOnWriteArrayList<>();
+        AtomicReference<ViewTreeObserver.OnPreDrawListener> listener = new AtomicReference<>();
+        instrumentation.runOnMainSync(() -> {
+            button.get().performClick();
+            View root = menu.get().dialog.getWindow().getDecorView().findViewWithTag("popup-root");
+            int[] position = new int[2], window = new int[2]; button.get().getLocationOnScreen(position); root.getLocationOnScreen(window);
+            int x = position[0] - window[0] + button.get().getWidth() / 4;
+            int y = position[1] - window[1] + button.get().getHeight() / 2;
+            listener.set(() -> {
+                View origin = root.findViewWithTag("popup-origin");
+                if (origin == null || !origin.isLaidOut()) return true;
+                colours.add(pixel(root, x, y));
+                if (frames.size() < 50) {
+                    Bitmap bitmap = Bitmap.createBitmap(320, 180, Bitmap.Config.ARGB_8888);
+                    Canvas canvas = new Canvas(bitmap); canvas.scale(320f / root.getWidth(), 180f / root.getHeight());
+                    root.draw(canvas); frames.add(bitmap);
+                }
+                return true;
+            });
+            root.getViewTreeObserver().addOnPreDrawListener(listener.get());
+        });
+        waitUntil("popup opened", 5000, () -> visible("Speed")); SystemClock.sleep(450);
+        int openingFrames = colours.size();
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+        waitUntil("popup closed", 5000, () -> !menu.get().dialog.isShowing());
+        SystemClock.sleep(350); recording.set(false); capture.join(5000);
+        try {
+            int cell = 120, rows = (screenFrames.size() + 7) / 8;
+            Bitmap strip = Bitmap.createBitmap(cell * 8, cell * rows, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(strip);
+            for (int i = 0; i < screenFrames.size(); i++) canvas.drawBitmap(screenFrames.get(i), null,
+                    new Rect(i % 8 * cell, i / 8 * cell, (i % 8 + 1) * cell, (i / 8 + 1) * cell), null);
+            try (FileOutputStream out = new FileOutputStream(new File(context.getFilesDir(), "validation-popup-screen-frames.png"))) { strip.compress(Bitmap.CompressFormat.PNG, 100, out); }
+            strip.recycle();
+        } finally { for (Bitmap frame : screenFrames) frame.recycle(); }
+        try {
+            Bitmap strip = Bitmap.createBitmap(320 * 4, 180 * ((frames.size() + 3) / 4), Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(strip);
+            for (int i = 0; i < frames.size(); i++) canvas.drawBitmap(frames.get(i), null,
+                    new Rect(i % 4 * 320, i / 4 * 180, (i % 4 + 1) * 320, (i / 4 + 1) * 180), null);
+            try (FileOutputStream out = new FileOutputStream(new File(context.getFilesDir(), "validation-popup-opener-frames.png"))) { strip.compress(Bitmap.CompressFormat.PNG, 100, out); }
+            strip.recycle();
+        } finally { for (Bitmap frame : frames) frame.recycle(); }
+        assertTrue("Opening produced painted frames", openingFrames >= 4);
+        assertTrue("Closing produced painted frames", colours.size() - openingFrames >= 4);
+        for (int colour : colours) assertTrue("The opener stays white in every popup frame: " + colours,
+                android.graphics.Color.alpha(colour) >= 240 && android.graphics.Color.red(colour) >= 240);
+        for (int colour : screenColours) assertTrue("The actual screen keeps the opener white: " + screenColours,
+                android.graphics.Color.red(colour) >= 230 && android.graphics.Color.green(colour) >= 230 && android.graphics.Color.blue(colour) >= 230);
+        int widest = java.util.Collections.max(screenWidths), narrowest = java.util.Collections.min(screenWidths);
+        assertTrue("The cursor does not change size at window handoff: " + screenWidths, widest - narrowest <= Tv.dp(context, 3));
+    }
     @Test public void refreshingUnchangedMenuNeverFlashesTheFocusedAction() throws Exception {
         launch(); waitUntil("Home", 10000, () -> visible("Make yourself at home"));
         AtomicReference<Tv.Alert> menu = new AtomicReference<>();

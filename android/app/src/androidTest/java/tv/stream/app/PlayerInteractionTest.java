@@ -97,8 +97,21 @@ public final class PlayerInteractionTest extends AppHarness {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT);
         SystemClock.sleep(2000);
         assertTrue("Real remote activity restarts the timeout", shown(R.id.controls));
+        java.util.concurrent.atomic.AtomicBoolean fadingTogether = new java.util.concurrent.atomic.AtomicBoolean();
+        java.util.concurrent.atomic.AtomicBoolean fadeMismatch = new java.util.concurrent.atomic.AtomicBoolean();
+        android.view.ViewTreeObserver.OnDrawListener observer = () -> {
+            View controls = activity.findViewById(R.id.controls), clock = activity.findViewById(R.id.player_clock);
+            if (controls.getAlpha() > .1f && controls.getAlpha() < .9f) {
+                fadingTogether.set(true);
+                if (!clock.isShown() || Math.abs(clock.getAlpha() - controls.getAlpha()) > .25f) fadeMismatch.set(true);
+            }
+        };
+        instrumentation.runOnMainSync(() -> activity.findViewById(R.id.player_root).getViewTreeObserver().addOnDrawListener(observer));
         waitUntil("Focused controls hide after inactivity", 4000, () -> !shown(R.id.controls));
         waitUntil("Clock hides with active controls", 2000, () -> !shown(R.id.player_clock));
+        instrumentation.runOnMainSync(() -> activity.findViewById(R.id.player_root).getViewTreeObserver().removeOnDrawListener(observer));
+        assertTrue("Observed the controls fading", fadingTogether.get());
+        assertFalse("Clock and controls fade together", fadeMismatch.get());
         instrumentation.runOnMainSync(() -> assertTrue("Focus returns to the video", activity.findViewById(R.id.player_root).hasFocus()));
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);

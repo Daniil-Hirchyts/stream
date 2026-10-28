@@ -59,6 +59,7 @@ final class MorphDialog extends Dialog {
     private final boolean artwork;
     private final Rect original = new Rect(), visual = new Rect();
     private Bitmap openingImage;
+    private ImageView origin;
     private Glide glide;
     private ValueAnimator motion;
     private Runnable motionCleanup;
@@ -137,7 +138,14 @@ final class MorphDialog extends Dialog {
         if (!isShowing()) {
             super.show();
             if (getWindow() != null) getWindow().setLayout(-1, -1);
-            Sounds.play(Sounds.Sound.ALERT); root.post(() -> display(page, true, false));
+            Sounds.play(Sounds.Sound.ALERT);
+            root.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+                @Override public boolean onPreDraw() {
+                    root.getViewTreeObserver().removeOnPreDrawListener(this);
+                    display(page, true, false);
+                    return false; // Lay out the snapshot before the dialog's first painted frame.
+                }
+            });
         } else display(page, false, false);
     }
     /** Both remote exit keys pop one level, or cancel at the root. */
@@ -271,7 +279,8 @@ final class MorphDialog extends Dialog {
         boolean reveal = changing || opening && !original.isEmpty();
         // A control's copy stays above the panel while the menu grows out from behind it; only where the menu
         // ends up over its opener does the copy fade. Artwork still dissolves into the panel.
-        ImageView lifted = opening && animate && !artwork ? lift(openingImage, start) : null;
+        ImageView lifted = opening && !artwork ? lift(openingImage, start) : null;
+        if (lifted != null) origin = lifted;
         boolean covers = lifted != null && Rect.intersects(start, end);
         ImageView ghost = lifted != null ? null : ghost(opening ? openingImage : previous, start.width(), start.height());
         // Content-only layers over the panel's live surface: the old content leaves before the new arrives, so
@@ -316,10 +325,10 @@ final class MorphDialog extends Dialog {
                 if (moving != null) moving.step(f, progress, incoming.getTranslationX());
             });
             startMotion(animation, () -> {
-                removeGhost(ghost); removeGhost(lifted); recycleOpening();
+                removeGhost(ghost);
                 if (moving != null) { moving.finish(); if (glide == moving) glide = null; }
             });
-        } else { removeGhost(ghost); shape.setCornerRadius(dp(22)); recycleOpening(); }
+        } else { removeGhost(ghost); if (covers) lifted.setAlpha(0); shape.setCornerRadius(dp(22)); }
         View restored = focusedKey == null ? null : page.alert.surface.findViewWithTag(focusedKey);
         if (restored != null) restored.requestFocus();
         else if (page.alert.initialFocus != null) page.alert.initialFocus.requestFocus();
@@ -548,9 +557,9 @@ final class MorphDialog extends Dialog {
         if (anchor != null && anchor.isAttachedToWindow() && anchor.getGlobalVisibleRect(end)) {
             int[] position = new int[2]; root.getLocationOnScreen(position); end.offset(-position[0], -position[1]);
         } else end.set(start);
-        Bitmap image = returning ? copyControl() : null;
+        Bitmap image = returning ? openingImage : null;
         panel.removeAllViews();
-        ImageView lifted = tucking ? lift(image, end) : null;
+        ImageView lifted = tucking ? origin != null ? origin : lift(image, end) : null;
         ImageView ghost = tucking ? null : ghost(image, end.width(), end.height());
         ImageView outgoing = ghost(visibleContent, start.width(), start.height());
         Rect destination = end; float toRadius = cornerRadius(end); boolean covered = Rect.intersects(start, end);
@@ -570,11 +579,12 @@ final class MorphDialog extends Dialog {
             if (outgoing != null) outgoing.setAlpha(1 - blend);
             panel.setAlpha(initialAlpha * (original.isEmpty() ? 1 - blend : 1 - smooth((progress - .65f) / .35f)));
         });
-        startMotion(animation, () -> { removeGhost(outgoing); removeGhost(ghost); removeGhost(lifted); closeNow(); });
+        startMotion(animation, () -> { removeGhost(outgoing); removeGhost(ghost); closeNow(); });
     }
     private void closeNow() {
         if (closed) return; closed = true;
         refreshPending = false; stopMotion();
+        removeGhost(origin); origin = null;
         recycleOpening();
         if (cancelAfterClose) { cancelAfterClose = false; super.cancel(); }
         super.dismiss(); pages.clear();

@@ -95,7 +95,7 @@ final class TitleScreens {
             }))).icon(R.drawable.ic_tv_edit));
             actions.add(new Action("remove-import", Action.Style.SECONDARY, "Remove import", () -> nav.then(() -> { services.imports.remove(chosen.id); return null; }, nav::back))
                     .icon(R.drawable.ic_tv_delete));
-        } else {
+        } else if (saved) {
             boolean following = saved && series;
             actions.add(new Action("more", Action.Style.ICON, "More", () -> nav.options(chosen.name, menu -> {
                 if (notice != null) menu.button("hide-new-episode", "Hide new episode", () -> {
@@ -149,7 +149,7 @@ final class TitleScreens {
                         new String[]{resume ? "Resume" : "Play", "Choose source", watched ? "Mark unwatched" : "Mark watched"}, which -> {
                             if (which == 2) {
                                 Sounds.play(watched ? Sounds.Sound.WATCHED_OFF : Sounds.Sound.WATCHED_ON);
-                                nav.mutate(() -> { services.store.watched(title, e.id, !watched); return null; });
+                                nav.mutateEpisode(() -> { services.store.watched(title, e.id, !watched); return null; }, route, e.season, e.id);
                                 return;
                             }
                             if (!route.video.equals(e.id)) route.cache = null;
@@ -272,12 +272,14 @@ final class TitleScreens {
                 SourceSort.Facts facts = SourceSort.facts(source);
                 StringBuilder meta = new StringBuilder(provider).append(DOT).append(kind(source));
                 if (!facts.quality().isEmpty()) meta.append(DOT).append(facts.quality());
+                String release = SourceSort.releaseType(source);
+                if (!release.isEmpty()) meta.append(DOT).append(release);
                 if (facts.bytes > 0) meta.append(DOT).append(size(facts.bytes));
                 if (facts.seeds >= 0) meta.append(DOT).append(facts.seeds == 1 ? "1 seed" : facts.seeds + " seeds");
                 TvStore.SourceMark mark = marks.get(key);
                 boolean failed = mark != null && mark.state.equals(TvStore.SourceMark.FAILED);
                 String status = mark == null ? "" : failed ? "Didn't play" : key.equals(last) ? "Last played" : "Played";
-                Item row = Item.source("source:" + key, source.name.replace('\n', ' '), meta.toString(), detail(source), status, !failed,
+                Item row = Item.source("source:" + key, source.name.replace('\n', ' '), meta.toString(), "", status, !failed,
                         () -> nav.play(title, route.video, key));
                 page.add(row.status(mark == null ? -1 : failed ? R.drawable.ic_tv_close : R.drawable.ic_tv_check));
             }
@@ -297,14 +299,6 @@ final class TitleScreens {
         return page;
     }
     private static final String DOT = "  ·  ";
-    /** The release name some add-ons put in the description's first line (Torrentio's file name); figures are in meta. */
-    private static String detail(MediaSource source) {
-        String text = source.description.trim(); int end = text.indexOf('\n'); if (end >= 0) text = text.substring(0, end).trim();
-        if (text.isEmpty() && source.filename != null) text = source.filename;
-        boolean figures = text.matches("(?s).*(👤|👥|🌱|💾|📦).*");
-        return figures || text.equalsIgnoreCase(source.name.replace('\n', ' ').trim()) ? "" : text;
-    }
-
     static String kind(MediaSource source) {
         switch (source.kind) {
             case HTTP: return "Direct";

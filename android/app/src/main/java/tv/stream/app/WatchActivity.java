@@ -252,9 +252,6 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         tv.stream.playback.Ui.action(findViewById(R.id.next_episode_play), () -> {
             hideNextEpisode(); onNextEpisode();
         });
-        tv.stream.playback.Ui.action(findViewById(R.id.next_episode_dismiss), () -> {
-            nextOfferDismissed = true; hideNextEpisode();
-        });
         for (int id : LIFTED) {
             View button = findViewById(id);
             button.setOnFocusChangeListener((view, has) -> lift(view, has || view.isHovered()));
@@ -577,9 +574,11 @@ public final class WatchActivity extends Activity implements PlaybackHost {
             MediaSource source = offered.get(i); final int index = i;
             SourceSort.Facts facts = SourceSort.facts(source);
             String detail = facts.quality();
+            String release = SourceSort.releaseType(source);
+            if (!release.isEmpty()) detail += (detail.isEmpty() ? "" : " · ") + release;
             if (facts.bytes > 0) detail += (detail.isEmpty() ? "" : " · ") + TitleScreens.size(facts.bytes);
             if (facts.seeds >= 0) detail += (detail.isEmpty() ? "" : " · ") + facts.seeds + " peers";
-            page.choice("source:" + i, source.name.replace('\n', ' '), detail, source == selected, () -> {
+            page.sourceChoice("source:" + i, source.name.replace('\n', ' '), detail, source == selected, () -> {
                 if (remember) rememberViewerState(session.snapshot());
                 page.dialog.dismiss(); automatic = false; explicitKey = SourcePolicy.key(source);
                 candidate = index; attempts = 0; recoveryStarted = 0; coordinator.begin(SystemClock.elapsedRealtime()); open(source, -1);
@@ -799,7 +798,10 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         hideNextEpisode();
         Title.Episode next = autoplay && !nextOfferDismissed ? neighbour(1) : null;
         Sounds.play(next != null ? Sounds.Sound.UP_NEXT : Sounds.Sound.FINISHED);
-        if (next != null) screen.offerUpNext(next.name, "Season " + next.season, () -> episode(next));
+        if (next != null) {
+            screen.offerUpNext(next.name, "Season " + next.season, () -> episode(next));
+            View play = findViewById(R.id.up_next_play); play.setFocusableInTouchMode(true); play.requestFocus();
+        }
     }
     private void updateNextEpisode(PlaybackSnapshot state) {
         if (!video.equals(nextOfferVideo)) { nextOfferVideo = video; nextOfferDismissed = false; }
@@ -808,10 +810,6 @@ public final class WatchActivity extends Activity implements PlaybackHost {
                 && !state.ended && screen.loading() == null && !screen.isMenuOpen() && (playerMenus == null || !playerMenus.isOpen()) && !screen.hasUpNext()
                 && next != null && !nextOfferDismissed && NextEpisodeOffer.nearEnd(state.positionMs, state.durationMs);
         View offer = findViewById(R.id.next_episode_offer);
-        if (show) {
-            ((android.widget.TextView) findViewById(R.id.next_episode_name)).setText(next.name);
-            ((android.widget.TextView) findViewById(R.id.next_episode_context)).setText("Season " + next.season + " · Episode " + next.number);
-        }
         if (show == (offer.getVisibility() == View.VISIBLE)) return;
         offer.animate().cancel();
         if (show) {
@@ -898,11 +896,8 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         if ((ok && !header) || code == KeyEvent.KEYCODE_MEDIA_PLAY
                 || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) keepPausedOnRecovery = false;
         if (findViewById(R.id.next_episode_offer).isShown()) {
-            if (focus == R.id.next_episode_play || focus == R.id.next_episode_dismiss) {
+            if (focus == R.id.next_episode_play) {
                 if (ok) { focused.performClick(); return true; }
-                if (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                    findViewById(focus == R.id.next_episode_play ? R.id.next_episode_dismiss : R.id.next_episode_play).requestFocus(); return true;
-                }
                 if (code == KeyEvent.KEYCODE_DPAD_UP) { screen.showControls(); findViewById(R.id.progress).requestFocus(); return true; }
                 if (code == KeyEvent.KEYCODE_BACK) { nextOfferDismissed = true; hideNextEpisode(); return true; }
             } else if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
@@ -936,19 +931,24 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         for (View v = focused; v != null; v = v.getParent() instanceof View ? (View) v.getParent() : null) if (v == error) return;
         for (int id : ERROR_BUTTONS) { View button = findViewById(id); if (button.getVisibility() == View.VISIBLE) { button.requestFocus(); return; } }
     }
+    private boolean clockTargetVisible;
     /** The clock accompanies active controls as well as paused playback and menus. */
     private void updatePlayerClock() {
         View clock = findViewById(R.id.player_clock);
         if (clock == null) return;
         boolean shown = screen != null && session != null && session.started() && screen.loading() == null
-                && session.error() == null && (findViewById(R.id.controls).isShown()
+                && session.error() == null && (screen.controlsVisible()
                 || screen.isMenuOpen() || playerMenus != null && playerMenus.isOpen()
                 || !session.player().getPlayWhenReady() && session.player().getPlaybackState() == Player.STATE_READY);
-        int previous = clock.getVisibility();
         boolean visible = playerClockEnabled && shown && !playerClockFormat.equals("off");
-        if (previous == (visible ? View.VISIBLE : View.GONE)) return;
-        tv.stream.app.ui.Clock.apply((android.widget.TextClock) clock, playerClockFormat, playerClockEnabled && shown);
-        if (previous != clock.getVisibility()) clock.post(this::updatePlayerHeaderInset);
+        if (visible) {
+            if (clock.getVisibility() != View.VISIBLE) clock.setAlpha(0f);
+            tv.stream.app.ui.Clock.apply((android.widget.TextClock) clock, playerClockFormat, true);
+        }
+        if (clockTargetVisible == visible) return;
+        clockTargetVisible = visible;
+        tv.stream.playback.Ui.fade(clock, visible);
+        clock.post(this::updatePlayerHeaderInset);
     }
     private void updatePlayerHeaderInset() {
         View clock = findViewById(R.id.player_clock), header = findViewById(R.id.player_header);
@@ -1111,6 +1111,18 @@ public final class WatchActivity extends Activity implements PlaybackHost {
         if (event.getAction() == KeyEvent.ACTION_DOWN) onUserInteraction();
         boolean move = event.getAction() == KeyEvent.ACTION_DOWN && Sounds.arrow(event.getKeyCode());
         if (move) Sounds.input();
+        if (screen != null && screen.hasUpNext()) {
+            int code = event.getKeyCode();
+            boolean select = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
+            if (select || code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                    View play = findViewById(R.id.up_next_play), cancel = findViewById(R.id.up_next_cancel);
+                    if (select) { View focused = getCurrentFocus(); (focused == cancel ? cancel : play).performClick(); }
+                    else { View target = code == KeyEvent.KEYCODE_DPAD_DOWN ? cancel : play; target.setFocusableInTouchMode(true); target.requestFocus(); }
+                }
+                return true;
+            }
+        }
         if (playerMenus != null && (event.getKeyCode() == KeyEvent.KEYCODE_MENU || event.getKeyCode() == KeyEvent.KEYCODE_CAPTIONS)) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) playerMenus.open(false, findViewById(R.id.control_settings));
             return true;

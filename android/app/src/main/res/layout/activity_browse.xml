@@ -75,8 +75,7 @@
         <TextClock android:id="@+id/clock" style="@style/Text.Time"
             android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="16dp"
             android:singleLine="true" android:importantForAccessibility="no" android:visibility="gone"
-            android:shadowColor="#B3000000" android:shadowDy="1" android:shadowRadius="6"
-            android:textColor="@color/tv_text_secondary" />
+            android:textColor="@color/tv_text" android:textSize="16sp" />
     </LinearLayout>
     <!-- Like contextual menus, an outside click dismisses navigation without activating the page beneath it. -->
     <View android:id="@+id/navigation_dismiss" android:layout_width="match_parent" android:layout_height="match_parent"
@@ -85,7 +84,7 @@
         android:layout_width="56dp" android:layout_height="match_parent"
         android:layout_marginStart="32dp" android:layout_marginTop="24dp" android:layout_marginBottom="24dp"
         android:clipChildren="false" android:clipToPadding="false">
-        <tv.stream.app.ui.GlassView android:id="@+id/top_bar_controls"
+        <FrameLayout android:id="@+id/top_bar_controls"
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:layout_gravity="center_vertical" android:background="@drawable/tv_rail"
             android:padding="6dp" android:elevation="6dp" android:clipChildren="false" android:clipToPadding="false">
@@ -98,6 +97,6 @@
                     android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:orientation="vertical" android:clipChildren="false" android:clipToPadding="false" />
             </LinearLayout>
-        </tv.stream.app.ui.GlassView>
+        </FrameLayout>
     </tv.stream.app.ui.NavigationRail>
 </FrameLayout>

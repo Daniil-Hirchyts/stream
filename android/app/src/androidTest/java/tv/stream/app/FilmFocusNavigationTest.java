@@ -12,6 +12,27 @@ import tv.stream.app.ui.PageAdapter;
 
 /** Remote movement across recycled film rows and horizontally scrolling Home shelves. */
 public final class FilmFocusNavigationTest extends AppHarness {
+    @Test public void returningFromDetailsThenMovingUpRestoresHomeSpotlight() throws Exception {
+        try (BrowseRecoveryTest.CatalogServer server = new BrowseRecoveryTest.CatalogServer()) {
+            try (Cancellation scope = services.addons.newRequest()) {
+                services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", scope));
+            }
+            services.store.favourite(Title.parse(services.store.addons().get(0).id, server.title(0)), true);
+            launch(); waitUntil("Home favourites", 10000, () -> findTagPrefix("favourite:") != null);
+            browse.onActivity(a -> findPrefix(a.findViewById(R.id.page_rows), "favourite:").requestFocus());
+            key(KeyEvent.KEYCODE_DPAD_DOWN);
+            waitUntil("Catalogue shelf", 5000, () -> !focusTag().startsWith("favourite:"));
+            key(KeyEvent.KEYCODE_DPAD_CENTER); waitUntil("Film details", 10000, () -> visible("Play"));
+            key(KeyEvent.KEYCODE_BACK); waitUntil("Home restored", 10000, () -> !visible("Play") && !focusTag().startsWith("nav:"));
+            key(KeyEvent.KEYCODE_DPAD_UP);
+            waitUntil("First shelf focused", 5000, () -> focusTag().startsWith("favourite:"));
+            waitUntil("Spotlight returns to the top", 5000, () -> {
+                AtomicReference<Boolean> top = new AtomicReference<>(false);
+                browse.onActivity(a -> top.set(!a.findViewById(R.id.page_rows).canScrollVertically(-1)));
+                return top.get();
+            });
+        }
+    }
     @Test public void libraryGridAndHomeShelvesKeepFocusInsideTheirRows() throws Exception {
         try (BrowseRecoveryTest.CatalogServer server = new BrowseRecoveryTest.CatalogServer()) {
             try (Cancellation scope = services.addons.newRequest()) {

@@ -35,6 +35,7 @@ interface Navigator {
     void openWebsite(String address);
     /** Runs {@code task} on a worker, then rebuilds the current route. */
     void mutate(Callable<?> task);
+    void mutateEpisode(Callable<?> task, Route route, int season, String episode);
     /** Runs {@code task} on a worker, then {@code after} on the main thread. */
     void then(Callable<?> task, Runnable after);
     /** Installs the starter add-ons the store's starter page listed (the viewer's acceptance), then opens Home. */

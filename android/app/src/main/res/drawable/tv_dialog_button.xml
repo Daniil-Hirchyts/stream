@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Alert buttons: equal platters, white when focused, as on tvOS. -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_focused="true"><shape><solid android:color="@color/tv_focus" /><corners android:radius="12dp" /></shape></item>
-    <item android:state_pressed="true"><shape><solid android:color="@color/tv_focus_pressed" /><corners android:radius="12dp" /></shape></item>
-    <item><shape><solid android:color="@android:color/transparent" /><corners android:radius="12dp" /></shape></item>
+    <item android:state_focused="true"><shape><solid android:color="@color/tv_focus" /><corners android:radius="@dimen/tv_radius_capsule" /></shape></item>
+    <item android:state_pressed="true"><shape><solid android:color="@color/tv_focus_pressed" /><corners android:radius="@dimen/tv_radius_capsule" /></shape></item>
+    <item><shape><solid android:color="@android:color/transparent" /><corners android:radius="@dimen/tv_radius_capsule" /></shape></item>
 </selector>

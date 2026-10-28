@@ -19,6 +19,17 @@ import tv.stream.app.data.TvStore;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 36)
 public final class SourceSortTest {
+    @Test public void releaseLabelsUseAdvertisedHintsWithoutConfusingFileExtensions() {
+        assertEquals("CAM", SourceSort.releaseType("Source", "Film.2026.HDCAM.1080p.mkv", null));
+        assertEquals("TS", SourceSort.releaseType("Source", "Film.2026.HD-TS.1080p.mkv", null));
+        assertEquals("WEB-DL", SourceSort.releaseType("Source", "", "Film.S01E02.1080p.WEB-DL.mkv"));
+        assertEquals("WEBRip", SourceSort.releaseType("WEBRip 720p", "", null));
+        assertEquals("Blu-ray", SourceSort.releaseType("Source", "Film.1080p.BluRay.x264", null));
+        assertEquals("DVD", SourceSort.releaseType("Source", "Film.DVDRip", null));
+        assertEquals("HDTV", SourceSort.releaseType("Source", "Film.HDTV", null));
+        assertEquals("", SourceSort.releaseType("Source", "", "Film.1080p.ts"));
+        assertEquals("", SourceSort.releaseType("Source", "Film.1080p.HEVC.x265", null));
+    }
     @Test public void readsQualitySizeAndSeedsAsTorrentAddonsWriteThem() {
         SourceSort.Facts torrentio = SourceSort.facts("Torrentio\n1080p", "Film.2019.1080p.x264\n👤 42 💾 2.1 GB ⚙️ ThePirateBay", null, 0);
         assertEquals(1080, torrentio.lines);

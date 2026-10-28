@@ -12,6 +12,54 @@ import tv.stream.torrent.TorrentEngine;
 
 /** Real app popup actions and cancellation with generated media and loopback peers. */
 public final class PlayerPopupTest extends AppHarness {
+    @Test public void settingsOpenerKeepsItsFocusAndScaleAcrossPopup() throws Exception {
+        readyLibrary("http-mkv"); launch(); tap("Generated Film", false); tap("Play", true); chooseFirstSource();
+        waitUntil("playing", 30000, () -> state() != null && state().renderedFirstFrame && state().playing);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PAUSE);
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP);
+        WatchActivity activity = watch(); View button = activity.findViewById(R.id.control_settings);
+        instrumentation.runOnMainSync(() -> button.requestFocus()); SystemClock.sleep(300);
+        android.graphics.Rect source = new android.graphics.Rect();
+        instrumentation.runOnMainSync(() -> { assertTrue(button.isFocused()); assertTrue(button.getGlobalVisibleRect(source)); });
+        java.util.List<Float> scales = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.List<android.graphics.Bitmap> frames = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.List<Integer> colours = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.concurrent.atomic.AtomicBoolean recording = new java.util.concurrent.atomic.AtomicBoolean(true);
+        android.view.View root = activity.getWindow().getDecorView();
+        android.view.ViewTreeObserver.OnPreDrawListener listener = () -> { scales.add(button.getScaleX()); return true; };
+        instrumentation.runOnMainSync(() -> root.getViewTreeObserver().addOnPreDrawListener(listener));
+        Thread capture = new Thread(() -> {
+            while (recording.get() && frames.size() < 100) {
+                android.graphics.Bitmap screen = instrumentation.getUiAutomation().takeScreenshot(); if (screen == null) continue;
+                colours.add(screen.getPixel(source.left + source.width() / 4, source.centerY()));
+                int margin = tv.stream.app.ui.Tv.dp(context, 12);
+                int l = Math.max(0, source.left - margin), t = Math.max(0, source.top - margin);
+                int r = Math.min(screen.getWidth(), source.right + margin), b = Math.min(screen.getHeight(), source.bottom + margin);
+                frames.add(android.graphics.Bitmap.createBitmap(screen, l, t, r - l, b - t)); screen.recycle();
+            }
+        });
+        capture.start(); waitUntil("initial player frame", 5000, () -> !frames.isEmpty());
+        instrumentation.runOnMainSync(button::performClick);
+        waitUntil("settings popup", 5000, () -> visible("Subtitle style")); SystemClock.sleep(400);
+        AtomicReference<Boolean> held = new AtomicReference<>(); instrumentation.runOnMainSync(() -> held.set(button.isFocused()));
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); returned(activity); SystemClock.sleep(350);
+        recording.set(false); capture.join(5000);
+        instrumentation.runOnMainSync(() -> root.getViewTreeObserver().removeOnPreDrawListener(listener));
+        try {
+            int cell = 120, rows = (frames.size() + 7) / 8;
+            android.graphics.Bitmap strip = android.graphics.Bitmap.createBitmap(cell * 8, cell * rows, android.graphics.Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas canvas = new android.graphics.Canvas(strip);
+            for (int i = 0; i < frames.size(); i++) canvas.drawBitmap(frames.get(i), null,
+                    new android.graphics.Rect(i % 8 * cell, i / 8 * cell, (i % 8 + 1) * cell, (i / 8 + 1) * cell), null);
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(context.getFilesDir(), "validation-player-popup-screen-frames.png"))) { strip.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out); }
+            strip.recycle();
+        } finally { for (android.graphics.Bitmap frame : frames) frame.recycle(); }
+        assertTrue("The player opener retains focus while its popup is open", held.get());
+        assertTrue("The player opener never shrinks and scales back up: " + scales,
+                !scales.isEmpty() && java.util.Collections.min(scales) >= tv.stream.app.ui.Tv.LIFT_ICON - .01f);
+        for (int colour : colours) assertTrue("The player cursor stays white on screen: " + colours,
+                android.graphics.Color.red(colour) >= 230 && android.graphics.Color.green(colour) >= 230 && android.graphics.Color.blue(colour) >= 230);
+    }
     @Test public void subtitleFocusOnlyPreviewsAndSelectionCommitsToBothSettingsStores() throws Exception {
         readyLibrary("http-mkv"); launch(); tap("Generated Film", false); tap("Play", true); chooseFirstSource();
         waitUntil("playing", 30000, () -> state() != null && state().renderedFirstFrame && state().playing);

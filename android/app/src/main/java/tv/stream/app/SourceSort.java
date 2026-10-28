@@ -34,6 +34,25 @@ final class SourceSort {
     private static final Pattern SIZE = Pattern.compile("(?i)(\\d+(?:[.,]\\d+)?)\\s*(tb|tib|gb|gib|mb|mib)\\b");
     private static final Pattern SEEDS = Pattern.compile("(?i)(?:👤|👥|🌱|⬆️?|\\b(?:seed(?:er)?s?|peers?)\\b\\s*[:=]?)\\s*(\\d+)");
 
+    /** Release labels are advertised hints, not a claim verified from the video. */
+    static String releaseType(String name, String description, String filename) {
+        String text = (name + "\n" + description + "\n" + (filename == null ? "" : filename)).toLowerCase(Locale.ROOT);
+        if (releaseMatch(text, "(?:hd[ ._-]?)?cam(?:rip)?")) return "CAM";
+        if (releaseMatch(text, "telesync|hd[ ._-]?ts")
+                || Pattern.compile("(?:^|[^a-z0-9])ts[ ._-]+(?=[a-z0-9])").matcher(text).find()) return "TS";
+        if (releaseMatch(text, "web[ ._-]?dl")) return "WEB-DL";
+        if (releaseMatch(text, "web[ ._-]?rip")) return "WEBRip";
+        if (releaseMatch(text, "blu[ ._-]?ray|b[dr][ ._-]?rip|brrip")) return "Blu-ray";
+        if (releaseMatch(text, "dvd[ ._-]?rip|dvd")) return "DVD";
+        if (releaseMatch(text, "hdtv|pdtv")) return "HDTV";
+        if (releaseMatch(text, "web")) return "WEB";
+        return "";
+    }
+    private static boolean releaseMatch(String text, String pattern) {
+        return Pattern.compile("(?:^|[^a-z0-9])(?:" + pattern + ")(?:[^a-z0-9]|$)").matcher(text).find();
+    }
+    static String releaseType(MediaSource source) { return releaseType(source.name, source.description, source.filename); }
+
     static Facts facts(String name, String description, String filename, long advertisedBytes) {
         String text = name + "\n" + description + "\n" + (filename == null ? "" : filename);
         int lines = 0;

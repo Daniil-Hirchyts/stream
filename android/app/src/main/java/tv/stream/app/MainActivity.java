@@ -515,7 +515,6 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
         NavigationRail.State state = hidden ? NavigationRail.State.HIDDEN : topBar.hasFocus()
                 ? topBar.state() == NavigationRail.State.EXPANDED ? NavigationRail.State.EXPANDED : NavigationRail.State.WRAPPED
                 : NavigationRail.State.WRAPPED;
-        topBar.overlaysContent(hidden);
         topBar.state(state);
         if (hidden) topBar.setVisibility(View.INVISIBLE);
         findViewById(R.id.navigation_reveal).setVisibility(View.GONE);
@@ -835,9 +834,22 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     }
 
     // Page listener.
+    private long lastUpNavigation;
     @Override public void focused(String key) {
         if (!contentReady || stack.isEmpty()) return;
         Route current = route(); current.focus = key;
+        if (current.screen.equals("Home") && lastUpNavigation != 0
+                && android.os.SystemClock.uptimeMillis() - lastUpNavigation < 1000
+                && adapter.firstSpotlightShelf(key) && list.canScrollVertically(-1)) {
+            lastUpNavigation = 0;
+            list.post(() -> {
+                if (stopped || stack.isEmpty() || route() != current) return;
+                androidx.recyclerview.widget.LinearSmoothScroller scroll = new androidx.recyclerview.widget.LinearSmoothScroller(this) {
+                    @Override protected int getVerticalSnapPreference() { return SNAP_TO_START; }
+                };
+                scroll.setTargetPosition(0); list.getLayoutManager().startSmoothScroll(scroll);
+            });
+        }
         if (current.screen.equals("Details") && (key.startsWith("season:") || key.startsWith("episode:"))
                 && !browsingEpisodes() && shownPage != null && episodeBrowser(shownPage) != null) {
             current.extras.put("episodes", "true"); current.scroll = null;
@@ -902,6 +914,14 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
     }
     /** Changes the data behind the current page and rebuilds it in place, keeping its scroll position. */
     @Override public void mutate(Callable<?> task) { then(task, () -> { invalidateLocalPages(); rememberFocus(); render(); }); }
+    @Override public void mutateEpisode(Callable<?> task, Route target, int season, String episode) {
+        then(task, () -> {
+            invalidateLocalPages();
+            if (stack.isEmpty() || route() != target) return;
+            rememberFocus(); target.season = season; target.focus = "episode:" + episode;
+            render();
+        });
+    }
     private void invalidateLocalPages() {
         for (Route saved : retainedPages.keySet())
             if (!saved.screen.equals("Catalogue") && !saved.screen.equals("Catalogues") && !saved.screen.equals("Browse")) dirtyPages.add(saved);
@@ -1155,6 +1175,7 @@ public final class MainActivity extends Activity implements Navigator, PageAdapt
             }
         }
         boolean move = event.getAction() == KeyEvent.ACTION_DOWN && Sounds.arrow(event.getKeyCode());
+        if (move) lastUpNavigation = event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP ? android.os.SystemClock.uptimeMillis() : 0;
         if (move) Sounds.input();
         View before = getCurrentFocus();
         if (move && event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP && before != null

@@ -178,8 +178,8 @@ public final class Tv {
 
     /** A platter button in one of the {@link Item.Action} styles. Its content turns dark on the white focus platter. */
     public static View button(Context context, Item.Action action, Consumer<String> focused) {
-        // Glass: on Android 12+ the platter blurs the artwork behind it, as the tab bar does.
-        FrameLayout button = GlassView.surface(context);
+        // Icon controls stay transparent at rest; other buttons may blur the artwork behind them.
+        FrameLayout button = action.style == Item.Action.Style.ICON ? new FrameLayout(context) : GlassView.surface(context);
         bindButton(button, action, focused);
         return button;
     }
@@ -198,7 +198,7 @@ public final class Tv {
         switch (action.style) {
             case ICON: {
                 button.setTooltipText(action.label);
-                button.setBackgroundResource(R.drawable.tv_button_round);
+                button.setBackgroundResource(R.drawable.tv_utility_button);
                 content.addView(icon(context, action.icon, 20, R.color.tv_on_glass));
                 button.setLayoutParams(new LinearLayout.LayoutParams(height, height));
                 button.addView(content, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -235,6 +235,7 @@ public final class Tv {
         button.setActivated(action.selected);
         Runnable press = action.style == Item.Action.Style.CHIP ? () -> { Sounds.at(Sounds.Sound.CHIP, button); action.action.run(); } : action.action;
         control(button, action.key, press, focused, LIFT_BUTTON);
+        if (action.style == Item.Action.Style.ICON) hover(button, () -> LIFT_BUTTON);
         if (previousLayout != null) button.setLayoutParams(previousLayout);
     }
 
@@ -293,29 +294,40 @@ public final class Tv {
             View row = row(key, label, detail, 0, selected ? R.drawable.ic_tv_check : 0, action, focused);
             row.setSelected(selected); if (selected) initialFocus = row; return row;
         }
+        public View sourceChoice(String key, String label, String detail, boolean selected, Runnable action) {
+            View row = row(key, label, detail, 0, selected ? R.drawable.ic_tv_check : 0, action, ignored -> {}, false, true);
+            row.setSelected(selected); if (selected) initialFocus = row; return row;
+        }
         public void refresh() { ((MorphDialog) dialog).refreshCurrent(); }
         public View button(String key, String label, Runnable action) { return button(key, label, action, ignored -> {}); }
         public View button(String key, String label, Runnable action, Consumer<String> onFocused) {
             return row(key, label, "", menuIcon(label), 0, action, onFocused);
         }
         private View row(String key, String label, String detail, int glyph, int trailing, Runnable action, Consumer<String> onFocused) {
+            return row(key, label, detail, glyph, trailing, action, onFocused, false, false);
+        }
+        private View row(String key, String label, String detail, int glyph, int trailing, Runnable action, Consumer<String> onFocused, boolean inline, boolean singleLabel) {
             Context context = dialog.getContext();
             LinearLayout row = new LinearLayout(context); row.setGravity(Gravity.CENTER_VERTICAL);
             row.setMinimumHeight(dp(context, 44)); row.setPadding(dp(context, 12), dp(context, 11), dp(context, 12), dp(context, 11));
-            row.setContentDescription(detail.isEmpty() ? label : label + ". " + detail); row.setBackgroundResource(R.drawable.tv_dialog_button);
+            row.setContentDescription(detail.isEmpty() ? label : label + ". " + detail);
             if (glyph != 0) {
                 ImageView icon = icon(context, glyph, 18, R.color.tv_on_glass);
                 ((LinearLayout.LayoutParams) icon.getLayoutParams()).rightMargin = dp(context, 12); row.addView(icon);
             }
-            TextView text = lines(type(context, label, Type.CONTROL, R.color.tv_on_glass), 2);
+            TextView text = lines(type(context, label, Type.CONTROL, R.color.tv_on_glass), singleLabel || inline ? 1 : 2);
             text.setDuplicateParentStateEnabled(true);
             LinearLayout column = new LinearLayout(context); column.setOrientation(LinearLayout.VERTICAL); column.setDuplicateParentStateEnabled(true);
             column.addView(text);
-            if (!detail.isEmpty()) {
+            if (!detail.isEmpty() && !inline) {
                 TextView value = oneLine(text(context, detail, 12, R.color.tv_on_glass_secondary)); value.setDuplicateParentStateEnabled(true);
                 LinearLayout.LayoutParams spacing = new LinearLayout.LayoutParams(-1, -2); spacing.topMargin = dp(context, 5); column.addView(value, spacing);
             }
             row.addView(column, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            if (!detail.isEmpty() && inline) {
+                TextView value = oneLine(text(context, detail, 14, R.color.tv_on_glass_secondary));
+                value.setDuplicateParentStateEnabled(true); value.setPadding(dp(context, 8), 0, 0, 0); row.addView(value);
+            }
             if (trailing != 0) {
                 ImageView mark = icon(context, trailing, 14, R.color.tv_on_glass);
                 ((LinearLayout.LayoutParams) mark.getLayoutParams()).leftMargin = dp(context, 10); row.addView(mark);
@@ -323,6 +335,13 @@ public final class Tv {
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             if (buttons.getChildCount() > 0) params.topMargin = dp(context, 2);
             buttons.addView(row, params); buttons.setVisibility(View.VISIBLE);
+            final int[] background = {0};
+            Runnable shape = () -> {
+                int wanted = !inline && (!detail.isEmpty() || text.getLineCount() > 1)
+                        ? R.drawable.tv_dialog_button_multiline : R.drawable.tv_dialog_button;
+                if (background[0] != wanted) { background[0] = wanted; row.setBackgroundResource(wanted); }
+            };
+            shape.run(); text.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> shape.run());
             control(row, key, action, onFocused != null ? onFocused : ignored -> {}, 1f, false);
             return row;
         }
@@ -335,6 +354,13 @@ public final class Tv {
             row.setTag(R.id.popup_navigation, "submenu");
             return row;
         }
+        public View submenuInline(String key, String label, String detail, Consumer<Alert> contents) {
+            View row = row(key, label, detail, menuIcon(label), R.drawable.ic_tv_chevron, () -> {
+                Alert child = createAlert(dialog.getContext(), label, null, dialog, title);
+                contents.accept(child); child.show();
+            }, ignored -> {}, true, true);
+            row.setTag(R.id.popup_navigation, "submenu"); return row;
+        }
         public void back() { ((MorphDialog) dialog).back(); }
         public void show() { ((MorphDialog) dialog).present(this); }
     }
@@ -343,6 +369,8 @@ public final class Tv {
     private static int menuIcon(String label) {
         String text = label.toLowerCase(java.util.Locale.ROOT);
         if (text.equals("play") || text.equals("resume") || text.equals("playback")) return R.drawable.ic_tv_play;
+        if (text.equals("previous episode")) return R.drawable.ic_tv_previous;
+        if (text.equals("next episode")) return R.drawable.ic_tv_next;
         if (text.equals("sources") || text.equals("choose source")) return R.drawable.ic_tv_list;
         if (text.equals("mark unwatched")) return R.drawable.ic_tv_unwatched;
         if (text.equals("mark watched")) return R.drawable.ic_tv_check;
@@ -377,7 +405,7 @@ public final class Tv {
     }
     private static Alert createAlert(Context context, String title, @Nullable View body, Dialog dialog, @Nullable String parent) {
         LinearLayout surface = new LinearLayout(context); surface.setOrientation(LinearLayout.VERTICAL);
-        surface.setPadding(dp(context, 8), dp(context, 14), dp(context, 8), dp(context, 8));
+        surface.setPadding(dp(context, 8), dp(context, 20), dp(context, 8), dp(context, 8));
         LinearLayout header = new LinearLayout(context); header.setOrientation(LinearLayout.VERTICAL);
         header.setPadding(dp(context, 12), 0, dp(context, 12), dp(context, 8));
         if (parent != null) {

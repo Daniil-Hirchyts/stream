@@ -27,7 +27,6 @@ public final class NavigationRail extends FrameLayout {
     private final List<TextView> labels = new ArrayList<>();
     private final List<View> rows = new ArrayList<>();
     private float expansion, reveal = 1;
-    private boolean overlaysContent;
     private State state = State.WRAPPED;
     private ValueAnimator morph;
     private final GradientDrawable surface = new GradientDrawable();
@@ -43,15 +42,9 @@ public final class NavigationRail extends FrameLayout {
         apply(expansion, reveal);
     }
     public State state() { return state; }
-    /** Wrapped circles grow like the other small round controls; labelled rows like buttons, inside the popup. */
-    public double lift() { return state == State.EXPANDED ? Tv.LIFT_BUTTON : Tv.LIFT_ICON; }
+    /** Wrapped icons grow slightly; expanded rows stay inside the popup's even inset. */
+    public double lift() { return state == State.EXPANDED ? 1f : 1.08f; }
     public int expandedWidth() { return expandedWidth; }
-    /** The backdrop blur excludes page controls, so an overlay needs its own opaque surface above them. */
-    public void overlaysContent(boolean value) {
-        if (overlaysContent == value) return;
-        overlaysContent = value; apply(expansion, reveal);
-    }
-
     /** The 44 dp row exactly matches its width when wrapped; text never participates in icon geometry. */
     public void decorate(FrameLayout row, int icon, String label) {
         ImageView glyph = new ImageView(getContext()); glyph.setImageResource(icon);
@@ -104,12 +97,11 @@ public final class NavigationRail extends FrameLayout {
             params.width = Tv.dp(getContext(), COLLAPSED) + extra; setLayoutParams(params);
         }
         if (platter != null) {
-            int resting = getContext().getColor(overlaysContent ? R.color.tv_material_dialog
-                    : GlassView.LIVE_BLUR ? R.color.tv_material_thin : R.color.tv_material);
+            int resting = Color.TRANSPARENT;
             int popup = getContext().getColor(R.color.tv_material_dialog);
             surface.setColor(blend(resting, popup, width));
-            surface.setCornerRadius(Tv.dp(getContext(), 28 - 6 * width));
-            platter.setElevation(Tv.dp(getContext(), 6 + 6 * width));
+            surface.setCornerRadius(Tv.dp(getContext(), 28));
+            platter.setElevation(Tv.dp(getContext(), 12 * width));
             platter.invalidateOutline();
         }
         setAlpha(visible); setTranslationX(-Tv.dp(getContext(), 96) * (1 - visible));

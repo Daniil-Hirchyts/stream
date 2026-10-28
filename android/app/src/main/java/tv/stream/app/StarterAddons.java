@@ -7,7 +7,7 @@ import tv.stream.app.addon.AddonUrl;
 import tv.stream.app.addon.BuiltinAddons;
 
 /**
- * The add-ons a new install sets itself up with: the store's starter page (catalogues, free classic films and subtitles)
+ * The add-ons a new install sets itself up with: the store's starter page (catalogues and subtitles)
  * plus torrent sources.
  */
 final class StarterAddons {
@@ -15,7 +15,7 @@ final class StarterAddons {
     static final String OPENSUBTITLES = "https://opensubtitles-v3.strem.io/manifest.json";
     /** The store route value for the starter page; not an add-on address. */
     static final String PACK = "starter-pack";
-    static final List<String> ALL = Collections.unmodifiableList(Arrays.asList(AddonUrl.CINEMETA, BuiltinAddons.INTERNET_ARCHIVE, OPENSUBTITLES));
+    static final List<String> ALL = Collections.unmodifiableList(Arrays.asList(AddonUrl.CINEMETA, OPENSUBTITLES));
     /**
      * Torrent sources a new install also gets, by the owner's choice: the public, unconfigured addresses the store's
      * Torrent/P2P list offers (see TorrentAddons). Not on the starter page; each can be removed or reconfigured.

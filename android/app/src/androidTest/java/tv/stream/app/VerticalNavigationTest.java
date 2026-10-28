@@ -302,6 +302,7 @@ public final class VerticalNavigationTest extends AppHarness {
         waitUntil("Outside tap wraps navigation", 5000, () -> railState() == NavigationRail.State.WRAPPED);
         assertFalse("The outside tap never opens the card beneath", visible("Play"));
         tap("Generated Film", false); waitUntil("Card click opens Details", 5000, () -> visible("Play"));
+        tap("Add favourite", false); waitUntil("Saved film actions", 5000, () -> visible("More"));
         AtomicReference<Rect> before = new AtomicReference<>();
         browse.onActivity(a -> before.set(bounds(a.findViewById(R.id.browse_content))));
         key(KeyEvent.KEYCODE_DPAD_LEFT); assertNavigationHidden();
@@ -319,9 +320,9 @@ public final class VerticalNavigationTest extends AppHarness {
         tap("Browse", false); waitUntil("Catalogues", 5000, () -> visible("Generated films")); collapsed("12-catalogues");
         tap("Generated films", true); waitUntil("Catalogue", 10000, () -> visible("Generated Film")); collapsed("13-catalogue");
         tap("Generated Film", false); waitUntil("Details", 10000, () -> visible("Play")); collapsed("14-details");
+        tap("Add favourite", false); waitUntil("Saved film actions", 5000, () -> visible("More"));
         tap("More", true); waitUntil("Details menu", 5000, () -> visible("Remove from library")); shot("15-details-menu");
         key(KeyEvent.KEYCODE_BACK);
-        tap("Add favourite", false);
         tap("Sources", true); waitUntil("Sources", 10000, () -> visible("Size")); collapsed("16-sources");
         browse.onActivity(a -> a.root("Library")); waitUntil("Library", 5000, () -> visible("Generated Film")); collapsed("17-library");
         browse.onActivity(a -> a.root("Settings")); tap("Add-on store", false);

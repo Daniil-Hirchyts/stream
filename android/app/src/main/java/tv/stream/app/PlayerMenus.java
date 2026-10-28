@@ -55,8 +55,21 @@ final class PlayerMenus {
         menu.onAppear(() -> { menu.reset(); if (tracks) tracks(menu, true); else settings(menu); signature = signature(); });
         // Retain the shared menu's transport/caption guard, but never draw its old presentation.
         // INVISIBLE still measures its rows, avoiding the shared reveal callback retrying an unmeasured GONE view.
-        screen.openSettingsMenu();
-        activity.findViewById(R.id.menu).setVisibility(View.INVISIBLE);
+        // Opening the shared guard normally focuses its panel. Keep the opener focused while the
+        // invisible panel starts, so it never shrinks or changes tint beneath the popup snapshot.
+        android.view.ViewGroup sharedMenu = activity.findViewById(R.id.menu);
+        int descendants = sharedMenu.getDescendantFocusability();
+        boolean focusable = sharedMenu.isFocusable(), touchFocusable = sharedMenu.isFocusableInTouchMode();
+        sharedMenu.setDescendantFocusability(android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        sharedMenu.setFocusable(false);
+        try {
+            screen.openSettingsMenu();
+            sharedMenu.setVisibility(View.INVISIBLE);
+        } finally {
+            sharedMenu.setDescendantFocusability(descendants);
+            sharedMenu.setFocusable(focusable);
+            sharedMenu.setFocusableInTouchMode(touchFocusable);
+        }
         menu.onClosing(this::releaseGuard);
         menu.dialog.setOnDismissListener(d -> { if (root == menu) root = null; main.removeCallbacks(refresh); host.visibilityChanged(); });
         menu.show(); host.visibilityChanged();
@@ -81,7 +94,7 @@ final class PlayerMenus {
                 child.scrollChoices(276);
             });
         });
-        page.submenu("player:speed", "Speed", speed(session.speed()), child -> {
+        page.submenuInline("player:speed", "Speed", speed(session.speed()), child -> {
             child.onAppear(() -> {
                 child.reset(); for (float value : SPEEDS) child.choice("speed:" + value, speed(value), "", value == session.speed(), () -> { session.setSpeed(value); child.back(); });
                 child.scrollChoices(276);

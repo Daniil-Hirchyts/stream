@@ -244,6 +244,11 @@ public final class AcceptanceTest extends AppHarness {
                     && "Next page".contentEquals(activity.getCurrentFocus().getContentDescription() == null ? "" : activity.getCurrentFocus().getContentDescription())));
             return focused.get();
         });
+        waitUntil("pagination footer is fully visible", 5000, () -> {
+            java.util.concurrent.atomic.AtomicBoolean atBottom = new java.util.concurrent.atomic.AtomicBoolean();
+            browse.onActivity(activity -> atBottom.set(!activity.findViewById(R.id.page_rows).canScrollVertically(1)));
+            return atBottom.get();
+        });
         captureUi("catalogue-pagination"); instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
         waitUntil("next page", 10_000, () -> visible("Films · Page 2")); captureUi("catalogue");
         tap("Previous page", false);

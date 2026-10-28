@@ -160,6 +160,17 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         if (replacingFocus) return;
         if (key.equals(restore)) restore = "";
         listener.focused(key);
+        if ((key.startsWith("next-page:") || key.startsWith("previous-page:")) && recycler != null) {
+            RecyclerView page = recycler;
+            page.post(() -> {
+                View focused = page.findFocus();
+                if (!page.isAttachedToWindow() || focused == null || !key.equals(focused.getTag())) return;
+                View footer = page.getLayoutManager().findViewByPosition(position(key));
+                if (footer == null) return;
+                int below = page.getLayoutManager().getDecoratedBottom(footer) - (page.getHeight() - page.getPaddingBottom());
+                if (below > 0) page.smoothScrollBy(0, below);
+            });
+        }
         SearchPane pane = searchPane;
         if (pane != null && pane.isAttachedToWindow()) {
             if (key.startsWith("keyboard:")) pane.lastKeyboard = key;
@@ -175,6 +186,13 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
     public int position(String key) {
         for (int i = 0; i < items.size(); i++) if (contains(items.get(i), key)) return i;
         return -1;
+    }
+    /** The first Home shelf belongs with the spotlight above it. */
+    public boolean firstSpotlightShelf(String key) {
+        if (items.isEmpty() || items.get(0).kind != Item.Kind.SPOTLIGHT) return false;
+        for (int i = 1; i < items.size(); i++)
+            if (items.get(i).kind == Item.Kind.SHELF) return contains(items.get(i), key);
+        return false;
     }
     private static boolean contains(Item item, String key) {
         if (item.key.equals(key)) return true;
@@ -208,6 +226,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         int policy = recycler == null ? 0 : recycler.getDescendantFocusability();
         // A structural rebuild still restores atomically, before drawing or letting Android choose another row.
         if (focusedKey != null && recycler != null) {
+            if (item.kind == Item.Kind.EPISODES && focusedKey.startsWith("episode:")) restore = focusedKey;
             replacingFocus = true;
             recycler.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS); recycler.requestFocus();
         }
@@ -506,7 +525,8 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         list.setHasFixedSize(true);
         list.setPadding(gutterStart, dp(season == null ? 12 : 16), gutterEnd, dp(14));
         list.setHorizontalScrollBarEnabled(false);
-        TileAdapter adapter = new TileAdapter(item.tiles, item.style, item.style == Item.Tile.Style.POSTER ? POSTER_WIDTH : LANDSCAPE_WIDTH);
+        TileAdapter adapter = new TileAdapter(item.tiles, item.style, item.style == Item.Tile.Style.POSTER ? POSTER_WIDTH : LANDSCAPE_WIDTH,
+                season == null ? GAP : GAP + 2);
         list.setAdapter(adapter);
         retainScroll(list, item.key);
         root.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -1082,7 +1102,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
             if (row.getChildCount() > 0) ((LinearLayout.LayoutParams) button.getLayoutParams()).leftMargin = dp(12);
             View.OnFocusChangeListener focus = button.getOnFocusChangeListener();
             button.setOnFocusChangeListener((view, has) -> {
-                if (has) select.accept(action.key);
+                if (has && !replacingFocus) select.accept(action.key);
                 focus.onFocusChange(view, has);
             });
             button.setOnHoverListener((view, event) -> {
@@ -1147,7 +1167,7 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         return row;
     }
     private View source(Item item) {
-        return wrapRow(item, sourceContent(item), R.drawable.tv_row, Tv.LIFT_ROW);
+        return wrapRow(item, sourceContent(item), R.drawable.tv_row_multiline, Tv.LIFT_ROW);
     }
     private LinearLayout sourceContent(Item item) {
         LinearLayout row = new LinearLayout(context); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
@@ -1157,10 +1177,6 @@ public final class PageAdapter extends RecyclerView.Adapter<PageAdapter.Holder> 
         TextView title = Tv.oneLine(Tv.heading(context, item.title, 15.5f, R.color.tv_on_glass)); title.setDuplicateParentStateEnabled(true); text.addView(title);
         TextView meta = Tv.oneLine(Tv.text(context, item.meta, 13, R.color.tv_on_glass_secondary)); meta.setDuplicateParentStateEnabled(true);
         meta.setPadding(0, dp(5), 0, 0); text.addView(meta);
-        if (!item.detail.isEmpty()) {
-            TextView detail = Tv.oneLine(Tv.text(context, item.detail, 13, R.color.tv_on_glass_secondary)); detail.setDuplicateParentStateEnabled(true);
-            detail.setPadding(0, dp(3), 0, 0); text.addView(detail);
-        }
         row.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         LinearLayout status = new LinearLayout(context); status.setGravity(Gravity.CENTER_VERTICAL); status.setDuplicateParentStateEnabled(true);
         int statusIcon = item.statusIcon != 0 ? item.statusIcon : item.muted ? R.drawable.ic_tv_info : R.drawable.ic_tv_check;

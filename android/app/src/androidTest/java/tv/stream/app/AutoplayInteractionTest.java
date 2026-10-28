@@ -40,8 +40,7 @@ public final class AutoplayInteractionTest extends AppHarness {
             screenshot("validation-next-episode.png");
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
             waitUntil("Remote reaches Next episode", 5000, () -> focused(R.id.next_episode_play));
-            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);
-            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
             waitUntil("offer dismissed", 5000, () -> !shown(R.id.next_episode_offer));
             seek(.98f); instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PLAY); waitUntil("episode finishes without autoplay after dismiss", 10000, () -> state().ended);
             SystemClock.sleep(1200); assertFalse("Dismiss also suppresses end countdown", shown(R.id.up_next));
@@ -51,6 +50,23 @@ public final class AutoplayInteractionTest extends AppHarness {
                     && services.store.sourceMarks(server.title.key(), server.second).values().stream().anyMatch(mark -> mark.state.equals(TvStore.SourceMark.PLAYED)));
             pauseAndSeek(.93f); SystemClock.sleep(1200);
             assertFalse("Last episode has no nonexistent successor", shown(R.id.next_episode_offer));
+        }
+    }
+
+    @Test public void upNextCanBeCancelledWithRemote() throws Exception {
+        try (Sources server = new Sources()) {
+            try (Cancellation request = services.addons.newRequest()) { services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", request)); }
+            services.store.favourite(server.title, true); launch(); waitUntil("series", 10000, () -> visible(server.title.name));
+            tap(server.title.name, false); tap("Play", true);
+            waitUntil("first episode renders", 40000, () -> state() != null && state().renderedFirstFrame && state().playing);
+            seek(.98f);
+            waitUntil("countdown appears", 15000, () -> shown(R.id.up_next));
+            waitUntil("play now focused", 3000, () -> focused(R.id.up_next_play));
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);
+            waitUntil("cancel focused", 3000, () -> focused(R.id.up_next_cancel));
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);
+            waitUntil("countdown dismissed", 3000, () -> !shown(R.id.up_next));
+            assertTrue("cancel keeps the first episode ended", state().ended);
         }
     }
 

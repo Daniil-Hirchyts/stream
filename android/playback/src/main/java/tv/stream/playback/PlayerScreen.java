@@ -211,6 +211,9 @@ public final class PlayerScreen implements PlaybackSession.Listener, MenuPanel.L
         controls.show();
     }
 
+    /** Logical visibility changes when the controls begin fading, before the view becomes gone. */
+    public boolean controlsVisible() { return controls.isShown(); }
+
     /** For an app whose menu is a popup over the video: the overlay stays visible beneath an open menu. */
     public void keepControlsBehindMenu(boolean keep) {
         controlsBehindMenu = keep;
