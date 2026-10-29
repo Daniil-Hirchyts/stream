@@ -1,6 +1,6 @@
 # Stream Android
 
-Java/XML, minimum API 26, compile/target API 36. Four modules:
+Kotlin/XML, minimum API 26, compile/target API 36. Four modules:
 
 - `:playback`: repository-owned Media3 UI/session library in `android/playback`.
 - `:codecs`: bundled software decoder integration.

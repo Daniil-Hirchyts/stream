@@ -1,0 +1,145 @@
+package tv.stream.app
+
+import org.junit.Assert.*
+import android.graphics.Rect
+import android.os.SystemClock
+import android.view.View
+import android.view.ViewGroup
+import android.view.ViewTreeObserver
+import android.widget.TextView
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import org.json.JSONObject
+import org.junit.Test
+import tv.stream.app.addon.Title
+import tv.stream.app.ui.Item
+import tv.stream.app.ui.Page
+import tv.stream.app.ui.PageAdapter
+
+class InterfacePolishTest : AppHarness() {
+    @Test @Throws(Exception::class) fun keyboardLanguagesKeepTheQueryAndFillEveryRowWithoutVoiceInput() {
+        services.store.setPreference("keyboardLanguages", "en,fr,de,es,it,pt,ru,uk")
+        launch(); waitUntil("Home", 10000) { visible("Make yourself at home") }
+        tap("Search", true); waitUntil("English keys", 5000) { visible("Type a") }
+        tap("Type a", false); tap("Type b", true)
+        waitUntil("typed query", 5000) { query() == "ab" }
+        val queryTop = AtomicInteger(); val keysTop = AtomicInteger()
+        val shortest = AtomicInteger(Int.MAX_VALUE); val tallest = AtomicInteger()
+        browse!!.onActivity { activity ->
+            queryTop.set(bounds(activity.findViewById(R.id.search_query)).top)
+            keysTop.set(bounds(activity.findViewById<View>(R.id.page_rows).findViewWithTag("keyboard-keys")).top)
+        }
+        for (code in tv.stream.app.ui.KeyboardLanguages.CODES) {
+            waitUntil("language $code", 5000) { visible(tv.stream.app.ui.KeyboardLanguages.name(code)) }
+            assertFalse("Speech input was removed", visible("Voice input"))
+            for (page in 0 until 3) {
+                SystemClock.sleep(150)
+                browse!!.onActivity { activity ->
+                    val keys = activity.findViewById<View>(R.id.page_rows).findViewWithTag<ViewGroup>("keyboard-keys")
+                    assertNotNull(keys)
+                    assertEquals("The query stays anchored at the top", queryTop.get().toLong(), bounds(activity.findViewById(R.id.search_query)).top.toLong())
+                    val keyboard = bounds(keys)
+                    val surface = bounds(activity.findViewById<View>(R.id.page_rows).findViewWithTag("keyboard-surface"))
+                    val inset = keyboard.left - surface.left
+                    assertEquals("Panel padding matches horizontally and vertically", inset.toLong(), (keyboard.top - surface.top).toLong())
+                    assertEquals("Panel padding matches at the right edge", inset.toLong(), (surface.right - keyboard.right).toLong())
+                    assertEquals("Panel padding matches at the bottom edge", inset.toLong(), (surface.bottom - keyboard.bottom).toLong())
+                    assertEquals("Different languages and character pages grow down from the same top", keysTop.get().toLong(), keyboard.top.toLong())
+                    val rows = activity.findViewById<View>(R.id.page_rows)
+                    assertTrue("Every key stays inside the bottom safe area", keyboard.bottom <= bounds(rows).bottom - rows.paddingBottom)
+                    shortest.set(Math.min(shortest.get(), keys.height))
+                    tallest.set(Math.max(tallest.get(), keys.height))
+                    for (r in 0 until keys.childCount) {
+                        val row = keys.getChildAt(r) as ViewGroup
+                        assertTrue(row.childCount > 0)
+                        val last = row.getChildAt(row.childCount - 1)
+                        assertEquals("Every language/page fills the row", keys.width.toLong(), last.right.toLong())
+                    }
+                }
+                if (code == "de" && page == 2) screenshot("validation-keyboard-popup-short.png")
+                if (code == "ru" && page == 0) screenshot("validation-keyboard-popup-long.png")
+                if (page == 0) tap("Show 123 keys", false)
+                else if (page == 1) tap("Show àéü keys", true)
+            }
+            tap("Change keyboard language", true)
+        }
+        assertTrue("The fixed anchor was checked across different keyboard heights", tallest.get() > shortest.get())
+        assertEquals("Changing layouts preserves the query", "ab", query())
+        tap("Type z", false); waitUntil("still editable", 5000) { query() == "abz" }
+        screenshot("keyboard-languages.png")
+    }
+
+    @Test @Throws(Exception::class) fun clockStaysVisibleAndIconCaptionsCrossfade() {
+        readyLibrary(); launch(); waitUntil("Home clock", 10000) { visible("Generated Film") && clockShown() }
+        val hidden = AtomicInteger()
+        val frameClock = arrayOfNulls<View>(1)
+        val captionCheck = AtomicReference<ViewGroup>()
+        val outgoingFaded = java.util.concurrent.atomic.AtomicBoolean()
+        val incomingFaded = java.util.concurrent.atomic.AtomicBoolean()
+        val listener = ViewTreeObserver.OnPreDrawListener {
+            if (frameClock[0]!!.visibility != View.VISIBLE) hidden.incrementAndGet()
+            val caption = captionCheck.get()
+            if (caption != null) {
+                val outgoing = caption.getChildAt(0) as TextView; val incoming = caption.getChildAt(1) as TextView
+                if (outgoing.text.toString() == "Add favourite" && outgoing.alpha > 0 && outgoing.alpha < 1) outgoingFaded.set(true)
+                if (incoming.text.toString() == "Mark watched" && incoming.alpha > 0 && incoming.alpha < 1) incomingFaded.set(true)
+            }
+            true
+        }
+        browse!!.onActivity { activity -> frameClock[0] = activity.findViewById(R.id.clock)
+            activity.findViewById<View>(R.id.browse_root).viewTreeObserver.addOnPreDrawListener(listener) }
+        tap("Refresh", true); waitUntil("refreshed", 10000) { visible("Generated Film") }
+        tap("Generated Film", false); waitUntil("details", 10000) { visible("Play") }
+        SystemClock.sleep(350)
+        browse!!.onActivity { activity -> activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("favourite").requestFocus() }
+        SystemClock.sleep(350)
+        browse!!.onActivity { activity ->
+            captionCheck.set(activity.findViewById<View>(R.id.page_rows).findViewWithTag("action-caption"))
+            activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("watched").requestFocus()
+        }
+        waitUntil("old and new icon captions fade separately", 1500) { outgoingFaded.get() && incomingFaded.get() }
+        SystemClock.sleep(250); screenshot("icon-caption-transition.png")
+        tap("Back", false); waitUntil("Home restored", 5000) { visible("Browse") }
+        browse!!.onActivity { activity -> activity.findViewById<View>(R.id.browse_root).viewTreeObserver.removeOnPreDrawListener(listener) }
+        assertEquals("No hidden-clock frame during reload or navigation", 0, hidden.get().toLong())
+    }
+
+    @Test @Throws(Exception::class) fun galleryCardsOmitYearsAndRedundantCollectionLabels() {
+        val film = Title.parse("local", JSONObject().put("id", "test:clean-gallery").put("type", "movie")
+                .put("name", "A Quiet Film").put("releaseInfo", "1999"))!!
+        services.store.favourite(film, true); services.store.watched(film, film.id, true)
+        launch(); waitUntil("favourite on Home", 10000) { visible("A Quiet Film") }
+        assertFalse("Home spotlight omits the year", visible("1999"))
+        val owner = AtomicReference<MainActivity>(); browse!!.onActivity { activity -> owner.set(activity) }
+        val screens = BrowseScreens(owner.get(), services)
+        val library: Page = screens.library(); var count = 0
+        for (item: Item in library.items) for (tile: Item.Tile in item.tiles) {
+            count++; assertEquals("No year, Favourite or Watched caption", "", tile.subtitle)
+            assertEquals("Collection context needs no duplicate badge", 0, tile.badge.toLong())
+            assertTrue("Completed history needs no full progress bar", tile.progress < 0)
+        }
+        assertEquals(2, count.toLong())
+        assertEquals("", screens.poster("browse", film).subtitle)
+        assertTrue("Year stays available in title details", PageAdapter.metaLine(film).contains("1999"))
+        tap("Library", true); waitUntil("Watch history", 5000) { visible("Watch history") }
+        assertFalse(visible("1999")); assertFalse(visible("Watched")); assertFalse(visible("Favourite"))
+        screenshot("library-clean-captions.png")
+    }
+    private fun query(): String {
+        val value = AtomicReference<String>()
+        browse!!.onActivity { activity -> value.set((activity.findViewById<View>(R.id.search_query) as TextView).text.toString()) }; return value.get()
+    }
+    private fun bounds(view: View): Rect {
+        val point = IntArray(2); view.getLocationOnScreen(point)
+        return Rect(point[0], point[1], point[0] + view.width, point[1] + view.height)
+    }
+    private fun clockShown(): Boolean {
+        val shown = AtomicInteger(); browse!!.onActivity { activity -> shown.set(if (activity.findViewById<View>(R.id.clock).isShown) 1 else 0) }; return shown.get() == 1
+    }
+    @Throws(Exception::class)
+    private fun screenshot(name: String) {
+        val bitmap: android.graphics.Bitmap? = instrumentation.uiAutomation.takeScreenshot(); assertNotNull(bitmap)
+        java.io.FileOutputStream(java.io.File(context.filesDir, name)).use { out -> bitmap!!.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out) }
+        bitmap!!.recycle()
+    }
+}

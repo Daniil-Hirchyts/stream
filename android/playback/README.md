@@ -1,6 +1,6 @@
 # Stream playback
 
-This repository owns this Java/XML Media3 library, included as `:playback` by
+This repository owns this Kotlin/XML Media3 library, included as `:playback` by
 `android/settings.gradle`. PlaybackSession and PlayerScreen implement transport,
 tracks, subtitle compatibility, overlays, menu, pointer and remote controls.
 The app supplies resource overrides and its own codec policy. No external app

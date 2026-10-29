@@ -13,7 +13,7 @@ authorization. Preserve other AVDs, owner data, ADB preferences and TLS checking
 
 ## Source ownership
 
-- `android/app`: Java/XML/RecyclerView UI, add-ons, encrypted SQLite library,
+- `android/app`: Kotlin/XML/RecyclerView UI, add-ons, encrypted SQLite library,
   history and private imports; application ID `tv.stream.app`.
 - `android/playback`: this repository's Media3 player, subtitle compatibility,
   menus, overlays and resources; package `tv.stream.playback`.
@@ -25,7 +25,7 @@ authorization. Preserve other AVDs, owner data, ADB preferences and TLS checking
   seeder (58134), fixture service (58133), untrusted TLS fixture (58135).
 
 The Android build includes its own `:playback`, `:torrent`, `:codecs` and `:app`.
-Use Java for Android UI/Media3. Style the app player through app resource
+Use Kotlin for Android UI/Media3. Style the app player through app resource
 _overrides_; do not alter reusable playback behavior just to restyle it.
 A new name must not reintroduce personal branding into source, paths or comments.
 

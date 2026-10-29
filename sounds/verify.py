@@ -13,8 +13,8 @@ import sounds
 def verify():
     assert sounds.CHOSEN == palettes.APPROVAL["pack"] == "soft"
     root = Path(sounds.ROOT)
-    java = (root / "android/app/src/main/java/tv/stream/app/ui/Sounds.java").read_text()
-    timings = dict(re.findall(r"R\.raw\.sfx_(\w+), Size\.\w+, ([\d.]+)", java))
+    source = (root / "android/app/src/main/java/tv/stream/app/ui/Sounds.kt").read_text()
+    timings = dict(re.findall(r"R\.raw\.sfx_(\w+), Size\.\w+, ([\d.]+)", source))
     expected_names = {name.replace("-", "_") for name, *_ in sounds.EVENTS}
     assert set(timings) == expected_names, "Android / generator event mismatch"
     pcm_bytes = 0

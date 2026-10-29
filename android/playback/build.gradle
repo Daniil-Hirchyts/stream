@@ -1,4 +1,4 @@
-plugins { id 'com.android.library' }
+plugins { id 'com.android.library'; id 'org.jetbrains.kotlin.android' }
 android {
     namespace 'tv.stream.playback'
     compileSdk 36
@@ -9,6 +9,7 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    kotlinOptions { jvmTarget = '17' }
 }
 dependencies {
     // Includes fixes for active subtitle cues after seeking or enabling a track.

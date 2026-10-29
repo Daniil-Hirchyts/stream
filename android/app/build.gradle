@@ -1,4 +1,4 @@
-plugins { id 'com.android.application' }
+plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
 def releaseValidation = providers.gradleProperty('releaseValidation').orNull == 'true'
 def separateTvApp = providers.gradleProperty('separateTvApp').orNull == 'true'
 
@@ -22,6 +22,7 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    kotlinOptions { jvmTarget = '17' }
     buildFeatures { buildConfig true }
     // JVM tests of the add-on protocol code; Android stubs answer defaults and org.json comes from its own artifact.
     // Robolectric UI snapshots need the merged resources.

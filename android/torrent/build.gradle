@@ -1,4 +1,4 @@
-plugins { id 'com.android.library' }
+plugins { id 'com.android.library'; id 'org.jetbrains.kotlin.android' }
 
 // The streaming engine (native) built for each ABI: armeabi-v7a for the Fire TV Stick, arm64-v8a for
 // the local emulator, x86_64 for Linux emulators in CI. Versions come from the native dependency lock.
@@ -36,6 +36,7 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    kotlinOptions { jvmTarget = '17' }
     // A library's test APK otherwise targets minSdk, and Play Protect blocks apps built for old Android.
     testOptions { targetSdk 36 }
     lint { targetSdk 36 }
