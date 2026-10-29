@@ -22,7 +22,7 @@ class PlaybackDemand {
         return estimate
     }
     companion object {
-        @JvmStatic fun aheadSeconds(firstFrame: Boolean, bufferedDurationMs: Long): Int {
+        fun aheadSeconds(firstFrame: Boolean, bufferedDurationMs: Long): Int {
             return if (firstFrame) Math.max(5L, Math.min(45L, 45L - Math.max(0L, bufferedDurationMs) / 1000)).toInt() else 5
         }
     }

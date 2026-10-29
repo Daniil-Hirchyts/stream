@@ -4,7 +4,7 @@ import java.io.IOException
 
 /** A streaming failure with a kind the app can act on; an IOException so Media3 reports it as a load error. */
 class TorrentException(
-    @JvmField val kind: Int,
+    val kind: Int,
     message: String?,
 ) : IOException(message) { // Called from native code: (ILjava/lang/String;)V.
     companion object {

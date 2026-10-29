@@ -31,7 +31,7 @@ class ErrorQrPanel : LinearLayout {
     private val image: CodeView
 
     companion object {
-        @JvmStatic fun attach(container: ViewGroup, developerMode: Boolean, report: DiagnosticReport?) {
+        fun attach(container: ViewGroup, developerMode: Boolean, report: DiagnosticReport?) {
             container.removeAllViews()
             container.visibility = if (developerMode && report != null) View.VISIBLE else View.GONE
             if (developerMode && report != null) {
@@ -41,7 +41,7 @@ class ErrorQrPanel : LinearLayout {
             }
         }
 
-        @JvmStatic fun alert(context: Context, report: DiagnosticReport): Tv.Alert {
+        fun alert(context: Context, report: DiagnosticReport): Tv.Alert {
             val alert = Tv.alert(context, "Error report", null as CharSequence?)
             alert.surface.removeAllViews(); alert.surface.setPadding(0, 0, 0, 0)
             alert.surface.addView(ErrorQrPanel(context, report))
@@ -59,7 +59,7 @@ class ErrorQrPanel : LinearLayout {
             return button
         }
 
-        @JvmStatic @Throws(WriterException::class)
+        @Throws(WriterException::class)
         fun encode(payload: String): BitMatrix {
             val hints = EnumMap<EncodeHintType, Any>(EncodeHintType::class.java)
             hints[EncodeHintType.CHARACTER_SET] = "UTF-8"; hints[EncodeHintType.ERROR_CORRECTION] = ErrorCorrectionLevel.M; hints[EncodeHintType.MARGIN] = 4

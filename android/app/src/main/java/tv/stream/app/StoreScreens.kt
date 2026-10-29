@@ -20,8 +20,8 @@ import tv.stream.app.ui.Page
  * Community lists by default). Every install goes through a review of the add-on's own current manifest.
  */
 class StoreScreens(private val nav: Navigator, private val services: TvApplication.Services) {
-    private class Lists(@JvmField val configuration: List<String>, @JvmField val result: AddonRepository.Result<AddonListing>) {
-        @JvmField val loadedAt: Long = android.os.SystemClock.elapsedRealtime()
+    private class Lists(val configuration: List<String>, val result: AddonRepository.Result<AddonListing>) {
+        val loadedAt: Long = android.os.SystemClock.elapsedRealtime()
     }
     @Volatile private var lists: Lists? = null
 
@@ -168,13 +168,13 @@ class StoreScreens(private val nav: Navigator, private val services: TvApplicati
     }
 
     companion object {
-        @JvmField val FILTERS = arrayOf("All", "Sources", TorrentAddons.COLLECTION, "Catalogues", "Subtitles")
+        val FILTERS = arrayOf("All", "Sources", TorrentAddons.COLLECTION, "Catalogues", "Subtitles")
         private const val LIST_CACHE_MS: Long = 60_000
 
         /** Opens the store on one kind of add-on, such as Sources from a title that has none. */
-        @JvmStatic fun route(filter: String): Route { val r = Route("Add-ons"); r.extras["filter"] = filter; return r }
+        fun route(filter: String): Route { val r = Route("Add-ons"); r.extras["filter"] = filter; return r }
         /** The starter pack's review page: the store's page for installing Cinemeta, Internet Archive and OpenSubtitles together. */
-        @JvmStatic fun starters(): Route { val r = Route("Add-on review"); r.value = StarterAddons.PACK; return r }
+        fun starters(): Route { val r = Route("Add-on review"); r.value = StarterAddons.PACK; return r }
 
         private fun matches(l: AddonListing, filter: String): Boolean {
             return matches(l.manifest, l.torrents(), filter)
@@ -189,26 +189,26 @@ class StoreScreens(private val nav: Navigator, private val services: TvApplicati
             }
         }
 
-        @JvmStatic @Throws(AddonException::class)
+        @Throws(AddonException::class)
         fun configurationAddress(url: String): String {
             val curated: TorrentAddons.Entry? = TorrentAddons.find(url)
             return if (curated == null) AddonUrl(url).configuration() else curated.configureUrl
         }
 
         /** An installed add-on at this address, or another configuration of the same add-on. */
-        @JvmStatic fun installed(url: String, manifestId: String, installed: List<InstalledAddon>): InstalledAddon? {
+        fun installed(url: String, manifestId: String, installed: List<InstalledAddon>): InstalledAddon? {
             for (a in installed) if (a.address.manifest == url) return a
             for (a in installed) if (a.manifest.id == manifestId) return a
             return null
         }
-        @JvmStatic fun kinds(m: AddonManifest): String {
+        fun kinds(m: AddonManifest): String {
             val parts: MutableList<String> = ArrayList()
             if (m.declares(AddonManifest.STREAM)) parts.add("Sources")
             if (m.declares(AddonManifest.CATALOG) && !m.catalogs.isEmpty() || m.declares(AddonManifest.META)) parts.add("Catalogues")
             if (m.declares(AddonManifest.SUBTITLES)) parts.add("Subtitles")
             return if (parts.isEmpty()) "Other" else parts.joinToString(" · ")
         }
-        @JvmStatic fun supplies(m: AddonManifest): String {
+        fun supplies(m: AddonManifest): String {
             val parts: MutableList<String> = ArrayList()
             if (m.declares(AddonManifest.STREAM)) {
                 val types = types(typesOf(m, AddonManifest.STREAM)).lowercase(java.util.Locale.ROOT)
@@ -225,7 +225,7 @@ class StoreScreens(private val nav: Navigator, private val services: TvApplicati
             for (r in m.resources) if (r.name == resource && !r.types.isEmpty()) return r.types
             return m.types
         }
-        @JvmStatic fun types(types: List<String>): String {
+        fun types(types: List<String>): String {
             val labels: MutableList<String> = ArrayList()
             for (t in types) if (labels.size < 3) labels.add(BrowseScreens.typeLabel(t))
             return labels.joinToString(", ")

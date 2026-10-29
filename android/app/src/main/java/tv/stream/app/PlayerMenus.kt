@@ -17,7 +17,7 @@ import tv.stream.app.ui.Tv
 
 /** App-owned popup presentation; Media3, cue handling and the shared session remain unchanged. */
 class PlayerMenus(private val activity: WatchActivity, private val session: PlaybackSession, private val screen: PlayerScreen, private val preferences: SharedPreferences, private val host: Host) {
-    class SubtitleOffer(@JvmField val label: String, @JvmField val choose: Runnable)
+    data class SubtitleOffer(val label: String, val choose: Runnable)
     interface Host {
         fun hasEpisode(direction: Int): Boolean
         fun episode(direction: Int)
@@ -31,7 +31,7 @@ class PlayerMenus(private val activity: WatchActivity, private val session: Play
     }
     companion object {
         private val SPEEDS = floatArrayOf(.5f, .75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
-        @JvmStatic fun speed(value: Float): String = java.math.BigDecimal.valueOf(value.toDouble()).stripTrailingZeros().toPlainString() + "×"
+        fun speed(value: Float): String = java.math.BigDecimal.valueOf(value.toDouble()).stripTrailingZeros().toPlainString() + "×"
     }
     private val main = Handler(Looper.getMainLooper())
     private var root: Tv.Alert? = null

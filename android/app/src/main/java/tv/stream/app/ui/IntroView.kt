@@ -259,7 +259,7 @@ class IntroView(context: Context) : View(context) {
         private const val ROWS = 3
         private const val POSTERS_PER_ROW = 9
 
-        @JvmStatic fun minimumMs(): Long { return TRACE_MS + FILL_MS + LETTER_STAGGER * NAME.length + LETTER_MS + 500 }
+        fun minimumMs(): Long { return TRACE_MS + FILL_MS + LETTER_STAGGER * NAME.length + LETTER_MS + 500 }
 
         private fun ease(x: Float): Float { val inv = 1f - x; return 1f - inv * inv * inv }
     }

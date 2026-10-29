@@ -19,8 +19,8 @@ class ProviderExecutor : ThreadPoolExecutor(PARALLELISM, PARALLELISM, 0, TimeUni
         val queued = queue.toTypedArray()
         for (item in queued) if (queue.remove(item)) queue.offer(item as Runnable)
     }
-    private class Work(@JvmField val command: Runnable, @JvmField val scope: Cancellation, @JvmField val sequence: Long) : Runnable, Comparable<Work> {
-        @JvmField var abort: Runnable? = null
+    private class Work(val command: Runnable, val scope: Cancellation, val sequence: Long) : Runnable, Comparable<Work> {
+        var abort: Runnable? = null
         override fun run() { try { command.run() } finally { scope.remove(abort) } }
         override fun compareTo(other: Work): Int {
             val order = Integer.compare(scope.priority(), other.scope.priority())

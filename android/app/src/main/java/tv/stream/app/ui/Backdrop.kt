@@ -90,7 +90,7 @@ class Backdrop(
         private const val SETTLE_MS = 280L
         private const val FADE_MS = 420L
 
-        @JvmStatic fun art(title: Title?): String? {
+        fun art(title: Title?): String? {
             if (title == null) return null
             return if (title.background != null) title.background else title.poster
         }

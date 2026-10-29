@@ -34,7 +34,6 @@ class MenuPanel(private val activity: Activity, private val listener: Listener) 
         }
 
         companion object {
-            @JvmStatic
             fun of(title: String, previewsSubtitles: Boolean, items: Supplier<List<Item>>): Page {
                 return object : Page {
                     override fun title(): String { return title }
@@ -47,13 +46,13 @@ class MenuPanel(private val activity: Activity, private val listener: Listener) 
 
     class Item private constructor(
         // Read by MenuPanel; Kotlin gives an outer class no access to a nested class's private members.
-        @JvmField val kind: Int,
-        @JvmField val label: String,
-        @JvmField val value: String?,
-        @JvmField val checked: Boolean,
-        @JvmField val action: Runnable,
+        val kind: Int,
+        val label: String,
+        val value: String?,
+        val checked: Boolean,
+        val action: Runnable,
     ) {
-        @JvmField var focusAction: Runnable? = null
+        var focusAction: Runnable? = null
 
         /** Optional immediate feedback while moving through appearance choices, without pressing OK. */
         fun onFocus(run: Runnable?): Item {
@@ -67,27 +66,24 @@ class MenuPanel(private val activity: Activity, private val listener: Listener) 
             const val ACTION = 2
 
             /** A row that opens another page, showing its current value; a current row gets the focus first. */
-            @JvmStatic
             fun page(label: String, value: String?, current: Boolean, open: Runnable): Item {
                 return Item(PAGE, label, value, current, open)
             }
 
             /** One value of a list; the current one is ticked. */
-            @JvmStatic
             fun choice(label: String, value: String?, checked: Boolean, choose: Runnable): Item {
                 return Item(CHOICE, label, value, checked, choose)
             }
 
-            @JvmStatic
             fun action(label: String, value: String?, run: Runnable): Item {
                 return Item(ACTION, label, value, false, run)
             }
         }
     }
 
-    private class Entry(@JvmField val page: Page) {
-        @JvmField var items: List<Item>
-        @JvmField var focus: Int
+    private class Entry(val page: Page) {
+        var items: List<Item>
+        var focus: Int
 
         init {
             items = page.items()

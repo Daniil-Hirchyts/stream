@@ -46,10 +46,10 @@ class GlassView : BlurView {
     }
 
     companion object {
-        @JvmField val LIVE_BLUR: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        val LIVE_BLUR: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
         /** A plain container where live blur isn't available; the caller sets its platter. */
-        @JvmStatic fun surface(context: Context): android.widget.FrameLayout {
+        fun surface(context: Context): android.widget.FrameLayout {
             return if (LIVE_BLUR) GlassView(context) else android.widget.FrameLayout(context)
         }
     }

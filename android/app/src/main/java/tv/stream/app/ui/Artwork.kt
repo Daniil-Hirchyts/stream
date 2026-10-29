@@ -176,7 +176,7 @@ constructor(private val disk: File?) : AutoCloseable {
         }
 
         /** Crops fully transparent margins (logo files often centre a small mark in a wide canvas). */
-        @JvmStatic fun trim(source: Bitmap): Bitmap {
+        fun trim(source: Bitmap): Bitmap {
             val width = source.width
             val height = source.height
             val pixels = IntArray(width * height)
@@ -195,9 +195,9 @@ constructor(private val disk: File?) : AutoCloseable {
         }
 
         /** Three box-blur passes over a tiny bitmap approximate a wide Gaussian blur once it is scaled to the screen. */
-        @JvmStatic fun blur(source: Bitmap): Bitmap { return blur(source, false) }
+        fun blur(source: Bitmap): Bitmap { return blur(source, false) }
         /** @param fade make the top transparent, easing to opaque from 30% to 75% of the height */
-        @JvmStatic fun blur(source: Bitmap, fade: Boolean): Bitmap {
+        fun blur(source: Bitmap, fade: Boolean): Bitmap {
             val width = source.width
             val height = source.height
             val radius = Math.max(2, Math.min(width, height) / 12)

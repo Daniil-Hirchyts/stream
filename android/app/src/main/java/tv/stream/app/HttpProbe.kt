@@ -33,7 +33,7 @@ class HttpProbe(uri: Uri, scope: Cancellation) : BaseDataSource(true) {
     private var remaining: Long = C.LENGTH_UNSET.toLong()
     private var transferred = false
     private var prefetched = 0
-    @JvmField val until: Long = SystemClock.elapsedRealtime() + 2000
+    val until: Long = SystemClock.elapsedRealtime() + 2000
     private val probing = AtomicBoolean(true)
     private val abort = Runnable { val active = connection; active?.disconnect() }
     private val deadline: java.util.concurrent.ScheduledFuture<*>

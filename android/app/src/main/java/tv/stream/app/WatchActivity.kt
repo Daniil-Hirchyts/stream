@@ -1,6 +1,5 @@
 package tv.stream.app
 
-import android.app.Activity
 import android.app.Dialog
 import android.content.Context
 import android.content.Intent
@@ -13,6 +12,12 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import androidx.annotation.OptIn
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.ComponentActivity
+import androidx.core.view.doOnAttach
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.Player
@@ -25,10 +30,10 @@ import java.util.ArrayList
 import java.util.Collections
 import java.util.LinkedHashMap
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Future
 import tv.stream.playback.*
 import tv.stream.app.addon.*
 import tv.stream.app.data.TvStore
+import tv.stream.app.ui.ComposePlayerControls
 import tv.stream.app.ui.Failures
 import tv.stream.app.ui.Sounds
 import tv.stream.app.ui.Tv
@@ -37,7 +42,7 @@ import tv.stream.torrent.*
 /** Retains paused playback across temporary hiding. The serial loader owns native create/select/destroy operations. */
 @OptIn(markerClass = [UnstableApi::class])
 @Suppress("DEPRECATION")
-class WatchActivity : Activity(), PlaybackHost {
+class WatchActivity : ComponentActivity(), PlaybackHost {
     private val main = Handler(Looper.getMainLooper())
     private lateinit var loader: ExecutorService
     private lateinit var app: TvApplication
@@ -47,13 +52,11 @@ class WatchActivity : Activity(), PlaybackHost {
     private var playerClockFormat: String = "off"
     private var playerClockEnabled = false
     private val coordinator = PlaybackCoordinator()
-    private var discovery: PlaybackPreparation.Entry? = null
-    private var preparation: Future<*>? = null
-    private var scope: Cancellation? = null
-    @Volatile private var generation = 0
+    private lateinit var playback: PlaybackViewModel
+    private lateinit var work: PlaybackWork
+    private val generation: Int get() = work.generation
     private var visible = false
     private var releasing = false
-    private var automatic = false
     private var switching = false
     private var failureQueued = false
     private var waitingSources = false
@@ -61,16 +64,12 @@ class WatchActivity : Activity(), PlaybackHost {
     private var title: Title? = null
     private var video: String? = null
     private var explicitKey: String? = null
-    private var candidates: List<MediaSource> = Collections.emptyList()
     /** How each candidate went before, read with them; this activity's own outcomes are added as they happen. */
     private var marks: MutableMap<String, TvStore.SourceMark> = java.util.HashMap()
-    private var selected: MediaSource? = null
     /** What the sounds last heard: the play state (only the viewer's change of it sounds), and where the position was and when. */
     private var heardPlay: Boolean? = null
     private var heardAt: Long = 0
     private var heardPosition: Long = 0
-    private var candidate = 0
-    private var attempts = 0
     private var startMs: Long = 0
     private var firstFrameMs: Long = 0
     private var lastAdvanceMs: Long = 0
@@ -103,8 +102,6 @@ class WatchActivity : Activity(), PlaybackHost {
     private var preferredSubtitleRevision = 0
     private val refreshedSources: MutableSet<String> = java.util.HashSet()
     private var developerMode = false
-    private val attemptedSources: MutableSet<String> = java.util.HashSet()
-    private val attemptedProviders: MutableSet<String> = java.util.HashSet()
     private val sourceFailures = JSONArray()
     private var handledError: PlaybackErrors.Description? = null
     private var keepPausedOnRecovery = false
@@ -134,12 +131,12 @@ class WatchActivity : Activity(), PlaybackHost {
         /** Public torrents: trackers answer within seconds, a cold DHT lookup can take most of a minute. */
         private const val METADATA_MS: Long = 60_000
         /** The player's buttons, which grow while focused or under the pointer, like the app's own controls. */
-        @JvmField val LIFTED = intArrayOf(R.id.control_stop, R.id.control_watched, R.id.control_options, R.id.control_settings)
+        val LIFTED = intArrayOf(R.id.control_stop, R.id.control_watched, R.id.control_options, R.id.control_settings)
         /** Left and right move along the top row in this order. */
         private val HEADER = intArrayOf(R.id.control_stop, R.id.control_watched, R.id.control_options, R.id.control_settings)
         private val ERROR_BUTTONS = intArrayOf(R.id.error_retry, R.id.error_sources, R.id.error_close)
 
-        @JvmStatic fun intent(context: Context, title: Title, video: String?, sourceKey: String?): Intent {
+        fun intent(context: Context, title: Title, video: String?, sourceKey: String?): Intent {
             return Intent(context, WatchActivity::class.java).putExtra("provider", title.provider).putExtra("titleId", title.id)
                     .putExtra("type", title.type).putExtra("name", title.name).putExtra("logo", title.logo).putExtra("video", video).putExtra("source", sourceKey)
         }
@@ -166,13 +163,23 @@ class WatchActivity : Activity(), PlaybackHost {
     private fun show(alert: Tv.Alert): Dialog { alert.show(); return alert.dialog }
 
     override fun onCreate(state: Bundle?) {
-        super.onCreate(state); app = application as TvApplication; loader = app.playbackLoader; Sounds.get(this)
+        super.onCreate(state)
+        app = application as TvApplication
+        loader = app.playbackLoader
+        playback = ViewModelProvider(this)[PlaybackViewModel::class.java]
+        work = playback.attach()
+        lifecycleScope.launch {
+            playback.presentation.collect { renderPresentation(it) }
+        }
+        Sounds.get(this)
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         video = intent.getStringExtra("video"); explicitKey = intent.getStringExtra("source")
         if (state != null) { video = state.getString("video", video); resumePosition = state.getLong("position", 0); startedIntent = true; continuingPlayback = true
             retainedSpeed = state.getFloat("speed", 1f); keepPausedOnRecovery = state.getBoolean("paused", false) }
-        if (android.os.Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(
-                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, android.window.OnBackInvokedCallback { onBackPressed() })
+        // ComponentActivity bridges this callback to platform Back on API 33+ and onBackPressed below it.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = exitOrCloseOverlay()
+        })
     }
     override fun onStart() {
         super.onStart(); visible = true; releasing = false; Sounds.get(this).refresh(this)
@@ -193,27 +200,24 @@ class WatchActivity : Activity(), PlaybackHost {
             main.removeCallbacks(tick); main.post(tick)
             return
         }
+        if (work.isClosed) work = playback.attach()
         developerMode = false
         setContentView(R.layout.activity_watch)
         completionRecorded = false
-        val mine = ++generation
-        preparation = loader.submit(Runnable {
+        val mine = work.nextGeneration()
+        work.task = loader.submit(Runnable {
             try {
-                val data = app.services()
-                val diagnosticsEnabled = SetupScreens.developerMode(data)
-                main.post { if (current(mine)) developerMode = diagnosticsEnabled }
-                val clockFormat = SetupScreens.clockFormat(data); val clockShown = SetupScreens.playerClock(data)
-                var saved: Title? = null
-                val id = intent.getStringExtra("titleId"); val provider = intent.getStringExtra("provider")
-                for (e in data.store.library(false)) if (e.title.id.equals(id) && e.title.provider.equals(provider)) saved = e.title
-                if (saved == null) saved = Title.parse(provider!!, JSONObject().put("id", id).put("type", intent.getStringExtra("type")).put("name", intent.getStringExtra("name")).put("logo", intent.getStringExtra("logo")))
-                val chosen = saved
+                val setup = playback.sessionSetup(app, PlaybackLaunch(
+                        provider = intent.getStringExtra("provider").orEmpty(),
+                        titleId = intent.getStringExtra("titleId").orEmpty(),
+                        type = intent.getStringExtra("type"), name = intent.getStringExtra("name"),
+                        logo = intent.getStringExtra("logo")))
                 main.post(Runnable {
                     if (!current(mine)) return@Runnable
-                    services = data; title = chosen; developerMode = diagnosticsEnabled
+                    services = setup.services; title = setup.title; developerMode = setup.developerMode
                     findViewById<View>(R.id.loading_diagnostics).visibility = if (developerMode) View.VISIBLE else View.GONE
-                    playerClockFormat = clockFormat; playerClockEnabled = clockShown
-                    session = PlaybackSession(this, data.playerPreferences, getString(R.string.app_name), "Stream/0.1", this, 24 shl 20, StreamDecoders())
+                    playerClockFormat = setup.clockFormat; playerClockEnabled = setup.clockEnabled
+                    session = PlaybackSession(this, setup.services.playerPreferences, getString(R.string.app_name), "Stream/0.1", this, 24 shl 20, StreamDecoders())
                     session!!.player().setTrackSelectionParameters(session!!.player().getTrackSelectionParameters().buildUpon().setMaxVideoSize(1920, 1080).build())
                     session!!.player().addAnalyticsListener(object : AnalyticsListener {
                         override fun onVideoDecoderInitialized(time: AnalyticsListener.EventTime, name: String, at: Long, duration: Long) { videoDecoder = name }
@@ -232,7 +236,15 @@ class WatchActivity : Activity(), PlaybackHost {
                     androidx.media3.ui.StreamSubtitleOutput.font(findViewById(R.id.subtitles), tv.stream.app.ui.SubtitleFonts.selected(services!!.playerPreferences))
                     androidx.media3.ui.StreamSubtitleOutput.configure(findViewById(R.id.subtitles))
                     bindRemoteFocus()
-                    resolve(true); main.post(tick)
+                    updateWatchingInfo()
+                    val controls = findViewById<android.widget.FrameLayout>(R.id.controls)
+                    controls.doOnAttach layerAttached@ {
+                        if (!current(mine)) return@layerAttached
+                        ComposePlayerControls.install(controls, playback.controls) {
+                            if (!current(mine)) return@install
+                            resolve(true); main.post(tick)
+                        }
+                    }
                 })
             } catch (e: Exception) { main.post { if (current(mine)) {
                 val alert = Tv.alert(this, "Could not open this title", Failures.message(e))
@@ -248,11 +260,23 @@ class WatchActivity : Activity(), PlaybackHost {
             } } }
         })
     }
+    /** StateFlow owns the loading/error presentation; Media3 keeps its existing surface and controls. */
+    private fun renderPresentation(presentation: PlaybackPresentation) {
+        val playerScreen = screen ?: return
+        if (releasing) return
+        when (presentation) {
+            is PlaybackPresentation.Loading -> playerScreen.setLoading(PlayerScreen.Loading(
+                    presentation.id, presentation.step, presentation.detail, presentation.untilReady))
+            PlaybackPresentation.Ready -> if (playerScreen.loading() != null) playerScreen.setLoading(null)
+            is PlaybackPresentation.Failed -> { playerScreen.setLoading(null); playerScreen.render() }
+            PlaybackPresentation.Idle, PlaybackPresentation.Released -> Unit
+        }
+    }
     private fun current(mine: Int): Boolean = visible && !releasing && mine == generation && !isFinishing
     /** Keep source names and transport steps behind the viewer's diagnostics switch. */
     private fun showLoading(id: String, step: String, detail: String?, untilReady: Boolean) {
         diagnosticStage = step
-        screen!!.setLoading(PlayerScreen.Loading(id, step, if (developerMode) detail else null, untilReady))
+        playback.loading(id, step, if (developerMode) detail else null, untilReady)
     }
     /** Keep the first remote key usable after a pointer action; focus is taken before View handles the click. */
     @android.annotation.SuppressLint("ClickableViewAccessibility") // Returning false preserves each view's normal click/drag handling.
@@ -344,7 +368,7 @@ class WatchActivity : Activity(), PlaybackHost {
         lifts[view] = animator; animator.start()
     }
     private fun cancelPreparation() {
-        generation++; ranking = false; polling = ranking; if (scope != null) scope!!.close(); if (preparation != null) preparation!!.cancel(true)
+        work.cancel(); ranking = false; polling = false
         if (choiceDialog != null) { choiceDialog!!.dismiss(); choiceDialog = null }
     }
     private fun closeNative() {
@@ -354,47 +378,33 @@ class WatchActivity : Activity(), PlaybackHost {
         if (session == null || !visible) return
         clearErrorQr()
         save(session!!.snapshot()); session!!.stop(); cancelPreparation()
-        if (resetAttempts) { coordinator.begin(if (startedIntent) SystemClock.elapsedRealtime() else intent.getLongExtra("playTapped", 0)); startedIntent = true; recoveryStarted = 0; refreshedSources.clear(); resetPayloads.clear(); cachedTorrentSource = null; if (!continuingPlayback) keepPausedOnRecovery = false; attempts = 0; candidate = 0; attemptedSources.clear(); attemptedProviders.clear()
+        if (resetAttempts) { coordinator.begin(if (startedIntent) SystemClock.elapsedRealtime() else intent.getLongExtra("playTapped", 0)); startedIntent = true; recoveryStarted = 0; refreshedSources.clear(); resetPayloads.clear(); cachedTorrentSource = null; if (!continuingPlayback) keepPausedOnRecovery = false; playback.resetAttempts()
             while (sourceFailures.length() > 0) sourceFailures.remove(0); sourceResolution = JSONObject() }
-        waitingSources = true; switching = waitingSources; lastAdvanceMs = SystemClock.elapsedRealtime(); scope = services!!.addons.newRequest(); scope!!.priority(0)
-        val mine = generation; val request = scope!!
+        waitingSources = true; switching = waitingSources; lastAdvanceMs = SystemClock.elapsedRealtime(); work.scope = services!!.addons.newRequest(); work.scope!!.priority(0)
+        val mine = generation; val request = work.scope!!
         screen!!.setTitle(title!!.name); showLoading("sources", "Finding sources", null, false)
-        preparation = loader.submit(Runnable {
+        work.task = loader.submit(Runnable {
             try {
                 closeNative()
-                if (discovery != null) discovery!!.close()
-                var metadata = title
-                var choices: List<MediaSource> = Collections.emptyList()
-                var empty: Availability? = null
-                val resolution = JSONObject()
-                if (!title!!.provider.equals("local")) {
-                    discoveryVersion = -1; discovery = services!!.preparation.take(intent.getStringExtra("preparation"), title!!, video!!)
-                    choices = discovery!!.awaitCandidate(request, explicitKey)
-                    metadata = discovery!!.title
-                    val providers = services!!.addons.providers("stream", title!!.type, video)
-                    val found: AddonRepository.Result<MediaSource>? = discovery!!.result()
-                    val available = discovery!!.sources()
-                    resolution.put("providersAsked", providers.size).put("advertisedSources", available.size).put("playableSources", choices.size)
-                    if (choices.isEmpty()) empty = Availability.of(providers, available, if (found == null) Collections.emptyMap() else found.failures, services!!.store.addons())
-                }
-                autoplay = services!!.store.preference("autoplay", "true").equals("true")
-                Sounds.get(this).setEnabled(SetupScreens.soundsOn(services!!))
-                val progress = services!!.store.progress(metadata!!.key(), video!!)
-                val resume = if (resumePosition > 0) resumePosition else if (progress != null && !progress.watched) progress.positionMs else 0L
-                val history = services!!.store.sourceMarks(metadata.key(), video!!)
-                request.check(); val resolved = metadata; val sources = choices; val why = empty
+                val resolution = playback.resolveSources(work, services!!, title!!, video!!,
+                        explicitKey, intent.getStringExtra("preparation"), resumePosition, request)
+                discoveryVersion = -1
+                request.check()
                 main.post(Runnable {
                     if (!current(mine)) return@Runnable
-                    title = resolved; screen!!.setTitle(title!!.name)
-                    episodeWatched = progress != null && progress.watched; updateWatchedButton(); coordinator.mark("FIRST_SOURCE"); resumePosition = resume; candidates = sources; marks = history; sourceResolution = resolution
-                    automatic = explicitKey == null || explicitKey!!.isEmpty()
+                    title = resolution.title; screen!!.setTitle(title!!.name)
+                    episodeWatched = resolution.watched; updateWatchedButton(); coordinator.mark("FIRST_SOURCE")
+                    resumePosition = resolution.resumePosition; playback.candidates = resolution.candidates
+                    marks = resolution.marks.toMutableMap(); sourceResolution = JSONObject(resolution.diagnostics)
+                    autoplay = resolution.autoplay; Sounds.get(this).setEnabled(resolution.soundsEnabled)
+                    playback.automatic = explicitKey == null || explicitKey!!.isEmpty()
                     if (title!!.provider.equals("local")) { open(null, -1); return@Runnable }
-                    if (candidates.isEmpty()) { failure(why!!.heading, why.detail, "no-sources"); return@Runnable }
-                    if (!automatic) {
-                        for (i in 0 until candidates.size) if (SourcePolicy.key(candidates.get(i)).equals(explicitKey)) { candidate = i; open(candidates.get(i), -1); return@Runnable }
+                    if (playback.candidates.isEmpty()) { failure(resolution.unavailable!!.heading, resolution.unavailable.detail, "no-sources"); return@Runnable }
+                    if (!playback.automatic) {
+                        for (i in 0 until playback.candidates.size) if (SourcePolicy.key(playback.candidates.get(i)).equals(explicitKey)) { open(playback.candidates.get(i), -1); return@Runnable }
                         chooseSources(); return@Runnable
                     }
-                    candidate = 0; open(candidates.get(0), -1)
+                    open(playback.candidates.get(0), -1)
                 })
             } catch (e: Exception) { main.post { if (current(mine)) { failureCause = e; failure("Could not open this title", Failures.message(e), "provider") } } }
         })
@@ -403,15 +413,15 @@ class WatchActivity : Activity(), PlaybackHost {
         clearErrorQr()
         save(session!!.snapshot()); session!!.stop(); cancelPreparation()
         findViewById<View>(R.id.player_root).requestFocus()
-        val mine = generation; scope = services!!.addons.newRequest(); scope!!.priority(0); val request = scope!!
-        selected = source; waitingSources = false; playing = null; attachedSubtitles.clear(); subtitleOffers = Collections.emptyList()
+        val mine = generation; work.scope = services!!.addons.newRequest(); work.scope!!.priority(0); val request = work.scope!!
+        playback.selected = source; waitingSources = false; playing = null; attachedSubtitles.clear(); subtitleOffers = Collections.emptyList()
         val payloadReset = resettingPayload; resettingPayload = false
-        if (chosenIndex < 0 && !payloadReset) { attempts++; if (source != null) { attemptedSources.add(SourcePolicy.retryKey(source)); attemptedProviders.add(source.provider) } }
+        if (chosenIndex < 0 && !payloadReset) { playback.attempt(source) }
         handledError = null; observedAudio = null; observedVideo = observedAudio; heardPlay = null; heardAt = 0
         switching = true; failureQueued = false; preferencesInitialized = false; firstFrameMs = 0; droppedFrames = 0
         lastAdvanceMs = SystemClock.elapsedRealtime(); startMs = lastAdvanceMs; previousPosition = -1; startupWatchdog.start(startMs); coordinator.attempt(); demand.reset(); videoWatchdog.reset(startMs, 0, 0); nativeStats = JSONObject(); lastDemandUpdate = 0
         showLoading("preparing", "Opening source", sourceLabel(source), false)
-        preparation = loader.submit(Runnable {
+        work.task = loader.submit(Runnable {
             try {
                 // A chosen file reuses the metadata session; a changed source closes the previous one first.
                 if (chosenIndex < 0 || payloadReset) coordinator.remove()
@@ -487,11 +497,19 @@ class WatchActivity : Activity(), PlaybackHost {
                         reader
                     }
                 }
-                val playback = PlaybackRequest.Builder(uri, title!!.name).id(video!!).mediaIdentity(video + ":" + (if (source == null) "import:" + title!!.id else SourcePolicy.key(source))).detail(episodeLabel())
-                        .position(resumePosition).startPaused(keepPausedOnRecovery).continuing(continuingPlayback || payloadReset || attempts > 1).audioLanguage(if (audio.isEmpty() || audio.equals("off")) null else audio)
-                        .headers(if (source == null) Collections.emptyMap() else source.requestHeaders).subtitleHeaders(Collections.emptyMap())
-                        .subtitles(captions).subtitleRequest(SubtitleTracks.Request(if (subtitles.equals("off")) "off" else null, if (subtitles.equals("off")) null else subtitles, null))
-                        .mimeType(mediaMime).dataSource(dataSource).build()
+                val playback = PlaybackRequest(
+                        uri = uri, title = title!!.name, id = video!!,
+                        mediaIdentity = video + ":" + (if (source == null) "import:" + title!!.id else SourcePolicy.key(source)),
+                        detail = episodeLabel(), positionMs = resumePosition,
+                        startPaused = keepPausedOnRecovery,
+                        continuing = continuingPlayback || payloadReset || this.playback.attempts > 1,
+                        audioLanguage = audio.takeUnless { it.isEmpty() || it == "off" },
+                        headers = source?.requestHeaders ?: emptyMap(), subtitleHeaders = emptyMap(),
+                        subtitles = captions,
+                        subtitleRequest = SubtitleTracks.Request(
+                                if (subtitles == "off") "off" else null,
+                                if (subtitles == "off") null else subtitles, null),
+                        mimeType = mediaMime, dataSource = dataSource)
                 request.check()
                 main.post(Runnable {
                     if (!current(mine)) return@Runnable
@@ -587,30 +605,27 @@ class WatchActivity : Activity(), PlaybackHost {
     private fun episodeLabel(): String { for (e in title!!.episodes) if (e.id.equals(video)) return "S" + e.season + " E" + e.number + " · " + e.name; return "" }
     /** Only episode context belongs under the player's title. */
     private fun updateWatchingInfo() {
-        if (title == null) return
-        val info = if (title!!.type.equals("series")) episodeLabel() else ""
-        val view = findViewById<android.widget.TextView>(R.id.watching_info)
-        view.text = info
-        view.visibility = if (info.isEmpty()) View.GONE else View.VISIBLE
+        val watching = title ?: return
+        playback.watching(watching.name, if (watching.type == "series") episodeLabel() else "")
     }
     private fun chooseFile(source: MediaSource?, files: List<TorrentFile>) {
         val names = Array(files.size) { i -> files.get(i).name() + " · " + files.get(i).size / (1 shl 20) + " MiB" }
         choiceDialog = show(Tv.choices(this, "Choose a video file", names, java.util.function.Consumer<Int> { which -> open(source, files.get(which).index) }, Runnable { finish() }))
     }
     private fun populateSources(page: Tv.Alert, remember: Boolean) {
-        val offered: List<MediaSource> = ArrayList(candidates)
+        val offered: List<MediaSource> = ArrayList(playback.candidates)
         for (i in 0 until offered.size) {
-            val source = offered.get(i); val index = i
+            val source = offered.get(i)
             val facts = SourceSort.facts(source)
             var detail = facts.quality()
             val release = SourceSort.releaseType(source)
             if (!release.isEmpty()) detail += (if (detail.isEmpty()) "" else " · ") + release
             if (facts.bytes > 0) detail += (if (detail.isEmpty()) "" else " · ") + TitleScreens.size(facts.bytes)
             if (facts.seeds >= 0) detail += (if (detail.isEmpty()) "" else " · ") + facts.seeds + " peers"
-            page.sourceChoice("source:" + i, source.name.replace('\n', ' '), detail, source === selected, Runnable {
+            page.sourceChoice("source:" + i, source.name.replace('\n', ' '), detail, source === playback.selected, Runnable {
                 if (remember) rememberViewerState(session!!.snapshot())
-                page.dialog.dismiss(); automatic = false; explicitKey = SourcePolicy.key(source)
-                candidate = index; attempts = 0; recoveryStarted = 0; coordinator.begin(SystemClock.elapsedRealtime()); open(source, -1)
+                page.dialog.dismiss(); playback.automatic = false; explicitKey = SourcePolicy.key(source)
+                playback.resetAttempts(); recoveryStarted = 0; coordinator.begin(SystemClock.elapsedRealtime()); open(source, -1)
             })
         }
         page.scrollChoices(276)
@@ -619,7 +634,7 @@ class WatchActivity : Activity(), PlaybackHost {
         if (session == null) return
         val previous = session!!.snapshot()
         rememberViewerState(previous); save(previous); session!!.pause()
-        if (candidates.isEmpty()) { failure("No sources available", "Refresh sources on the title page.", "no-sources"); return }
+        if (playback.candidates.isEmpty()) { failure("No sources available", "Refresh sources on the title page.", "no-sources"); return }
         val page = Tv.alert(this, "Choose source", null as View?); populateSources(page, false)
         page.dialog.setOnCancelListener { d ->
             if (session == null || releasing) return@setOnCancelListener
@@ -632,16 +647,15 @@ class WatchActivity : Activity(), PlaybackHost {
         if (!visible || releasing) return
         val state = if (session == null) null else session!!.snapshot()
         if (state != null && state.renderedFirstFrame && (recoveryStarted == 0L || SystemClock.elapsedRealtime() - recoveryStarted >= 60_000)) {
-            recoveryStarted = SystemClock.elapsedRealtime(); coordinator.recover(recoveryStarted); attempts = 1; attemptedSources.clear(); attemptedProviders.clear()
-            if (selected != null) { attemptedSources.add(SourcePolicy.retryKey(selected!!)); attemptedProviders.add(selected!!.provider) }
+            recoveryStarted = SystemClock.elapsedRealtime(); coordinator.recover(recoveryStarted); playback.resetAttempts(); playback.attempt(playback.selected)
         }
-        PlaybackOutcomes.record(selected, false)
+        PlaybackOutcomes.record(playback.selected, false)
         try {
-            val failed = JSONObject().put("attempt", attempts).put("code", code)
+            val failed = JSONObject().put("attempt", playback.attempts).put("code", code)
                     .put("message", message).put("stage", diagnosticStage)
                     .put("renderedFirstFrame", state != null && state.renderedFirstFrame)
                     .put("positionMs", if (state == null) 0L else state.positionMs)
-            if (selected != null) failed.put("transport", selected!!.kind.name)
+            if (playback.selected != null) failed.put("transport", playback.selected!!.kind.name)
             if (observedVideo != null) failed.put("videoMime", observedVideo!!.sampleMimeType)
                     .put("width", observedVideo!!.width).put("height", observedVideo!!.height).put("codecs", observedVideo!!.codecs)
             if (observedAudio != null) failed.put("audioMime", observedAudio!!.sampleMimeType)
@@ -657,50 +671,50 @@ class WatchActivity : Activity(), PlaybackHost {
             if (cause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) { httpStatus = cause.responseCode; break }
             cause = cause.cause
         }
-        if (selected != null && selected!!.kind == MediaSource.Kind.HTTP
+        if (playback.selected != null && playback.selected!!.kind == MediaSource.Kind.HTTP
                 && (httpStatus == 401 || httpStatus == 403 || httpStatus == 410)
-                && refreshedSources.add(SourcePolicy.key(selected!!)) && !coordinator.expired(SystemClock.elapsedRealtime())) {
+                && refreshedSources.add(SourcePolicy.key(playback.selected!!)) && !coordinator.expired(SystemClock.elapsedRealtime())) {
             if (state != null && state.positionMs > 0) resumePosition = state.positionMs; keepPausedOnRecovery = state != null && state.loaded && !state.playWhenReady
             resolve(false); return
         }
-        if (automatic && attempts < 3 && !coordinator.expired(SystemClock.elapsedRealtime())) {
-            val next = SourcePolicy.nextCandidate(candidates, attemptedSources, attemptedProviders)
+        if (playback.automatic && playback.attempts < 3 && !coordinator.expired(SystemClock.elapsedRealtime())) {
+            val next = playback.nextCandidate()
             if (next >= 0) {
                 if (state != null && state.positionMs > 0) resumePosition = state.positionMs
                 keepPausedOnRecovery = state != null && state.loaded && !state.playWhenReady
-                candidate = next; val mine = generation; val chosen = next
+                val mine = generation; val chosen = next
                 // Claim recovery before another player callback can queue a second attempt.
                 switching = true
                 session!!.stop()
                 findViewById<View>(R.id.player_root).requestFocus()
-                showLoading("sources", "Trying another source", sourceLabel(candidates.get(next)), false)
-                main.post { if (current(mine)) open(candidates.get(chosen), -1) }; return
+                showLoading("sources", "Trying another source", sourceLabel(playback.candidates.get(next)), false)
+                main.post { if (current(mine)) open(playback.candidates.get(chosen), -1) }; return
             }
         }
-        if (automatic && attempts < 3 && discovery != null && !discovery!!.scope.isCancelled()
-                && !(discovery!!.complete && discovery!!.metadataReady) && !coordinator.expired(SystemClock.elapsedRealtime())) {
+        if (playback.automatic && playback.attempts < 3 && work.discovery != null && !work.discovery!!.scope.isCancelled()
+                && !(work.discovery!!.complete && work.discovery!!.metadataReady) && !coordinator.expired(SystemClock.elapsedRealtime())) {
             if (state != null && state.loaded) { resumePosition = state.positionMs; keepPausedOnRecovery = !state.playWhenReady }
             awaitAlternative(message, code); return
         }
-        failure(if (automatic) "No playable source found" else "Could not play this source", message, code)
+        failure(if (playback.automatic) "No playable source found" else "Could not play this source", message, code)
     }
     private fun awaitAlternative(message: String, code: String) {
         waitingSources = true; switching = waitingSources
         session!!.stop(); cancelPreparation()
-        val mine = generation; val entry = discovery
-        scope = services!!.addons.newRequest(); scope!!.priority(0); val request = scope!!
-        val attempted: MutableSet<String> = java.util.HashSet(attemptedSources); val providers: MutableSet<String> = java.util.HashSet(attemptedProviders)
+        val mine = generation; val entry = work.discovery
+        work.scope = services!!.addons.newRequest(); work.scope!!.priority(0); val request = work.scope!!
+        val attempted: MutableSet<String> = java.util.HashSet(playback.attemptedSources); val providers: MutableSet<String> = java.util.HashSet(playback.attemptedProviders)
         val deadline = SystemClock.elapsedRealtime() + coordinator.remaining(SystemClock.elapsedRealtime())
         showLoading("sources", "Finding another source", null, false)
-        preparation = loader.submit(Runnable {
+        work.task = loader.submit(Runnable {
             try {
                 coordinator.remove()
                 val available = entry!!.awaitAlternative(request, attempted, providers, deadline)
                 request.check()
                 main.post { if (current(mine)) {
-                    waitingSources = false; candidates = available
-                    val next = SourcePolicy.nextCandidate(available, attemptedSources, attemptedProviders)
-                    if (next >= 0 && !coordinator.expired(SystemClock.elapsedRealtime())) { candidate = next; open(available.get(next), -1) }
+                    waitingSources = false; playback.candidates = available
+                    val next = SourcePolicy.nextCandidate(available, playback.attemptedSources, playback.attemptedProviders)
+                    if (next >= 0 && !coordinator.expired(SystemClock.elapsedRealtime())) { open(available.get(next), -1) }
                     else failure("No playable source found", message, code)
                 } }
             } catch (error: Exception) { main.post { if (current(mine)) failure("No playable source found", Failures.message(error), code) } }
@@ -708,8 +722,8 @@ class WatchActivity : Activity(), PlaybackHost {
     }
     /** Remembers how the current source went, for the marks on Sources. Imports have no source list. */
     private fun markSource(state: String) {
-        if (selected == null || title == null || services == null) return
-        val titleKey = title!!.key(); val key = SourcePolicy.key(selected!!); val forVideo = video
+        if (playback.selected == null || title == null || services == null) return
+        val titleKey = title!!.key(); val key = SourcePolicy.key(playback.selected!!); val forVideo = video
         val before = marks[key]
         if (before == null || !before.state.equals(TvStore.SourceMark.PLAYED)) marks[key] = TvStore.SourceMark(state, System.currentTimeMillis())
         app.persistence.execute { services!!.store.markSource(titleKey, forVideo!!, key, state) }
@@ -730,7 +744,7 @@ class WatchActivity : Activity(), PlaybackHost {
         handledError = PlaybackErrors.Description(code, heading, message, "", 0, true)
         session!!.fail(handledError)
         cancelPreparation(); loader.execute { closeNative() }
-        screen!!.setLoading(null); screen!!.render()
+        playback.failed(handledError!!)
     }
     private fun clearErrorQr() {
         ErrorQrPanel.attach(findViewById(R.id.error_diagnostics), false, null)
@@ -744,6 +758,7 @@ class WatchActivity : Activity(), PlaybackHost {
     override fun onUnsupportedFormat(format: String) { queueFailure("This TV can't decode " + format + ".", "unsupported") }
     override fun onPlaybackChanged(snapshot: PlaybackSnapshot) {
         if (releasing || session == null || switching) return
+        if (snapshot.started && snapshot.error == null) playback.ready()
         // Media-session play commands must not start sound behind the screensaver or lock screen.
         if (!visible) { if (snapshot.playWhenReady) session!!.pause(); return }
         updateWatchingInfo()
@@ -755,7 +770,7 @@ class WatchActivity : Activity(), PlaybackHost {
         }
         if (snapshot.videoFormat != null) observedVideo = snapshot.videoFormat
         if (snapshot.audioFormat != null) observedAudio = snapshot.audioFormat
-        if (snapshot.renderedFirstFrame && firstFrameMs == 0L) { diagnosticStage = "Playing video"; firstFrameMs = SystemClock.elapsedRealtime() - startMs; coordinator.stage(PlaybackCoordinator.State.PLAYING); PlaybackOutcomes.record(selected, true); markSource(TvStore.SourceMark.PLAYED) }
+        if (snapshot.renderedFirstFrame && firstFrameMs == 0L) { diagnosticStage = "Playing video"; firstFrameMs = SystemClock.elapsedRealtime() - startMs; coordinator.stage(PlaybackCoordinator.State.PLAYING); PlaybackOutcomes.record(playback.selected, true); markSource(TvStore.SourceMark.PLAYED) }
         // The viewer's pause and play, heard as small sounds; never the first state a source starts in.
         if (snapshot.started && snapshot.error == null) {
             retainedSpeed = snapshot.speed
@@ -866,13 +881,7 @@ class WatchActivity : Activity(), PlaybackHost {
     override fun onRetry() { if (session != null && session!!.snapshot().positionMs > 0) resumePosition = session!!.snapshot().positionMs; resolve(true) }
     override fun canChooseSource(): Boolean = title != null && !title!!.provider.equals("local")
     override fun onChooseSource() { chooseSources() }
-    private fun updateWatchedButton() {
-        val button = findViewById<View>(R.id.control_watched)
-        button.isActivated = episodeWatched
-        (button as android.widget.ImageView).setImageResource(if (episodeWatched) R.drawable.ic_tv_unwatched else R.drawable.ic_tv_check)
-        button.contentDescription = if (episodeWatched) "Mark unwatched" else "Mark watched"
-        button.tooltipText = if (episodeWatched) "Mark unwatched" else "Mark watched"
-    }
+    private fun updateWatchedButton() { playback.watched(episodeWatched) }
     private fun setWatched(watched: Boolean) {
         if (session == null || services == null || title == null || !session!!.snapshot().started) return
         if (episodeWatched == watched) return
@@ -1007,18 +1016,18 @@ class WatchActivity : Activity(), PlaybackHost {
             if (state.positionMs > previousPosition + 50 && state.playing) { lastAdvanceMs = now; previousPosition = state.positionMs; if (seekStarted > 0) { seekRecoveryMs = now - seekStarted; seekStarted = 0 } }
             if (!state.buffering && !switching && !state.playWhenReady) lastAdvanceMs = now
             checkVideoFrames(state, now)
-            if (!ranking && discovery != null && !discovery!!.scope.isCancelled() && discoveryVersion != discovery!!.version()) {
-                ranking = true; val entry = discovery!!; val version = entry.version(); val mine = generation
+            if (!ranking && work.discovery != null && !work.discovery!!.scope.isCancelled() && discoveryVersion != work.discovery!!.version()) {
+                ranking = true; val entry = work.discovery!!; val version = entry.version(); val mine = generation
                 app.workers.execute {
                     val discovered = SourcePolicy.ranked(entry.sources())
-                    main.post { if (current(mine) && discovery === entry) {
-                        ranking = false; discoveryVersion = version; if (!discovered.isEmpty()) candidates = discovered
+                    main.post { if (current(mine) && work.discovery === entry) {
+                        ranking = false; discoveryVersion = version; if (!discovered.isEmpty()) playback.candidates = discovered
                     } }
                 }
             }
             coordinator.paused(state.loaded && !switching && !state.playWhenReady, now)
             val startup = !state.renderedFirstFrame
-            val alternative = automatic && attempts < 3 && SourcePolicy.nextCandidate(candidates, attemptedSources, attemptedProviders) >= 0
+            val alternative = playback.automatic && playback.attempts < 3 && playback.nextCandidate() >= 0
             startupWatchdog.setPaused(state.loaded && !state.playWhenReady, now)
             startupWatchdog.observe(nativeStats.optLong("verifiedReadBytes"), now)
             val quiet = startupWatchdog.quietMs(now); val elapsed = coordinator.attemptElapsed(now)
@@ -1028,12 +1037,12 @@ class WatchActivity : Activity(), PlaybackHost {
             val pressure = coordinator.torrent != 0L && nativeStats.optInt("urgentReservationFailures") > 0
                     && nativeStats.optInt("obsoletePartials") > 0 && quiet >= 6000
             if ((choiceDialog == null || !choiceDialog!!.isShowing) && state.error == null) {
-                val identity = if (selected == null) "import:" + title!!.id else SourcePolicy.key(selected!!)
+                val identity = if (playback.selected == null) "import:" + title!!.id else SourcePolicy.key(playback.selected!!)
                 if (pressure && resetPayloads.add(identity)) {
                     if (state.renderedFirstFrame) coordinator.recover(now)
                     resumePosition = state.positionMs; keepPausedOnRecovery = !state.playWhenReady
                     val selectedIndex = coordinator.fileIndex
-                    resettingPayload = true; open(selected, selectedIndex)
+                    resettingPayload = true; open(playback.selected, selectedIndex)
                 } else if (startup && (coordinator.expired(now) || stalledStage)
                         || !switching && StartupWatchdog.bufferingStalled(state.buffering && state.playWhenReady, bufferingStarted, quiet, now, if (alternative) 6000L else 30_000L)) {
                     val message = if (coordinator.torrent == 0L) "The source stopped responding."
@@ -1094,13 +1103,13 @@ class WatchActivity : Activity(), PlaybackHost {
         try {
             result.put("playTapToFirstAvMs", coordinator.firstAvMs(observedAudio != null))
             result.put("startupStagesMs", coordinator.diagnostics()).put("playTapToNowMs", coordinator.elapsed(SystemClock.elapsedRealtime()))
-            result.put("sourceAttempts", attempts).put("sourceFailures", JSONArray(sourceFailures.toString())).put("firstFrameMs", firstFrameMs).put("seekRecoveryMs", seekRecoveryMs).put("droppedFrames", droppedFrames)
+            result.put("sourceAttempts", playback.attempts).put("sourceFailures", JSONArray(sourceFailures.toString())).put("firstFrameMs", firstFrameMs).put("seekRecoveryMs", seekRecoveryMs).put("droppedFrames", droppedFrames)
                     .put("videoDecoder", videoDecoder).put("audioDecoder", audioDecoder)
                     .put("bufferingMs", bufferingMs).put("nativeHeapBytes", android.os.Debug.getNativeHeapAllocatedSize())
                     .put("javaHeapBytes", Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory())
-            result.put("automatic", automatic).put("candidateCount", candidates.size).put("stage", diagnosticStage)
+            result.put("automatic", playback.automatic).put("candidateCount", playback.candidates.size).put("stage", diagnosticStage)
             result.put("sourceResolution", sourceResolution).put("elapsedSourceMs", if (startMs == 0L) 0L else SystemClock.elapsedRealtime() - startMs)
-            if (selected != null) result.put("transport", selected!!.kind.name)
+            if (playback.selected != null) result.put("transport", playback.selected!!.kind.name)
             if (observedVideo != null) result.put("videoMime", observedVideo!!.sampleMimeType).put("codecs", observedVideo!!.codecs)
                     .put("width", observedVideo!!.width).put("height", observedVideo!!.height)
             if (observedAudio != null) result.put("audioMime", observedAudio!!.sampleMimeType)
@@ -1135,10 +1144,13 @@ class WatchActivity : Activity(), PlaybackHost {
         return super.dispatchGenericMotionEvent(event)
     }
     /** The player's controls and menu belong to the shared player: an arrow that moves its focus ticks here. */
+    // AndroidX core restricts its inherited override; TV remote routing still uses the framework dispatch contract.
+    @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         dispatchingKey = event.keyCode
         try { return dispatchKey(event) } finally { dispatchingKey = 0 }
     }
+    @android.annotation.SuppressLint("RestrictedApi") // Inherited framework dispatch, as above.
     private fun dispatchKey(event: KeyEvent): Boolean {
         // Shared remote handling consumes keys before Activity can report this interaction itself.
         if (event.action == KeyEvent.ACTION_DOWN) onUserInteraction()
@@ -1166,8 +1178,7 @@ class WatchActivity : Activity(), PlaybackHost {
         if (move && after != null && after !== before) Sounds.focus(after)
         return handled
     }
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() { if (screen != null && screen!!.onRemoteKey(KeyEvent.KEYCODE_BACK)) return; Sounds.play(Sounds.Sound.BACK); onExit() }
+    private fun exitOrCloseOverlay() { if (screen != null && screen!!.onRemoteKey(KeyEvent.KEYCODE_BACK)) return; Sounds.play(Sounds.Sound.BACK); onExit() }
     override fun onStop() {
         visible = false
         var state = if (session == null) null else session!!.snapshot()
@@ -1195,7 +1206,7 @@ class WatchActivity : Activity(), PlaybackHost {
         if (releasing) return
         releasing = true; retainedWhileStopped = false
         if (session != null) { val state = session!!.snapshot(); rememberViewerState(state); save(state) }
-        cancelPreparation(); if (discovery != null) { discovery!!.close(); discovery = null }; main.removeCallbacksAndMessages(null)
+        cancelPreparation(); work.close(); playback.released(); main.removeCallbacksAndMessages(null)
         for (animator in lifts.values) animator.cancel()
         lifts.clear()
         if (playerMenus != null) { playerMenus!!.close(); playerMenus = null }

@@ -21,7 +21,6 @@ import javax.net.ssl.X509TrustManager
  * accepts (honouring the app's network security configuration) are written as a PEM file the engine loads.
  */
 object TrustRoots {
-    @JvmStatic
     @Throws(IOException::class)
     fun writePem(file: File) {
         val roots: Array<X509Certificate>

@@ -20,7 +20,6 @@ import java.util.HashMap
  */
 @OptIn(markerClass = [UnstableApi::class])
 object PausedSubtitleCues {
-    @JvmStatic
     fun read(files: List<MediaItem.SubtitleConfiguration>): Map<String, Subtitle> {
         val result: MutableMap<String, Subtitle> = HashMap()
         val parsers = DefaultSubtitleParserFactory()
@@ -36,7 +35,6 @@ object PausedSubtitleCues {
         return Collections.unmodifiableMap(result)
     }
 
-    @JvmStatic
     fun find(timelines: Map<String, Subtitle>, track: SubtitleTracks.Track?): Subtitle? {
         if (track == null || track.formatId == null) return null
         val id: String = track.formatId!!

@@ -19,37 +19,31 @@ import tv.stream.app.data.TvStore
 
 /** Worker-thread use: one repository per app. Navigation owns and closes a Cancellation scope. */
 class AddonRepository : AutoCloseable {
-    class Result<T> {
-        @JvmField val items: List<T>
+    class Result<T>(items: List<T>, failures: Map<String, AddonException.Kind>, val stale: Boolean,
+                    byResource: Map<String, List<T>> = emptyMap()) {
+        val items: List<T> = Collections.unmodifiableList(ArrayList(items))
         /** Per-provider/catalogue errors, alongside surviving results. No URL/error body is exposed. */
-        @JvmField val failures: Map<String, AddonException.Kind>
-        @JvmField val stale: Boolean
+        val failures: Map<String, AddonException.Kind> = Collections.unmodifiableMap(LinkedHashMap(failures))
         /** Catalogue/resource identity to results, preserving separate Home rows after concurrent requests. */
-        @JvmField val byResource: Map<String, List<T>>
-        constructor(items: List<T>, failures: Map<String, AddonException.Kind>, stale: Boolean) : this(items, failures, stale, Collections.emptyMap())
-        constructor(items: List<T>, failures: Map<String, AddonException.Kind>, stale: Boolean, byResource: Map<String, List<T>>) {
-            this.items = Collections.unmodifiableList(ArrayList(items)); this.failures = Collections.unmodifiableMap(LinkedHashMap(failures)); this.stale = stale
-            val groups: MutableMap<String, List<T>> = LinkedHashMap()
-            for (group in byResource.entries) groups[group.key] = Collections.unmodifiableList(ArrayList(group.value))
-            this.byResource = Collections.unmodifiableMap(groups)
-        }
-        fun withItems(replacement: List<T>): Result<T> {
-            return Result(replacement, failures, stale, byResource)
-        }
+        val byResource: Map<String, List<T>> = Collections.unmodifiableMap(byResource.mapValuesTo(LinkedHashMap()) {
+            Collections.unmodifiableList(ArrayList(it.value))
+        })
+
+        fun withItems(replacement: List<T>): Result<T> = Result(replacement, failures, stale, byResource)
     }
-    class CatalogQuery(@JvmField val addon: InstalledAddon, @JvmField val catalog: AddonManifest.Catalog, extras: Map<String, String>) {
-        @JvmField val extras: Map<String, String> = Collections.unmodifiableMap(LinkedHashMap(extras))
+    class CatalogQuery(val addon: InstalledAddon, val catalog: AddonManifest.Catalog, extras: Map<String, String>) {
+        val extras: Map<String, String> = Collections.unmodifiableMap(LinkedHashMap(extras))
         /** The catalogue's identity among results ([Result.byResource]), whatever its filters. */
         fun key(): String { return addon.id + ":" + catalog.type + ":" + catalog.id }
     }
     /** One category page load, including visible retry progress. Only transient failures are retried. */
-    class CatalogPage(@JvmField val result: Result<Title>, @JvmField val attempt: Int, @JvmField val loading: Boolean) {
+    data class CatalogPage(val result: Result<Title>, val attempt: Int, val loading: Boolean) {
         companion object {
             const val MAX_ATTEMPTS = 3
             const val PAGE_SIZE = 24
         }
     }
-    private class Part<T>(@JvmField val key: String, @JvmField val items: List<T>, @JvmField val failure: AddonException.Kind?, @JvmField val stale: Boolean, @JvmField val httpStatus: Int) {
+    private class Part<T>(val key: String, val items: List<T>, val failure: AddonException.Kind?, val stale: Boolean, val httpStatus: Int) {
         constructor(key: String, items: List<T>, failure: AddonException.Kind?, stale: Boolean) : this(key, items, failure, stale, 0)
     }
     private val store: TvStore
@@ -57,8 +51,8 @@ class AddonRepository : AutoCloseable {
     private val client = AddonClient()
     private val workers = ProviderExecutor()
     @Volatile private var configuration: Long = 0
-    private class CachedCatalog(@JvmField val part: Part<Title>) {
-        @JvmField val saved: Long = SystemClock.elapsedRealtime()
+    private class CachedCatalog(val part: Part<Title>) {
+        val saved: Long = SystemClock.elapsedRealtime()
     }
     private val catalogPages: MutableMap<String, CachedCatalog> = LinkedHashMap(16, .75f, true)
     fun configuration(): Long { return configuration }
@@ -486,7 +480,6 @@ class AddonRepository : AutoCloseable {
         }
 
         /** Merges local descriptors with directory results, including when every remote list has failed. No provider is contacted. */
-        @JvmStatic
         fun combineListings(remote: Result<AddonListing>, scrapers: List<AddonListing>): Result<AddonListing> {
             val groups: MutableMap<String, List<AddonListing>> = LinkedHashMap()
             val all: MutableList<AddonListing> = ArrayList()

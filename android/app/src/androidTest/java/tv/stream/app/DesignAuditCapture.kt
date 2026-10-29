@@ -17,6 +17,7 @@ import tv.stream.app.addon.Title
 class DesignAuditCapture : AppHarness() {
     @Test @Throws(Exception::class) fun before() { capture("before") }
     @Test @Throws(Exception::class) fun after() { capture("after") }
+    @Test @Throws(Exception::class) fun browseAfter() { capture("after", browseOnly = true) }
     @Test @Throws(Exception::class) fun otherStates() {
         val phase = "other"
         launch(); waitUntil("empty Home", 10000) { visible("Make yourself at home") }; shot(phase, "22-empty-home")
@@ -39,7 +40,7 @@ class DesignAuditCapture : AppHarness() {
         tap("Generated films", true); waitUntil("failed catalogue", 30000) { visible("Unable to load catalogue") }; shot("other", "32-catalogue-failure")
     }
     @Throws(Exception::class)
-    private fun capture(phase: String) {
+    private fun capture(phase: String, browseOnly: Boolean = false) {
         readyLibrary("http-mkv"); launch(); waitUntil("Home", 10000) { visible("Generated Film") }; shot(phase, "01-home")
         tap("Generated Film", false); waitUntil("film actions", 10000) { visible("Play") }; shot(phase, "02-film")
         tap("Mark watched", true); waitUntil("watched action", 5000) { visible("Mark unwatched") }; shot(phase, "03-film-watched")
@@ -65,6 +66,7 @@ class DesignAuditCapture : AppHarness() {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN); waitUntil("seasons", 5000) { visible("Season 1") && !visible("Play") }; shot(phase, "15-series")
         tap("Episode 1", true); waitUntil("episode menu", 5000) { visible("Choose source") }; shot(phase, "16-episode-popup")
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); returned()
+        if (browseOnly) return
         browse!!.onActivity { activity -> activity.root("Home") }; waitUntil("Home again", 5000) { visible("Generated Film") }
         tap("Generated Film", false); tap("Play", true); chooseFirstSource(); waitUntil("playing", 30000) { state() != null && state()!!.renderedFirstFrame && state()!!.playing }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PAUSE); waitUntil("paused", 5000) { !state()!!.playWhenReady }; shot(phase, "17-player")

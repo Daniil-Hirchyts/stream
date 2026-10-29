@@ -31,8 +31,7 @@ object SourcePolicy {
     private val HEVC_HINT: Pattern = Pattern.compile("\\b(hevc|h[ ._-]?265|x265)\\b")
     private val VP9_HINT: Pattern = Pattern.compile("\\b(vp9|vp09)\\b")
     private val AVC_HINT: Pattern = Pattern.compile("\\b(avc|h[ ._-]?264|x264)\\b")
-    class Assessment(@JvmField val usable: Boolean, @JvmField val label: String, @JvmField val rank: Int)
-    @JvmStatic
+    data class Assessment(val usable: Boolean, val label: String, val rank: Int)
     fun assess(source: MediaSource): Assessment {
         if (!source.playable()) return Assessment(false, source.reason, -1000)
         val hint = (source.name + " " + source.description + " " + (source.filename ?: "")).lowercase(Locale.ROOT)
@@ -56,7 +55,6 @@ object SourcePolicy {
         } catch (e: Exception) { return Assessment(true, "Compatibility unknown; checked when opened", AutoSourceRank.score(SourceSort.facts(source), PlaybackOutcomes.rank(source))) }
     }
     /** Codec labels often touch channel counts: DDP5.1 and DD+5.1 are E-AC-3, not unknown audio. */
-    @JvmStatic
     fun advertisedAudio(hint: String): String? {
         val text = hint.lowercase(Locale.ROOT)
         // A release advertising a common alternative can still contain a supported selectable audio track.
@@ -98,7 +96,6 @@ object SourcePolicy {
     }
 
     /** Give another installed provider a chance before spending the budget on one provider's entire list. */
-    @JvmStatic
     fun nextCandidate(ranked: List<MediaSource>, attempted: Set<String>, providers: Set<String>): Int {
         for (differentProvider in booleanArrayOf(true, false))
             for (i in 0 until ranked.size) {
@@ -110,7 +107,6 @@ object SourcePolicy {
     }
 
     /** Recovery identity is payload/file, not the addon or release label advertising it. Never persisted as an address. */
-    @JvmStatic
     fun retryKey(source: MediaSource): String {
         var hash = source.infoHash
         if (hash == null && source.kind == MediaSource.Kind.MAGNET) {
@@ -148,7 +144,6 @@ object SourcePolicy {
         catch (e: Exception) { throw AssertionError(e) }
     }
     /** The playable sources, best first. Each source is assessed once: a torrent add-on can return a hundred results. */
-    @JvmStatic
     fun ranked(sources: List<MediaSource>): List<MediaSource> {
         val ranks: MutableMap<MediaSource, Int> = java.util.IdentityHashMap()
         for (s in sources) { val a = assess(s); if (a.usable) ranks[s] = a.rank }
@@ -157,21 +152,17 @@ object SourcePolicy {
     }
     /** Media3's actual renderer capabilities validate codecs, including software and audio passthrough.
      * Only our separate resolution budget belongs here; MediaCodec-only checks reject working extensions. */
-    @JvmStatic
     fun withinDeviceProfile(format: Format?): Boolean {
         if (format == null || format.sampleMimeType == null) return true
         return !format.sampleMimeType!!.startsWith("video/") || (format.width <= 1920 && format.height <= 1080)
     }
     /** Stable across refreshed signed URLs, without carrying credentials in intents or diagnostics. */
-    @JvmStatic
     fun key(s: MediaSource): String {
         val identity = s.provider + "\n" + s.name + "\n" + s.kind + "\n" + s.infoHash + "\n" + s.fileIndex + "\n" + s.filename
         return digest(identity)
     }
-    @JvmStatic
     fun video(file: TorrentFile): Boolean { return file.size > 0 && file.name().lowercase(Locale.ROOT).matches(".*\\.(mp4|m4v|mkv|webm|avi|ts|m2ts|mov|mpg|mpeg)".toRegex()) }
     /** null means an explicit file choice is required. An explicit invalid index is always an error. */
-    @JvmStatic
     @Throws(TorrentException::class)
     fun select(files: List<TorrentFile>, explicit: Int, season: Int, episode: Int): TorrentFile? {
         if (explicit >= 0) {

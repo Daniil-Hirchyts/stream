@@ -13,12 +13,12 @@ object StarterAddons {
     const val OPENSUBTITLES = "https://opensubtitles-v3.strem.io/manifest.json"
     /** The store route value for the starter page; not an add-on address. */
     const val PACK = "starter-pack"
-    @JvmField val ALL: List<String> = Collections.unmodifiableList(Arrays.asList(AddonUrl.CINEMETA, OPENSUBTITLES))
+    val ALL: List<String> = Collections.unmodifiableList(Arrays.asList(AddonUrl.CINEMETA, OPENSUBTITLES))
     /**
      * Torrent sources a new install also gets, by the owner's choice: the public, unconfigured addresses the store's
      * Torrent/P2P list offers (see TorrentAddons). Not on the starter page; each can be removed or reconfigured.
      */
-    @JvmField val SOURCES: List<String> = Collections.unmodifiableList(Arrays.asList(
+    val SOURCES: List<String> = Collections.unmodifiableList(Arrays.asList(
             "https://meteorfortheweebs.midnightignite.me/manifest.json", "https://mediafusionfortheweebs.midnightignite.me/manifest.json",
             "https://peerflix.mov/manifest.json", "https://torrentsdb.com/manifest.json"))
 
@@ -30,7 +30,6 @@ object StarterAddons {
      * play without setup. Runs on a worker; one that can't be reached now is tried again on the next start.
      * @return how many were added
      */
-    @JvmStatic
     fun installDefaults(services: TvApplication.Services): Int {
         val done: MutableSet<String> = java.util.LinkedHashSet()
         for (url in java.util.regex.Pattern.compile(" ").split(services.store.preference(INSTALLED_ONCE, ""))) if (!url.isEmpty()) done.add(url)
@@ -56,7 +55,6 @@ object StarterAddons {
     }
 
     /** A short name and what it adds, for the onboarding list; unknown (fixture) addresses show their host. */
-    @JvmStatic
     fun describe(url: String): Array<String> {
         if (url == AddonUrl.CINEMETA) return arrayOf("Cinemeta", "Films and series")
         if (url == BuiltinAddons.INTERNET_ARCHIVE) return arrayOf("Internet Archive", "Free classic films")

@@ -27,46 +27,38 @@ object SubtitleTracks {
     private val TECHNICAL_LABEL: Pattern = Pattern.compile("(?i)(stream|track|text|subs?|subtitles?)[ _-]?\\d*")
     private val DASH: Pattern = Pattern.compile("-")
 
-    class Track {
-        @JvmField val id: String
-        @JvmField val label: String
-        @JvmField val language: String?
-        @JvmField val selected: Boolean
-        @JvmField val preferred: Boolean
-        @JvmField val formatId: String?
-        @JvmField val group: TrackGroup?
-        @JvmField val external: Boolean
-        @JvmField val index: Int
-
-        constructor(id: String, label: String, format: Format, group: Tracks.Group, index: Int) {
-            this.id = id
-            this.external = false
-            this.label = label
-            this.language = format.language
-            this.selected = group.isTrackSelected(index)
-            this.preferred = (format.selectionFlags and (C.SELECTION_FLAG_DEFAULT or C.SELECTION_FLAG_FORCED)) != 0
-            this.formatId = format.id
-            this.group = group.mediaTrackGroup
-            this.index = index
-        }
-        constructor(id: String, label: String, language: String?, selected: Boolean) {
-            this.id = id; this.label = label; this.language = language; this.selected = selected
-            preferred = false; formatId = id; group = null; index = -1; external = true
-        }
-        constructor(original: Track, selected: Boolean) {
-            id = original.id; label = original.label; language = original.language; this.selected = selected
-            preferred = original.preferred; formatId = original.formatId; group = original.group; index = original.index; external = original.external
-        }
-
+    @ConsistentCopyVisibility
+    data class Track private constructor(
+        val id: String,
+        val label: String,
+        val language: String?,
+        val selected: Boolean,
+        val preferred: Boolean,
+        val formatId: String?,
+        val group: TrackGroup?,
+        val external: Boolean,
+        val index: Int,
+    ) {
+        constructor(id: String, label: String, format: Format, group: Tracks.Group, index: Int) : this(
+            id = id, label = label, language = format.language, selected = group.isTrackSelected(index),
+            preferred = (format.selectionFlags and (C.SELECTION_FLAG_DEFAULT or C.SELECTION_FLAG_FORCED)) != 0,
+            formatId = format.id, group = group.mediaTrackGroup, external = false, index = index,
+        )
+        constructor(id: String, label: String, language: String?, selected: Boolean) : this(
+            id, label, language, selected, false, id, null, true, -1,
+        )
+        constructor(original: Track, selected: Boolean) : this(
+            original.id, original.label, original.language, selected, original.preferred,
+            original.formatId, original.group, original.external, original.index,
+        )
     }
 
     /**
      * Subtitles wanted for new media: an external file by its index ("0") or "off", else a track's label or
      * language, such as what the browser was showing. All null leaves the choice to the viewer's last language.
      */
-    class Request(@JvmField val choice: String?, @JvmField val language: String?, @JvmField val label: String?)
+    data class Request(val choice: String? = null, val language: String? = null, val label: String? = null)
 
-    @JvmStatic
     fun from(context: Context, tracks: Tracks): List<Track> {
         val list: MutableList<Track> = ArrayList()
         val labels: MutableMap<String, Int> = HashMap()
@@ -91,23 +83,20 @@ object SubtitleTracks {
                 list.add(Track("$g.$t", label, format, group, t))
             }
         }
-        return list
+        return Collections.unmodifiableList(list)
     }
 
-    @JvmStatic
     fun selected(tracks: List<Track>): Track? {
         for (track in tracks) if (track.selected) return track
         return null
     }
 
-    @JvmStatic
     fun find(tracks: List<Track>, id: String?): Track? {
         for (track in tracks) if (track.id == id) return track
         return null
     }
 
     /** Shows one track, or turns subtitles off when `track` is null. */
-    @JvmStatic
     fun select(player: Player, track: Track?) {
         val parameters: TrackSelectionParameters.Builder = player.trackSelectionParameters.buildUpon()
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
@@ -117,7 +106,6 @@ object SubtitleTracks {
     }
 
     /** Clears the previous video's choice before new media loads. */
-    @JvmStatic
     fun reset(player: Player) {
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
@@ -127,7 +115,6 @@ object SubtitleTracks {
      * Picks subtitles for newly loaded media: the page's choice first, then the track the browser was showing,
      * then the viewer's last language. With subtitles switched on, a video that has any shows them.
      */
-    @JvmStatic
     fun initial(tracks: List<Track>, request: Request, enabled: Boolean, language: String?): Track? {
         if ("off" == request.choice) return null
         if (request.choice != null) {
@@ -160,7 +147,6 @@ object SubtitleTracks {
     }
 
     /** The language without its region, such as "en" for "en-US"; null when unknown. */
-    @JvmStatic
     fun primary(language: String?): String? {
         // normalizeLanguageCode is @PolyNull: a null code normalizes to null.
         val normalized: String? = if (language == null) null else Util.normalizeLanguageCode(language)
@@ -187,7 +173,6 @@ object SubtitleTracks {
         return mime.contains("cea-") || codecs.contains("cea-")
     }
 
-    @JvmStatic
     fun none(): List<Track> {
         return Collections.emptyList()
     }

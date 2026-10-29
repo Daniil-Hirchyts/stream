@@ -11,55 +11,49 @@ import java.util.Collections
  * Malformed optional entries are skipped; the identity fields and resources are required.
  */
 class AddonManifest private constructor(o: JSONObject, resources: List<Resource>, catalogs: List<Catalog>, addonCatalogs: List<Catalog>) {
-    class Resource(@JvmField val name: String, @JvmField val types: List<String>,
+    class Resource(val name: String, types: List<String>,
                    /** Empty: any id. */
-                   @JvmField val idPrefixes: List<String>)
-
-    class Extra(@JvmField val name: String, @JvmField val required: Boolean, @JvmField val options: List<String>)
-
-    class Catalog(@JvmField val type: String, @JvmField val id: String, @JvmField val name: String, @JvmField val extras: List<Extra>) {
-        fun supports(extra: String): Boolean {
-            for (e in extras) if (e.name == extra) return true
-            return false
-        }
-
-        /** A catalogue that needs an extra, such as a search query, can't be listed on its own. */
-        fun listable(): Boolean {
-            for (e in extras) if (e.required) return false
-            return true
-        }
-
-        /** Searchable when "search" is its only required extra, or an optional one. */
-        fun searchable(): Boolean {
-            if (!supports("search")) return false
-            for (e in extras) if (e.required && e.name != "search") return false
-            return true
-        }
-
-        fun extra(name: String): Extra? {
-            for (e in extras) if (e.name == name) return e
-            return null
-        }
+                   idPrefixes: List<String>) {
+        val types: List<String> = Collections.unmodifiableList(ArrayList(types))
+        val idPrefixes: List<String> = Collections.unmodifiableList(ArrayList(idPrefixes))
     }
 
-    @JvmField val id: String = Json.string(o, "id", "")
-    @JvmField val version: String = Json.string(o, "version", "")
-    @JvmField val name: String = Json.string(o, "name", "")
-    @JvmField val description: String = Json.string(o, "description", "")
-    @JvmField val logo: String? = Json.webUrl(Json.string(o, "logo"))
-    @JvmField val background: String? = Json.webUrl(Json.string(o, "background"))
-    @JvmField val types: List<String> = Json.strings(o, "types")
-    @JvmField val idPrefixes: List<String> = Json.strings(o, "idPrefixes")
-    @JvmField val resources: List<Resource> = resources
-    @JvmField val catalogs: List<Catalog> = catalogs
+    class Extra(val name: String, val required: Boolean, options: List<String>) {
+        val options: List<String> = Collections.unmodifiableList(ArrayList(options))
+    }
+
+    class Catalog(val type: String, val id: String, val name: String, extras: List<Extra>) {
+        val extras: List<Extra> = Collections.unmodifiableList(ArrayList(extras))
+
+        fun supports(extra: String): Boolean = extras.any { it.name == extra }
+
+        /** A catalogue that needs an extra, such as a search query, can't be listed on its own. */
+        fun listable(): Boolean = extras.none { it.required }
+
+        /** Searchable when "search" is its only required extra, or an optional one. */
+        fun searchable(): Boolean = supports("search") && extras.none { it.required && it.name != "search" }
+
+        fun extra(name: String): Extra? = extras.firstOrNull { it.name == name }
+    }
+
+    val id: String = Json.string(o, "id", "")
+    val version: String = Json.string(o, "version", "")
+    val name: String = Json.string(o, "name", "")
+    val description: String = Json.string(o, "description", "")
+    val logo: String? = Json.webUrl(Json.string(o, "logo"))
+    val background: String? = Json.webUrl(Json.string(o, "background"))
+    val types: List<String> = Json.strings(o, "types")
+    val idPrefixes: List<String> = Json.strings(o, "idPrefixes")
+    val resources: List<Resource> = Collections.unmodifiableList(ArrayList(resources))
+    val catalogs: List<Catalog> = Collections.unmodifiableList(ArrayList(catalogs))
     /** Lists of other add-ons this add-on publishes through `addon_catalog`, such as Cinemeta's Official and Community. */
-    @JvmField val addonCatalogs: List<Catalog> = addonCatalogs
-    @JvmField val configurable: Boolean
-    @JvmField val configurationRequired: Boolean
-    @JvmField val adult: Boolean
-    @JvmField val p2p: Boolean
+    val addonCatalogs: List<Catalog> = Collections.unmodifiableList(ArrayList(addonCatalogs))
+    val configurable: Boolean
+    val configurationRequired: Boolean
+    val adult: Boolean
+    val p2p: Boolean
     /** The manifest as received, kept so an installed add-on survives restarts without refetching. */
-    @JvmField val json: String
+    val json: String
 
     init {
         val hints = o.optJSONObject("behaviorHints")
@@ -95,7 +89,6 @@ class AddonManifest private constructor(o: JSONObject, resources: List<Resource>
         const val SUBTITLES = "subtitles"
         const val ADDON_CATALOG = "addon_catalog"
 
-        @JvmStatic
         @Throws(AddonException::class)
         fun parse(o: JSONObject): AddonManifest {
             if (Json.string(o, "id") == null || Json.string(o, "name") == null || Json.string(o, "version") == null) {

@@ -7,7 +7,8 @@ import tv.stream.app.addon.MediaSource
 import tv.stream.app.data.InstalledAddon
 
 /** Explains an empty source list: no source add-on, failing providers, only unsupported results, or none at all. */
-class Availability private constructor(@JvmField val heading: String, @JvmField val detail: String) {
+@ConsistentCopyVisibility
+data class Availability private constructor(val heading: String, val detail: String) {
     companion object {
         const val NO_PROVIDER = "No source add-on installed"
         const val NO_PROVIDER_DETAIL = "Add a source add-on to play titles."
@@ -17,7 +18,6 @@ class Availability private constructor(@JvmField val heading: String, @JvmField 
          * @param found every advertised source, including unsupported ones
          * @param failures failed providers by add-on ID
          */
-        @JvmStatic
         fun of(providers: List<InstalledAddon>, found: List<MediaSource>, failures: Map<String, AddonException.Kind>, installed: List<InstalledAddon>): Availability {
             if (found.isEmpty() && providers.isEmpty()) return Availability(NO_PROVIDER, NO_PROVIDER_DETAIL)
             if (found.isEmpty() && !failures.isEmpty()) return Availability("Source providers are unavailable", failures(failures, installed))
@@ -32,7 +32,6 @@ class Availability private constructor(@JvmField val heading: String, @JvmField 
         }
 
         /** "Provider X didn't respond in time." for each failed provider, without addresses or response bodies. */
-        @JvmStatic
         fun failures(failures: Map<String, AddonException.Kind>, installed: List<InstalledAddon>): String {
             val lines: MutableList<String> = ArrayList()
             for (e in failures.entries) {
@@ -42,7 +41,6 @@ class Availability private constructor(@JvmField val heading: String, @JvmField 
             }
             return java.lang.String.join(" ", lines)
         }
-        @JvmStatic
         fun problem(kind: AddonException.Kind): String {
             return when (kind) {
                 AddonException.Kind.TIMEOUT -> "didn't respond in time"

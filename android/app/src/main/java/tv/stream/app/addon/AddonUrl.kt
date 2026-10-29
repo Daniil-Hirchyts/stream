@@ -7,7 +7,7 @@ import java.util.TreeMap
 
 /** Builds resource paths without decoding or rebuilding an add-on's configured path. */
 class AddonUrl @Throws(AddonException::class) constructor(value: String) {
-    @JvmField val manifest: String
+    val manifest: String
     private val base: String
     private val query: String
 
@@ -58,7 +58,6 @@ class AddonUrl @Throws(AddonException::class) constructor(value: String) {
         /** Add-ons answered inside the app ([BuiltinAddons]), addressed as `stream://name/manifest.json`. */
         const val BUILTIN = "stream://"
 
-        @JvmStatic
         @Throws(AddonException::class)
         fun web(value: String?): URI {
             try {
@@ -75,14 +74,12 @@ class AddonUrl @Throws(AddonException::class) constructor(value: String) {
         }
 
         /** What people paste: add-on configure pages hand out `stremio://host/…/manifest.json` install links. */
-        @JvmStatic
         fun normalize(input: String): String {
             val value = input.trim { it <= ' ' }
             return if (value.regionMatches(0, "stremio://", 0, 10, ignoreCase = true)) "https://" + value.substring(10) else value
         }
 
         /** Never display configured paths, userinfo, queries, or fragments in diagnostic output. */
-        @JvmStatic
         fun redacted(value: String): String {
             if (value.matches("stream://[a-z0-9-]+/manifest\\.json".toRegex())) return value
             try {
@@ -91,7 +88,6 @@ class AddonUrl @Throws(AddonException::class) constructor(value: String) {
             } catch (e: AddonException) { return "[private address]" }
         }
 
-        @JvmStatic
         fun encode(value: String): String {
             val out = StringBuilder()
             for (b in value.toByteArray(StandardCharsets.UTF_8)) {

@@ -127,6 +127,16 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
     }
     override fun onAttachedToRecyclerView(view: RecyclerView) { recycler = view }
     override fun onDetachedFromRecyclerView(view: RecyclerView) { recycler = null }
+    /** A focus restore must wait for Compose updates queued while RecyclerView was laying out its holders. */
+    fun hasPendingBindings(): Boolean {
+        fun pending(view: View): Boolean {
+            if (!view.isAttachedToWindow) return false
+            if (view is ComposePageBlock && view.hasPendingBinding) return true
+            if (view is ViewGroup) for (i in 0 until view.childCount) if (pending(view.getChildAt(i))) return true
+            return false
+        }
+        return recycler?.let(::pending) == true
+    }
     private fun focused(key: String) {
         if (replacingFocus) return
         if (key.equals(restore)) restore = ""
@@ -180,6 +190,8 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val box = holder.itemView as FrameLayout
         val item = items.get(position)
+        val composition = box.getChildAt(0) as? ComposePageBlock
+        if (composition != null && composition.bind(item)) return
         if (box.childCount > 0 && box.getChildAt(0).getTag(R.id.page_binding) is Binding
                 && (box.getChildAt(0).getTag(R.id.page_binding) as Binding).update(item)) return
         val focused: View? = box.findFocus()
@@ -192,11 +204,16 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
             recycler!!.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS; recycler!!.requestFocus()
         }
         try {
+            // Removing a block is a structural replacement, not a cached holder leaving the viewport.
+            (box.getChildAt(0) as? ComposePageBlock)?.disposeComposition()
             box.removeAllViews()
             val fillViewport = item.kind == Item.Kind.KEYBOARD || item.kind == Item.Kind.SPLIT || item.kind == Item.Kind.LOADING
             box.layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                     if (fillViewport) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT)
-            val content = build(item)
+            val native = build(item)
+            val content = if (composeBlock(item.kind)) ComposePageBlock(context, item, native, this::build) { view, next ->
+                (view.getTag(R.id.page_binding) as? Binding)?.update(next) == true
+            } else native
             // A block with a fixed height (the Home spotlight) keeps it; everything else wraps its content.
             val own: ViewGroup.LayoutParams? = content.layoutParams
             val height = if (fillViewport) ViewGroup.LayoutParams.MATCH_PARENT else if (own != null && own.height > 0) own.height else ViewGroup.LayoutParams.WRAP_CONTENT
@@ -208,6 +225,16 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
                 if (target != null) target.requestFocus()
             }
         }
+    }
+
+    /** Settings/add-on controls first, followed by Details and browse blocks that share the same controls. */
+    private fun composeBlock(kind: Item.Kind): Boolean = when (kind) {
+        Item.Kind.SPLIT, Item.Kind.LIST, Item.Kind.SOURCE, Item.Kind.FIELD, Item.Kind.SUBTITLE_PREVIEW,
+        Item.Kind.DETAILS, Item.Kind.SERIES_HEADER, Item.Kind.INTRO, Item.Kind.TITLE,
+        Item.Kind.CATALOGUE_HEADER, Item.Kind.HEADER, Item.Kind.PAGINATION,
+        Item.Kind.ACTIONS, Item.Kind.CHIPS, Item.Kind.MESSAGE, Item.Kind.NOTICE, Item.Kind.TEXT -> true
+        // Artwork shelves, the on-screen keyboard and player controls retain their existing custom parents.
+        else -> false
     }
 
     private fun restoreLater(view: View, key: String) {
@@ -1342,7 +1369,7 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
         return text
     }
     /** The layout changes in place: one query, one results grid and no provider work during a mode switch. */
-    private inner class SearchPane(@JvmField val item: Item) : LinearLayout(context) {
+    private inner class SearchPane(val item: Item) : LinearLayout(context) {
         lateinit var editor: LinearLayout
         lateinit var results: LinearLayout
         val queries: MutableList<TextView> = ArrayList()
@@ -2129,7 +2156,7 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
         private fun wrap(): LinearLayout.LayoutParams { return LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT) }
         private fun fill(): FrameLayout.LayoutParams { return FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) }
 
-        @JvmStatic fun kind(title: Title): String {
+        fun kind(title: Title): String {
             when (title.type) {
                 "movie" -> return "Film"
                 "series" -> return "Series"
@@ -2138,17 +2165,17 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
                 else -> return if (title.type.isEmpty()) "" else Character.toUpperCase(title.type[0]).toString() + title.type.substring(1)
             }
         }
-        @JvmStatic fun metaLine(title: Title): String {
+        fun metaLine(title: Title): String {
             return metaLine(title, true)
         }
-        @JvmStatic private fun metaLine(title: Title, year: Boolean): String {
+        private fun metaLine(title: Title, year: Boolean): String {
             val parts: MutableList<String> = ArrayList()
             if (year && !title.releaseInfo.isEmpty()) parts.add(title.releaseInfo)
             if (!title.genres.isEmpty()) parts.add(title.genres.subList(0, Math.min(3, title.genres.size)).joinToString(", "))
             if (!title.rating.isEmpty()) parts.add("★ " + title.rating)
             return parts.joinToString("  ·  ")
         }
-        @JvmStatic private fun firstFocusable(view: View): View? {
+        private fun firstFocusable(view: View): View? {
             if (view.visibility != View.VISIBLE) return null
             if (view.isFocusable && view.tag is String) return view
             if (view is ViewGroup) for (i in 0 until view.childCount) {

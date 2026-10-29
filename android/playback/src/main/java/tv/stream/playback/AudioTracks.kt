@@ -11,6 +11,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 
+import java.util.Collections
 import java.util.HashMap
 import java.util.HashSet
 import java.util.Locale
@@ -26,21 +27,21 @@ object AudioTracks {
     private val TRAILING_DIGITS = Regex("\\d+$")
 
     class Track(
-        @JvmField val id: String,
-        @JvmField val label: String,
+        val id: String,
+        val label: String,
         /** The page's index for this voice-over. */
-        @JvmField val number: Int,
+        val number: Int,
         format: Format,
         group: Tracks.Group,
-        @JvmField val indices: List<Int>,
+        indices: List<Int>,
     ) {
-        @JvmField val language: String? = format.language
-        @JvmField val selected: Boolean = group.isSelected
-        @JvmField val group: TrackGroup = group.mediaTrackGroup
+        val indices: List<Int> = Collections.unmodifiableList(ArrayList(indices))
+        val language: String? = format.language
+        val selected: Boolean = group.isSelected
+        val group: TrackGroup = group.mediaTrackGroup
     }
 
     /** @param pageNames names by the page's index, or empty when the page gave none. */
-    @JvmStatic
     fun from(context: Context, tracks: Tracks, pageNames: List<String>): List<Track> {
         val groups: MutableList<Tracks.Group> = ArrayList()
         val positions: MutableList<Int> = ArrayList()
@@ -72,29 +73,25 @@ object AudioTracks {
             for (t in 0 until group.length) if (group.isTrackSupported(t)) indices.add(t)
             list.add(Track(positions[k].toString(), label, number, format, group, indices))
         }
-        return list
+        return Collections.unmodifiableList(list)
     }
 
-    @JvmStatic
     fun selected(tracks: List<Track>): Track? {
         for (track in tracks) if (track.selected) return track
         return null
     }
 
-    @JvmStatic
     fun find(tracks: List<Track>, id: String?): Track? {
         for (track in tracks) if (track.id == id) return track
         return null
     }
 
-    @JvmStatic
     fun numbered(tracks: List<Track>, number: Int): Track? {
         for (track in tracks) if (track.number == number) return track
         return null
     }
 
     /** The first track in `language`, ignoring regions and the digits streams append ("rus2"). */
-    @JvmStatic
     fun spoken(tracks: List<Track>, language: String?): Track? {
         val wanted = SubtitleTracks.primary(language) ?: return null
         for (track in tracks) {
@@ -106,13 +103,11 @@ object AudioTracks {
     }
 
     /** Lets the next video start on its own default track. */
-    @JvmStatic
     fun reset(player: Player) {
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                 .clearOverridesOfType(C.TRACK_TYPE_AUDIO).build()
     }
 
-    @JvmStatic
     fun select(player: Player, track: Track) {
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                 .setOverrideForType(TrackSelectionOverride(track.group, track.indices)).build()

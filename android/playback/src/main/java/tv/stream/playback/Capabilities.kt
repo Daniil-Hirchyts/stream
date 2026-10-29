@@ -50,7 +50,6 @@ object Capabilities {
      * Debug builds can hide decoders, so an emulator behaves like the Fire TV Stick, which has no AV1 decoder:
      * `files/debug.json` with `{"blockDecoders": ["video/av01"]}`.
      */
-    @JvmStatic
     @Synchronized
     fun load(context: Context) {
         val list: MutableSet<String> = HashSet()
@@ -73,7 +72,6 @@ object Capabilities {
     }
 
     /** Media3's decoder choice without the hidden decoders. */
-    @JvmStatic
     fun selector(): MediaCodecSelector {
         return MediaCodecSelector { mime, secure, tunneling ->
             if (blocked.contains(mime)) Collections.emptyList()
@@ -81,7 +79,6 @@ object Capabilities {
         }
     }
 
-    @JvmStatic
     fun decodes(codec: String?): Boolean {
         if (codec == null || codec.isEmpty()) return true
         try {
@@ -92,7 +89,6 @@ object Capabilities {
     }
 
     /** The display name of a MIME type, such as "AV1" for video/av01, or the type itself. */
-    @JvmStatic
     fun name(mime: String?): String {
         if (mime == null) return ""
         val name = if (VIDEO.containsKey(mime)) VIDEO[mime] else AUDIO[mime]
@@ -100,7 +96,6 @@ object Capabilities {
     }
 
     /** {"video": ["H.264", "VP9"…], "audio": ["AAC"…]}. */
-    @JvmStatic
     @Synchronized
     @Throws(Exception::class)
     fun json(): JSONObject {

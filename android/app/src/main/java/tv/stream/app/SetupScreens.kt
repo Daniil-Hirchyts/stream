@@ -203,29 +203,29 @@ class SetupScreens(private val context: Context, private val nav: Navigator, pri
     }
 
     companion object {
-        @JvmField val LANGUAGE_NAMES = arrayOf("Automatic", "English", "Russian", "French", "German", "Spanish", "Italian", "Ukrainian", "Japanese", "Off")
-        @JvmField val LANGUAGES = arrayOf("", "eng", "rus", "fra", "deu", "spa", "ita", "ukr", "jpn", "off")
+        val LANGUAGE_NAMES = arrayOf("Automatic", "English", "Russian", "French", "German", "Spanish", "Italian", "Ukrainian", "Japanese", "Off")
+        val LANGUAGES = arrayOf("", "eng", "rus", "fra", "deu", "spa", "ita", "ukr", "jpn", "off")
 
         private fun category(categories: MutableList<Item>, panes: MutableMap<String, List<Item>>, key: String, icon: Int, title: String, rows: List<Item>) {
             categories.add(Item.row(key, icon, title, "", null))
             panes[key] = rows
         }
         /** The viewer's interface sounds switch (on unless turned off). Reads the store: call on a worker. */
-        @JvmStatic fun soundsOn(services: TvApplication.Services): Boolean { return services.store.preference("interfaceSounds", "true") != "false" }
+        fun soundsOn(services: TvApplication.Services): Boolean { return services.store.preference("interfaceSounds", "true") != "false" }
         /** The clock's format ("", "24", "12" or "off"); reads the store, so call on a worker. */
-        @JvmStatic fun clockFormat(services: TvApplication.Services): String { return services.store.preference("clock", "") }
+        fun clockFormat(services: TvApplication.Services): String { return services.store.preference("clock", "") }
         /** Whether the player overlay shows the clock too (on unless turned off). Reads the store: call on a worker. */
-        @JvmStatic fun playerClock(services: TvApplication.Services): Boolean { return services.store.preference("playerClock", "true") != "false" }
+        fun playerClock(services: TvApplication.Services): Boolean { return services.store.preference("playerClock", "true") != "false" }
         /** Diagnostics are opt-in. Read the encrypted store on an application worker. */
-        @JvmStatic fun developerMode(services: TvApplication.Services): Boolean { return services.store.preference("developerMode", "false") == "true" }
-        @JvmStatic fun clearCaches(context: Context, services: TvApplication.Services) {
+        fun developerMode(services: TvApplication.Services): Boolean { return services.store.preference("developerMode", "false") == "true" }
+        fun clearCaches(context: Context, services: TvApplication.Services) {
             services.addons.cancelRequests()
             services.store.clearMetadata()
             delete(File(context.cacheDir, "payload"))
             delete(File(context.cacheDir, "subtitles"))
             delete(File(context.cacheDir, "artwork"))
         }
-        @JvmStatic fun languageName(code: String): String {
+        fun languageName(code: String): String {
             for (i in LANGUAGES.indices) if (LANGUAGES[i] == code) return LANGUAGE_NAMES[i]
             try {
                 val normalized = java.util.Locale.forLanguageTag(code).getISO3Language()
@@ -233,7 +233,7 @@ class SetupScreens(private val context: Context, private val nav: Navigator, pri
             } catch (ignored: Exception) { /* unknown provider language */ }
             return code
         }
-        @JvmStatic fun delete(file: File) {
+        fun delete(file: File) {
             val children = file.listFiles()
             if (children != null) for (child in children) delete(child)
             file.delete()

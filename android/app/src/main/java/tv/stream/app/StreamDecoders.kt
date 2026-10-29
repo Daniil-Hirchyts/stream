@@ -36,7 +36,7 @@ class StreamDecoders : PlaybackDecoders {
     private var audioFormat: String? = null
 
     companion object {
-        @JvmStatic fun supports(mime: String?): Boolean {
+        fun supports(mime: String?): Boolean {
             return mime != null && FfmpegLibrary.supportsFormat(mime)
         }
     }

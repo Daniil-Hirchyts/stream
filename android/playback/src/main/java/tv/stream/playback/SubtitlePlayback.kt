@@ -41,14 +41,12 @@ class SubtitlePlayback(context: Context) : DefaultRenderersFactory(context) {
 
     companion object {
         /** App decoder factories use the same seek/late-selection compatibility as the default factory. */
-        @JvmStatic
         fun textRenderer(output: TextOutput, outputLooper: Looper): TextRenderer {
             val renderer = TextRenderer(output, outputLooper)
             renderer.experimentalSetLegacyDecodingEnabled(true)
             return renderer
         }
 
-        @JvmStatic
         fun create(sources: DefaultMediaSourceFactory, data: DataSource.Factory, media: MediaItem): MediaSource {
             if (media.localConfiguration == null || media.localConfiguration!!.subtitleConfigurations.isEmpty()) {
                 return sources.createMediaSource(media)

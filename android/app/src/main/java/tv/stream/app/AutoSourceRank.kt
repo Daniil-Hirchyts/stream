@@ -2,7 +2,6 @@ package tv.stream.app
 
 /** A bounded, advertised startup estimate, not a speed test. Never opens a torrent while ranking. */
 object AutoSourceRank {
-    @JvmStatic
     fun score(facts: SourceSort.Facts, outcome: Int): Int {
         // With neither quality nor availability, don't invent a comparison from size alone. Preserve provider order.
         if (facts.lines == 0 && facts.seeds < 0) return outcome

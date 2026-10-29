@@ -81,7 +81,7 @@ constructor(
     private var externalChoice: String? = null
     private val externalSubtitles: MutableMap<String, ExternalSubtitle> = java.util.LinkedHashMap()
     private val cueTick = Runnable { externalCuesChanged() }
-    private class ExternalSubtitle(@JvmField val track: SubtitleTracks.Track, @JvmField val timeline: Subtitle, @JvmField val address: String)
+    private class ExternalSubtitle(val track: SubtitleTracks.Track, val timeline: Subtitle, val address: String)
     /** The voice-over the viewer chose, by name, kept from one episode to the next. */
     private var voice: String? = null
 

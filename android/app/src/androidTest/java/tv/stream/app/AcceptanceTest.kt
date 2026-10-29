@@ -143,6 +143,11 @@ class AcceptanceTest : AppHarness() {
     }
 
     private fun field(activity: WatchActivity?, name: String): Any? {
+        if (name == "attempts") {
+            val attempts = java.util.concurrent.atomic.AtomicInteger()
+            instrumentation.runOnMainSync { attempts.set(activity!!.diagnosticSnapshot().getInt("sourceAttempts")) }
+            return attempts.get()
+        }
         try { val field = WatchActivity::class.java.getDeclaredField(name); field.isAccessible = true; return field.get(activity) }
         catch (e: Exception) { throw AssertionError(e) }
     }

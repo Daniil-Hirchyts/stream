@@ -143,7 +143,7 @@ abstract class AppHarness {
         waitUntil("target $label", 5000) { targetNode(label) != null }
         var node = targetNode(label)
         if (node != null && node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.id)) {
-            SystemClock.sleep(150); instrumentation.waitForIdleSync()
+            SystemClock.sleep(150); instrumentation.runOnMainSync {}
             waitUntil("settled $label", 5000) { targetNode(label) != null }; node = targetNode(label)
         }
         assertNotNull("Clickable $label", node); val bounds = Rect(); node!!.getBoundsInScreen(bounds)
@@ -209,7 +209,9 @@ abstract class AppHarness {
             val e = MotionEvent.obtain(time, SystemClock.uptimeMillis(), action, 1, arrayOf(p), arrayOf(c), 0, if (mouse && action == MotionEvent.ACTION_DOWN) MotionEvent.BUTTON_PRIMARY else 0, 1f, 1f, 0, 0, if (mouse) InputDevice.SOURCE_MOUSE else InputDevice.SOURCE_TOUCHSCREEN, 0)
             assertTrue(instrumentation.uiAutomation.injectInputEvent(e, true)); e.recycle()
         }
-        instrumentation.waitForIdleSync()
+        // Playback and clocks may keep scheduling frames. Wait for injected input to reach the main
+        // thread, then bound accessibility settling; each caller's state assertion decides success.
+        instrumentation.runOnMainSync {}
         try { instrumentation.uiAutomation.waitForIdle(100, 2000) } catch (ignored: java.util.concurrent.TimeoutException) { /* state assertions still decide success */ }
     }
     open fun control(id: Int, mouse: Boolean) {

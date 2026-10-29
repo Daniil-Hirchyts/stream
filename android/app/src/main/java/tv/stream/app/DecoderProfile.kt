@@ -13,23 +13,23 @@ object DecoderProfile {
     @Volatile private var hdrDisplay = false
     @Volatile private var hdrTypes = IntArray(0)
     private var application: Context? = null
-    @JvmStatic fun load(context: Context) {
+    fun load(context: Context) {
         application = context.applicationContext
         val manager = context.getSystemService(DisplayManager::class.java)
         val display = if (manager == null) null else manager.getDisplay(Display.DEFAULT_DISPLAY)
         hdrTypes = if (display == null) IntArray(0) else display.hdrCapabilities.supportedHdrTypes
         hdrDisplay = hdrTypes.size > 0
     }
-    @JvmStatic fun hdr(format: Format?): Boolean {
+    fun hdr(format: Format?): Boolean {
         return format != null && ("video/dolby-vision" == format.sampleMimeType
                 || format.colorInfo != null && (format.colorInfo!!.colorTransfer == C.COLOR_TRANSFER_ST2084 || format.colorInfo!!.colorTransfer == C.COLOR_TRANSFER_HLG))
     }
-    @JvmStatic fun hardware(mime: String?): Boolean {
+    fun hardware(mime: String?): Boolean {
         try { return MediaCodecUtil.getDecoderInfos(mime!!, false, false).stream().anyMatch { info -> info.hardwareAccelerated } }
         catch (ignored: Exception) { return false }
     }
-    @JvmStatic fun hdrHintSupported(mime: String?): Boolean = hdrDisplay && (mime == null || hardware(mime))
-    @JvmStatic fun hdrSupported(format: Format?): Boolean {
+    fun hdrHintSupported(mime: String?): Boolean = hdrDisplay && (mime == null || hardware(mime))
+    fun hdrSupported(format: Format?): Boolean {
         if (!hdr(format)) return true
         if (!hdrDisplay) return false
         format!!

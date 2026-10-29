@@ -8,53 +8,42 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 
-import java.util.LinkedHashMap
+import java.util.Collections
 
 /** The video's qualities, named as viewers know them (1080p, 720p…), with "Auto" letting Media3 adapt. */
 @OptIn(markerClass = [UnstableApi::class])
 object VideoQualities {
     const val AUTO = "auto"
 
-    class Option(@JvmField val label: String, @JvmField val lines: Int, @JvmField val group: TrackGroup) {
-        @JvmField val id: String = lines.toString()
-        @JvmField val indices: MutableList<Int> = ArrayList()
+    class Option(val label: String, val lines: Int, val group: TrackGroup, indices: List<Int> = emptyList()) {
+        val id: String = lines.toString()
+        val indices: List<Int> = Collections.unmodifiableList(ArrayList(indices))
     }
 
     /** Highest first; empty when there is nothing to choose. */
-    @JvmStatic
     fun from(tracks: Tracks): List<Option> {
-        var chosen: Tracks.Group? = null
-        for (group in tracks.groups) {
-            if (group.type != C.TRACK_TYPE_VIDEO || !group.isSupported) continue
-            if (chosen == null || group.isSelected) chosen = group
-        }
-        if (chosen == null) return ArrayList()
-        val options: MutableMap<Int, Option> = LinkedHashMap()
-        for (i in 0 until chosen.length) {
-            if (!chosen.isTrackSupported(i)) continue
-            val format = chosen.getTrackFormat(i)
+        val candidates = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO && it.isSupported }
+        // Retain the first supported group unless a later selected group supersedes it.
+        val chosen = candidates.lastOrNull { it.isSelected } ?: candidates.firstOrNull() ?: return emptyList()
+        val indices = linkedMapOf<Int, MutableList<Int>>()
+        for (index in 0 until chosen.length) {
+            if (!chosen.isTrackSupported(index)) continue
+            val format = chosen.getTrackFormat(index)
             val lines = lines(format.width, format.height)
-            if (lines <= 0) continue
-            var option = options[lines]
-            if (option == null) {
-                option = Option(label(lines), lines, chosen.mediaTrackGroup)
-                options[lines] = option
-            }
-            option.indices.add(i)
+            if (lines > 0) indices.getOrPut(lines) { mutableListOf() }.add(index)
         }
-        val list: MutableList<Option> = ArrayList(options.values)
-        list.sortWith { a, b -> b.lines - a.lines }
-        return if (list.size > 1) list else ArrayList()
+        if (indices.size <= 1) return emptyList()
+        return Collections.unmodifiableList(indices.entries.sortedByDescending { it.key }.map { (lines, entries) ->
+            Option(label(lines), lines, chosen.mediaTrackGroup, entries)
+        })
     }
 
-    @JvmStatic
     fun find(options: List<Option>, id: String?): Option? {
         for (option in options) if (option.id == id) return option
         return null
     }
 
     /** Fixes the quality, or lets the player adapt again when `option` is null. */
-    @JvmStatic
     fun select(player: Player, option: Option?) {
         if (option == null) {
             player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
@@ -65,13 +54,11 @@ object VideoQualities {
         }
     }
 
-    @JvmStatic
     fun reset(player: Player) {
         select(player, null)
     }
 
     /** Films are often cropped (1920 × 800), so the width counts too: 1920 wide is 1080p. */
-    @JvmStatic
     fun lines(width: Int, height: Int): Int {
         val lines = Math.max(height, Math.round(width * 9 / 16f))
         if (lines <= 0) return 0
@@ -84,7 +71,6 @@ object VideoQualities {
         return 240
     }
 
-    @JvmStatic
     fun label(lines: Int): String {
         return if (lines == 2160) "4K" else lines.toString() + "p"
     }

@@ -29,9 +29,9 @@ import tv.stream.app.R
  * quite the same twice, and never becomes a tune.
  */
 class Sounds private constructor(context: Context) {
-    enum class Sound(@JvmField val resource: Int, @JvmField val size: Size, seconds: Double,
+    enum class Sound(val resource: Int, val size: Size, seconds: Double,
                      /** Plays over whatever is sounding rather than cutting it. */
-                     @JvmField val layers: Boolean) {
+                     val layers: Boolean) {
         // Full Soft clip durations; the one-voice policy must not outlive a finished cue.
         FOCUS(R.raw.sfx_focus, Size.TOUCH, 0.058), EDGE(R.raw.sfx_edge, Size.TOUCH, 0.094),
         KEY(R.raw.sfx_key, Size.TOUCH, 0.045), DELETE(R.raw.sfx_delete, Size.TOUCH, 0.075),
@@ -49,7 +49,7 @@ class Sounds private constructor(context: Context) {
         // The start screen's music, and the swoosh it leaves with, laid over the opening's fading tail.
         INTRO(R.raw.sfx_intro, Size.MOMENT, 2.050), INTRO_EXIT(R.raw.sfx_intro_exit, Size.MOMENT, 0.320, true);
 
-        @JvmField val ms: Long = Math.round(seconds * 1000)
+        val ms: Long = Math.round(seconds * 1000)
 
         constructor(resource: Int, size: Size, seconds: Double) : this(resource, size, seconds, false)
     }
@@ -136,29 +136,29 @@ class Sounds private constructor(context: Context) {
         private var instance: Sounds? = null
 
         /** Loads the sounds once per process; call from each activity's onCreate. */
-        @JvmStatic @Synchronized fun get(context: Context): Sounds {
+        @Synchronized fun get(context: Context): Sounds {
             if (instance == null) instance = Sounds(context.applicationContext)
             return instance!!
         }
 
         /** An arrow key or touch from the viewer: the focus ticks that follow are theirs. */
-        @JvmStatic fun input() { val s = instance; if (s != null) s.inputAt = SystemClock.uptimeMillis() }
+        fun input() { val s = instance; if (s != null) s.inputAt = SystemClock.uptimeMillis() }
         /** Whether {@code keyCode} moves focus. OK and Back don't: the focus a page restores after them stays quiet. */
-        @JvmStatic fun arrow(keyCode: Int): Boolean {
+        fun arrow(keyCode: Int): Boolean {
             return keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT || keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
                     || keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP || keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN
         }
 
-        @JvmStatic fun play(sound: Sound) { val s = instance; if (s != null) s.sound(sound, 0f) }
+        fun play(sound: Sound) { val s = instance; if (s != null) s.sound(sound, 0f) }
         /** Focus reached {@code view}: a tick leaning with its place across the screen, if the viewer moved it there. */
-        @JvmStatic fun focus(view: View) {
+        fun focus(view: View) {
             val s = instance
             if (s != null && SystemClock.uptimeMillis() - s.inputAt <= INPUT_MS) s.sound(Sound.FOCUS, s.across(view))
         }
         /** {@code sound} leaning with {@code view}'s place across the screen, like a focus tick. */
-        @JvmStatic fun at(sound: Sound, view: View) { val s = instance; if (s != null) s.sound(sound, s.across(view)) }
+        fun at(sound: Sound, view: View) { val s = instance; if (s != null) s.sound(sound, s.across(view)) }
         /** OK on a control. Waits a frame: whatever the control does may have a sound of its own, heard instead. */
-        @JvmStatic fun click() {
+        fun click() {
             val s = instance ?: return
             val before = s.spoken
             s.main.post { if (s.spoken == before) s.sound(Sound.SELECT, 0f) }

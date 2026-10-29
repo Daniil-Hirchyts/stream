@@ -27,6 +27,25 @@ design review, not correctness.
 
 ## Focused regressions
 
+Screen-state and Compose migration checks (JVM, no public providers):
+
+```sh
+(cd android && ./gradlew :app:testDebugUnitTest \
+  --tests tv.stream.app.BrowseViewModelTest --tests tv.stream.app.NavigationViewModelTest \
+  --tests tv.stream.app.PlaybackViewModelTest --tests tv.stream.app.KotlinModelSnapshotsTest \
+  --tests tv.stream.app.PlaybackPreparationTest --tests tv.stream.app.PageSnapshotTest \
+  --tests tv.stream.app.ui.ComposePageBlockTest --tests tv.stream.app.ui.ComposePlayerControlsTest)
+```
+
+These cover cancelled/late provider deliveries, retained navigation without old
+activity callbacks, source retry state, frozen protocol/playback/render snapshots
+and native/Compose control geometry, accessibility, remote activation and focus
+through rebinding. Instrumented interaction coverage uses generated media on the
+verified local emulator.
+
+`ScreenStateInteractionTest` recreates Settings and Details, then exercises the
+restored actions by remote and touch and checks that Back pops one screen.
+
 ```sh
 ./simulator.sh data-test tv.stream.app.VideoTrackEndTest
 (cd android && ./gradlew :app:testDebugUnitTest --tests 'tv.stream.app.VideoFrameWatchdogTest')

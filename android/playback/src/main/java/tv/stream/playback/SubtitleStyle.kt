@@ -19,11 +19,11 @@ import org.json.JSONObject
 @OptIn(markerClass = [UnstableApi::class])
 class SubtitleStyle(private val prefs: SharedPreferences) {
     enum class Setting(
-        @JvmField val key: String,
-        @JvmField val title: Int,
-        @JvmField val fallback: Int,
-        @JvmField val values: Array<String>,
-        @JvmField val labels: IntArray,
+        val key: String,
+        val title: Int,
+        val fallback: Int,
+        val values: Array<String>,
+        val labels: IntArray,
     ) {
         SIZE("size", R.string.subtitle_size, 1, arrayOf("small", "medium", "large", "xlarge"),
                 intArrayOf(R.string.size_small, R.string.size_medium, R.string.size_large, R.string.size_xlarge)),
@@ -113,42 +113,34 @@ class SubtitleStyle(private val prefs: SharedPreferences) {
                 Typeface.create("monospace", Typeface.NORMAL), Typeface.create("casual", Typeface.NORMAL),
                 Typeface.create("cursive", Typeface.NORMAL), Typeface.create("sans-serif-smallcaps", Typeface.NORMAL))
 
-        @JvmStatic
         fun colorFor(index: Int): Int {
             return COLORS[Math.max(0, Math.min(index, COLORS.size - 1))]
         }
 
-        @JvmStatic
         fun typefaceFor(index: Int): Typeface {
             return FONTS[Math.max(0, Math.min(index, FONTS.size - 1))]
         }
 
-        @JvmStatic
         fun sizeFractionFor(index: Int): Float {
             return SIZES[Math.max(0, Math.min(index, SIZES.size - 1))]
         }
 
-        @JvmStatic
         fun bottomGapFor(index: Int): Float {
             return BOTTOM_GAP[Math.max(0, Math.min(index, BOTTOM_GAP.size - 1))]
         }
 
-        @JvmStatic
         fun boxColor(): Int {
             return BOX
         }
 
-        @JvmStatic
         fun colorsCount(): Int {
             return COLORS.size
         }
 
-        @JvmStatic
         fun fontsCount(): Int {
             return FONTS.size
         }
 
-        @JvmStatic
         fun apply(view: SubtitleView, sizeIndex: Int, fontIndex: Int, colorIndex: Int, edgeIndex: Int, positionIndex: Int) {
             val color = colorFor(colorIndex)
             val font = typefaceFor(fontIndex)

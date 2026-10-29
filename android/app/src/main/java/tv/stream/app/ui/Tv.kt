@@ -36,14 +36,14 @@ object Tv {
     /** Small round controls (back, search, page tools and arrows) grow more, so the change reads at their size. */
     const val LIFT_ICON = 1.12f
     private val ACTIVATING = ThreadLocal<View>()
-    @JvmStatic fun activatingControl(): View? { return ACTIVATING.get() }
+    fun activatingControl(): View? { return ACTIVATING.get() }
 
-    @JvmStatic fun dp(context: Context, value: Float): Int { return Math.round(value * context.resources.displayMetrics.density) }
+    fun dp(context: Context, value: Float): Int { return Math.round(value * context.resources.displayMetrics.density) }
 
     /**
      * Geist Sans: regular for body text, medium for headings and controls, semibold for emphasis and titles.
      */
-    enum class Font(@JvmField val resource: Int) {
+    enum class Font(val resource: Int) {
         REGULAR(R.font.geist_regular), MEDIUM(R.font.geist_medium), SEMIBOLD(R.font.geist_semibold);
         private var typeface: Typeface? = null
         fun get(context: Context): Typeface {
@@ -53,13 +53,13 @@ object Tv {
         }
     }
     /** Repeated interface roles: size and weight stay consistent across content, lists and menus. */
-    enum class Type(@JvmField val size: Float, @JvmField val font: Font, @JvmField val tracking: Float) {
+    enum class Type(val size: Float, val font: Font, val tracking: Float) {
         HERO(32f, Font.SEMIBOLD, -.015f), TITLE(28f, Font.SEMIBOLD, -.015f), SECTION(18f, Font.SEMIBOLD, -.005f),
         CONTROL(15f, Font.MEDIUM, 0f), BODY(15f, Font.REGULAR, 0f), META(13f, Font.MEDIUM, 0f),
         CAPTION(13.5f, Font.MEDIUM, 0f), EYEBROW(11.5f, Font.MEDIUM, .12f),
         MENU_TITLE(14f, Font.MEDIUM, 0f), VALUE(14f, Font.REGULAR, 0f);
     }
-    @JvmStatic fun type(context: Context, value: String?, role: Type, @ColorRes color: Int): TextView {
+    fun type(context: Context, value: String?, role: Type, @ColorRes color: Int): TextView {
         val view = text(context, value, role.size, color)
         view.typeface = role.font.get(context); view.letterSpacing = role.tracking
         return view
@@ -67,19 +67,19 @@ object Tv {
     /** Large titles use tighter tracking; smaller emphasized text stays closer to its natural spacing. */
     private const val TITLE_SP = 24f
 
-    @JvmStatic fun text(context: Context, value: String?, sp: Float, @ColorRes color: Int): TextView {
+    fun text(context: Context, value: String?, sp: Float, @ColorRes color: Int): TextView {
         val view = TextView(context)
         view.text = value; view.textSize = sp; view.setTextColor(context.getColorStateList(color))
         view.typeface = Font.REGULAR.get(context)
         view.includeFontPadding = false
         return view
     }
-    @JvmStatic fun heading(context: Context, value: String?, sp: Float, @ColorRes color: Int): TextView {
+    fun heading(context: Context, value: String?, sp: Float, @ColorRes color: Int): TextView {
         val view = text(context, value, sp, color)
         view.typeface = Font.MEDIUM.get(context)
         return view
     }
-    @JvmStatic fun bold(context: Context, value: String?, sp: Float): TextView {
+    fun bold(context: Context, value: String?, sp: Float): TextView {
         val view = text(context, value, sp, R.color.tv_text)
         view.typeface = Font.SEMIBOLD.get(context)
         view.letterSpacing = if (sp >= TITLE_SP) -0.015f else -0.005f
@@ -89,13 +89,13 @@ object Tv {
      * Text that can sit over artwork gets a soft dark shadow, so it stays readable on light frames the scrim doesn't
      * fully darken. On the plain canvas the shadow is invisible.
      */
-    @JvmStatic fun onArtwork(view: TextView): TextView {
+    fun onArtwork(view: TextView): TextView {
         val context = view.context
         view.setShadowLayer(dp(context, 5f).toFloat(), 0f, dp(context, 1f).toFloat(), 0xB3000000.toInt())
         return view
     }
-    @JvmStatic fun oneLine(view: TextView): TextView { view.setSingleLine(true); view.ellipsize = TextUtils.TruncateAt.END; return view }
-    @JvmStatic fun lines(view: TextView, lines: Int): TextView {
+    fun oneLine(view: TextView): TextView { view.setSingleLine(true); view.ellipsize = TextUtils.TruncateAt.END; return view }
+    fun lines(view: TextView, lines: Int): TextView {
         view.maxLines = lines; view.ellipsize = TextUtils.TruncateAt.END; view.setLineSpacing(0f, 1.18f); return view
     }
 
@@ -103,16 +103,16 @@ object Tv {
      * Makes {@code view} a control: focusable by remote and pointer, clicked by OK, mouse or touch, and reporting
      * focus by key. Touch requests focus on press so the first tap both focuses and activates.
      */
-    @JvmStatic fun control(view: View, key: String, action: Runnable, focused: Consumer<String>, lift: Float) {
+    fun control(view: View, key: String, action: Runnable, focused: Consumer<String>, lift: Float) {
         control(view, key, action, focused, lift, true)
     }
 
-    @JvmStatic fun control(view: View, key: String, action: Runnable, focused: Consumer<String>, lift: Float, raise: Boolean) {
+    fun control(view: View, key: String, action: Runnable, focused: Consumer<String>, lift: Float, raise: Boolean) {
         control(view, key, action, focused, DoubleSupplier { lift.toDouble() }, raise)
     }
 
     /** {@code lift} is read at every change, for a control whose shape, and so its growth, changes. */
-    @JvmStatic fun control(view: View, key: String, action: Runnable, focused: Consumer<String>, lift: DoubleSupplier, raise: Boolean) {
+    fun control(view: View, key: String, action: Runnable, focused: Consumer<String>, lift: DoubleSupplier, raise: Boolean) {
         view.tag = key
         view.isFocusable = true; view.isFocusableInTouchMode = true; view.isClickable = true
         view.defaultFocusHighlightEnabled = false
@@ -135,7 +135,7 @@ object Tv {
      * background's hovered state fades in a soft platter. It never moves focus, so the remote keeps its place.
      * Call it after [control], whose focus listener it extends.
      */
-    @JvmStatic fun hover(control: View, lift: DoubleSupplier) {
+    fun hover(control: View, lift: DoubleSupplier) {
         control.setOnHoverListener { view, event ->
             val action = event.actionMasked
             if (action == MotionEvent.ACTION_HOVER_ENTER) animate(view, true, lift.asDouble.toFloat(), false)
@@ -151,10 +151,10 @@ object Tv {
     }
 
     /** tvOS focus: the focused control grows and floats above its neighbours. */
-    @JvmStatic fun animate(view: View, focused: Boolean, lift: Float) { animate(view, focused, lift, true) }
+    fun animate(view: View, focused: Boolean, lift: Float) { animate(view, focused, lift, true) }
 
     /** Some controls have enough layout clearance to grow without an elevation shadow. */
-    @JvmStatic fun animate(view: View, focused: Boolean, lift: Float, raise: Boolean) {
+    fun animate(view: View, focused: Boolean, lift: Float, raise: Boolean) {
         val scale = if (focused) lift else 1f
         view.animate().cancel()
         view.animate().scaleX(scale).scaleY(scale).translationZ((if (focused && raise) dp(view.context, 10f) else 0).toFloat())
@@ -162,9 +162,9 @@ object Tv {
     }
 
     /** Clears motion left on a recycled view. */
-    @JvmStatic fun settle(view: View) { view.animate().cancel(); view.scaleX = 1f; view.scaleY = 1f; view.translationZ = 0f }
+    fun settle(view: View) { view.animate().cancel(); view.scaleX = 1f; view.scaleY = 1f; view.translationZ = 0f }
 
-    @JvmStatic fun icon(context: Context, drawable: Int, sizeDp: Int, @ColorRes tint: Int): ImageView {
+    fun icon(context: Context, drawable: Int, sizeDp: Int, @ColorRes tint: Int): ImageView {
         val icon = ImageView(context)
         icon.setImageResource(drawable); icon.imageTintList = context.getColorStateList(tint)
         icon.isDuplicateParentStateEnabled = true; icon.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -173,7 +173,7 @@ object Tv {
     }
 
     /** A platter button in one of the [Item.Action] styles. Its content turns dark on the white focus platter. */
-    @JvmStatic fun button(context: Context, action: Item.Action, focused: Consumer<String>): View {
+    fun button(context: Context, action: Item.Action, focused: Consumer<String>): View {
         // Icon controls stay transparent at rest; other buttons may blur the artwork behind them.
         val button = if (action.style == Item.Action.Style.ICON) FrameLayout(context) else GlassView.surface(context)
         bindButton(button, action, focused)
@@ -181,7 +181,7 @@ object Tv {
     }
 
     /** Update a button's content and action without detaching its focusable surface. */
-    @JvmStatic fun bindButton(button: FrameLayout, action: Item.Action, focused: Consumer<String>) {
+    fun bindButton(button: FrameLayout, action: Item.Action, focused: Consumer<String>) {
         val context = button.context
         val previousLayout: ViewGroup.LayoutParams? = button.layoutParams
         button.removeAllViews()
@@ -234,11 +234,11 @@ object Tv {
     }
 
     // Context menus stay beside their opener. One surface contains the full navigation stack.
-    class Alert(@JvmField val dialog: Dialog, @JvmField val surface: LinearLayout, @JvmField val buttons: LinearLayout, @JvmField val title: String?) {
-        @JvmField var initialFocus: View? = null
-        @JvmField var prepare: Runnable? = null
-        @JvmField var customBody: View? = null
-        @JvmField var buttonHost: View = buttons
+    class Alert(val dialog: Dialog, val surface: LinearLayout, val buttons: LinearLayout, val title: String?) {
+        var initialFocus: View? = null
+        var prepare: Runnable? = null
+        var customBody: View? = null
+        var buttonHost: View = buttons
 
         fun onAppear(prepare: Runnable?): Alert { this.prepare = prepare; return this }
         fun onClosing(action: Runnable?): Alert { (dialog as MorphDialog).beforeClose = action; return this }
@@ -378,7 +378,7 @@ object Tv {
         return 0
     }
 
-    @JvmStatic fun alert(context: Context, title: String?, message: CharSequence?): Alert {
+    fun alert(context: Context, title: String?, message: CharSequence?): Alert {
         val alert = createAlert(context, title, null, MorphDialog(context, false), null)
         if (message != null && message.length > 0) {
             (alert.buttons.layoutParams as LinearLayout.LayoutParams).topMargin = dp(context, 12f)
@@ -390,7 +390,7 @@ object Tv {
         }
         return alert
     }
-    @JvmStatic fun alert(context: Context, title: String?, bodyView: View?): Alert {
+    fun alert(context: Context, title: String?, bodyView: View?): Alert {
         return createAlert(context, title, bodyView, MorphDialog(context), null)
     }
     private fun createAlert(context: Context, title: String?, body: View?, dialog: Dialog, parent: String?): Alert {
@@ -418,10 +418,10 @@ object Tv {
         return Alert(dialog, surface, buttons, title)
     }
 
-    @JvmStatic fun choices(context: Context, title: String, options: Array<String>, accept: Consumer<Int>, cancel: Runnable?): Alert {
+    fun choices(context: Context, title: String, options: Array<String>, accept: Consumer<Int>, cancel: Runnable?): Alert {
         return choices(context, title, null, options, -1, accept, null, cancel)
     }
-    @JvmStatic fun choices(context: Context, title: String, body: View?, options: Array<String>, initialSelection: Int,
+    fun choices(context: Context, title: String, body: View?, options: Array<String>, initialSelection: Int,
                            accept: Consumer<Int>, onPreview: Consumer<Int>?, cancel: Runnable?): Alert {
         val alert = alert(context, title, body)
         val actionIcons = title != "Choose source" && title != "Choose a video file" && initialSelection < 0
@@ -454,7 +454,7 @@ object Tv {
      * content scrolled out of view draw over its neighbours; a clipping frame stops that. {@code bleed} pixels on each
      * side stay inside the clip for a focused item's growth; give the frame matching negative margins.
      */
-    @JvmStatic fun clipped(scrolling: ViewGroup, bleed: Int): FrameLayout {
+    fun clipped(scrolling: ViewGroup, bleed: Int): FrameLayout {
         val frame = FrameLayout(scrolling.context)
         scrolling.clipChildren = false; scrolling.clipToPadding = false
         scrolling.setPadding(scrolling.paddingLeft + bleed, scrolling.paddingTop, scrolling.paddingRight + bleed, scrolling.paddingBottom)
@@ -463,8 +463,8 @@ object Tv {
     }
 
     /** Alpha fades on the clipped composite, rather than Android's padding-relative fading-edge bands. */
-    @JvmStatic fun faded(scrolling: ViewGroup, bleed: Int, lengthDp: Int): FrameLayout { return faded(scrolling, bleed, lengthDp, lengthDp) }
-    @JvmStatic fun faded(scrolling: ViewGroup, bleed: Int, topDp: Int, bottomDp: Int): FrameLayout {
+    fun faded(scrolling: ViewGroup, bleed: Int, lengthDp: Int): FrameLayout { return faded(scrolling, bleed, lengthDp, lengthDp) }
+    fun faded(scrolling: ViewGroup, bleed: Int, topDp: Int, bottomDp: Int): FrameLayout {
         val frame: FrameLayout = ScrollFade(scrolling, dp(scrolling.context, topDp.toFloat()), dp(scrolling.context, bottomDp.toFloat()))
         scrolling.isVerticalFadingEdgeEnabled = false
         scrolling.clipChildren = false; scrolling.clipToPadding = false
@@ -510,5 +510,5 @@ object Tv {
         }
     }
 
-    @JvmStatic fun colors(context: Context, @ColorRes color: Int): ColorStateList { return context.getColorStateList(color) }
+    fun colors(context: Context, @ColorRes color: Int): ColorStateList { return context.getColorStateList(color) }
 }

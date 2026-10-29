@@ -136,7 +136,7 @@ class AddonClient : AutoCloseable {
         const val REQUEST_MS = 10_000L
         const val DISCOVERY_MS = 15_000L
 
-        @JvmStatic fun deadline(): Long { return SystemClock.elapsedRealtime() + DISCOVERY_MS }
+        fun deadline(): Long { return SystemClock.elapsedRealtime() + DISCOVERY_MS }
 
         private fun tooLarge(): AddonException { return AddonException(AddonException.Kind.MALFORMED, "The add-on response is too large") }
     }

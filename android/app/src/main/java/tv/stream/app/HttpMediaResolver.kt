@@ -14,10 +14,10 @@ import tv.stream.app.addon.Cancellation
 
 /** Bounded format discovery for signed/extensionless URLs; the first loader reuses the opened response. */
 @OptIn(markerClass = [UnstableApi::class])
-class HttpMediaResolver private constructor(@JvmField val uri: Uri, @JvmField val mime: String?, private val factory: DataSource.Factory, opened: DataSource?, private val prefix: ByteArray, private val length: Long) : AutoCloseable, DataSource.Factory {
+class HttpMediaResolver private constructor(val uri: Uri, val mime: String?, private val factory: DataSource.Factory, opened: DataSource?, private val prefix: ByteArray, private val length: Long) : AutoCloseable, DataSource.Factory {
     private val pending: AtomicReference<DataSource?> = AtomicReference(opened)
     companion object {
-        @JvmStatic @Throws(IOException::class)
+        @Throws(IOException::class)
         fun resolve(address: String, headers: Map<String, String>, scope: Cancellation): HttpMediaResolver {
             val uri = Uri.parse(address)
             val path = if (uri.path == null) "" else uri.path!!.lowercase(java.util.Locale.ROOT)
@@ -50,7 +50,7 @@ class HttpMediaResolver private constructor(@JvmField val uri: Uri, @JvmField va
                         if (count < 0) break
                         if (count == 0) continue
                         bytes.write(buffer, 0, count)
-                        val text = String(bytes.toByteArray(), StandardCharsets.UTF_8).replace("﻿", "").trim { it <= ' ' }
+                        val text = String(bytes.toByteArray(), StandardCharsets.UTF_8).replace("\uFEFF", "").trim { it <= ' ' }
                         if (text.startsWith("#EXTM3U")) { mime = MimeTypes.APPLICATION_M3U8; break }
                         if (text.matches(Regex("(?s)(?:<\\?xml.*?\\?>\\s*)?<MPD(?:\\s|>).*"))) { mime = MimeTypes.APPLICATION_MPD; break }
                         // Binary containers and ordinary bodies need no further probing.

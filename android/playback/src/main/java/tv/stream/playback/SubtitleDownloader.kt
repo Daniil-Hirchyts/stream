@@ -40,14 +40,15 @@ object SubtitleDownloader {
     private val DOTTED_CUES: Pattern = Pattern.compile("\\d{2}:\\d{2}\\.\\d{3}\\s*-->")
 
     /** One subtitle file; empty strings mean unknown. The content decides the format when the type is wrong. */
-    class Source(@JvmField val url: String, @JvmField val mime: String, @JvmField val language: String, @JvmField val label: String) {
+    data class Source(val url: String, val mime: String, val language: String, val label: String) {
+        override fun toString(): String = "Subtitle ($mime, $language)"
+
         constructor(json: JSONObject) : this(json.optString("url"), json.optString("mime"), json.optString("language"), json.optString("label"))
     }
 
-    private class Text(@JvmField val mime: String, @JvmField val body: String)
+    private data class Text(val mime: String, val body: String)
 
     /** Reads `[{"url", "mime", "language", "label"}…]`, the format the Chrome extension sends. */
-    @JvmStatic
     @Throws(JSONException::class)
     fun parse(json: String?): List<Source> {
         val sources: MutableList<Source> = ArrayList()
@@ -58,7 +59,6 @@ object SubtitleDownloader {
     }
 
     /** Blocks for at most eight seconds and returns the files that arrived, in their original order. */
-    @JvmStatic
     fun download(directory: File, sources: List<Source>,
             headers: Map<String, String>): List<MediaItem.SubtitleConfiguration> {
         val old = directory.listFiles()

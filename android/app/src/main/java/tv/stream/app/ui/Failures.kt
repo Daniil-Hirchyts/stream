@@ -5,7 +5,7 @@ import tv.stream.torrent.TorrentException
 
 /** User-facing failures never include provider URL paths, credentials or native/private file paths. */
 object Failures {
-    @JvmStatic fun message(error: Throwable?): String {
+    fun message(error: Throwable?): String {
         if (error is AddonException) {
             when (error.kind) {
                 AddonException.Kind.CERTIFICATE -> return "The provider's certificate can't be verified."

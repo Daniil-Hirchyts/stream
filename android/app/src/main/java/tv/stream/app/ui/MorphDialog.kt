@@ -36,9 +36,9 @@ import tv.stream.app.R
  * platter never blends into the menu's gray: it stays exactly as the real control looks underneath.
  */
 class MorphDialog(context: Context, contextual: Boolean) : Dialog(context) {
-    private inner class Page(@JvmField val alert: Tv.Alert) {
-        @JvmField val content: ScrollView
-        @JvmField var focus: View? = null
+    private inner class Page(val alert: Tv.Alert) {
+        val content: ScrollView
+        var focus: View? = null
         init {
             content = ScrollView(getContext()); content.isVerticalScrollBarEnabled = false; content.isFocusable = false
             content.addView(alert.surface, FrameLayout.LayoutParams(-1, -2))
@@ -70,7 +70,7 @@ class MorphDialog(context: Context, contextual: Boolean) : Dialog(context) {
     private var leftPressed = false
     private var refreshPending = false
     private var backCallback: Any? = null
-    @JvmField var beforeClose: Runnable? = null
+    var beforeClose: Runnable? = null
 
     constructor(context: Context) : this(context, true)
 
@@ -415,13 +415,13 @@ class MorphDialog(context: Context, contextual: Boolean) : Dialog(context) {
      * During a page change both pages have a white focused row. Crossfading them would dim each through gray, so
      * their platters are hidden and this one surface glides from the old row to the new while only text fades.
      */
-    private inner class Glide(look: Drawable, @JvmField val from: Rect) {
-        @JvmField val surface = View(context)
-        @JvmField val now = Rect()
-        @JvmField val to = Rect()
-        @JvmField var row: View? = null
-        @JvmField var hidden: Drawable? = null
-        @JvmField var hiddenAlpha = 0
+    private inner class Glide(look: Drawable, val from: Rect) {
+        val surface = View(context)
+        val now = Rect()
+        val to = Rect()
+        var row: View? = null
+        var hidden: Drawable? = null
+        var hiddenAlpha = 0
         init {
             surface.background = look; surface.tag = "popup-focus"
             surface.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO

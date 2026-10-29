@@ -162,7 +162,7 @@ class PlayerInteractionTest : AppHarness() {
         control(R.id.progress, true)
         AppHarness.waitUntil("timeline click resumes", 5000) { state()!!.playing }
         AppHarness.waitUntil("Pointer transport hides after resume", 6000) { !shown(R.id.controls) }
-        assertFalse("Clock clears the picture too", shown(R.id.player_clock))
+        AppHarness.waitUntil("Clock finishes fading with the transport", 1000) { !shown(R.id.player_clock) }
         // Use the timeline's last visible bounds to move the real pointer over it.
         hoverMouse((timeline.centerX() + 30).toFloat(), timeline.centerY().toFloat())
         AppHarness.waitUntil("Mouse movement restores controls", 3000) { shown(R.id.controls) }

@@ -46,14 +46,12 @@ object BuiltinAddons {
             + "\"catalogs\":[{\"type\":\"movie\",\"id\":\"feature-films\",\"name\":\"Public Domain Films\",\"extra\":[{\"name\":\"search\"},{\"name\":\"skip\"}]}]}")
 
     /** The store's built-in section. */
-    @JvmStatic
     fun listings(): List<AddonListing> {
         try { return Collections.singletonList(AddonListing(INTERNET_ARCHIVE, AddonManifest.parse(JSONObject(ARCHIVE_MANIFEST)), "Built in")) }
         catch (impossible: JSONException) { throw IllegalStateException(impossible) }
         catch (impossible: AddonException) { throw IllegalStateException(impossible) }
     }
 
-    @JvmStatic
     @Throws(AddonException::class)
     fun answer(address: String, client: AddonClient, scope: Cancellation, deadline: Long): JSONObject {
         try {
@@ -148,11 +146,11 @@ object BuiltinAddons {
     }
 
     /** One Archive item's playable files: full-length ones only, largest picture first, without heavy masters. */
-    class Item(@JvmField val identifier: String, metadata: JSONObject, item: JSONObject) {
-        @JvmField val label: String
-        @JvmField val files: MutableList<JSONObject> = ArrayList()
+    class Item(val identifier: String, metadata: JSONObject, item: JSONObject) {
+        val label: String
+        val files: MutableList<JSONObject> = ArrayList()
         /** The longest file's running time in seconds, or 0 when the Archive doesn't say. */
-        @JvmField val runtime: Double
+        val runtime: Double
 
         init {
             val title = text(metadata.opt("title"))
@@ -200,7 +198,6 @@ object BuiltinAddons {
 
         companion object {
             /** "5796.14" or "1:36:36". */
-            @JvmStatic
             fun seconds(f: JSONObject): Double {
                 val value = Json.string(f, "length") ?: return 0.0
                 try {
@@ -209,7 +206,6 @@ object BuiltinAddons {
                     return total
                 } catch (e: NumberFormatException) { return 0.0 }
             }
-            @JvmStatic
             fun megabits(f: JSONObject): Double {
                 val length = seconds(f)
                 return if (length > 0) Json.number(f, "size", 0) * 8 / length / 1_000_000 else 0.0
@@ -251,7 +247,6 @@ object BuiltinAddons {
     }
 
     /** The IMDb ID an item names, from a page address or a bare ID, alone or in a list. */
-    @JvmStatic
     fun imdb(value: Any?): String? {
         val text: String? = if (value is JSONArray) value.optString(0, null) else if (value is String) value else null
         if (text == null) return null
@@ -265,7 +260,6 @@ object BuiltinAddons {
         return if (s == null || s.trim { it <= ' ' }.isEmpty()) null else s.trim { it <= ' ' }
     }
     /** Archive descriptions are HTML; details show a few sentences of plain text. */
-    @JvmStatic
     fun plain(html: String): String {
         val text = html.replace("(?i)<br\\s*/?>|</p>".toRegex(), "\n").replace("<[^>]*>".toRegex(), "").replace("&nbsp;", " ").replace("&amp;", "&")
                 .replace("&quot;", "\"").replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("[ \\t]+".toRegex(), " ").replace("\\s*\\n\\s*".toRegex(), "\n").trim { it <= ' ' }

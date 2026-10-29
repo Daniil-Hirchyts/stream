@@ -8,10 +8,10 @@ import tv.stream.torrent.TorrentEngine
 /** App-worker-owned native lifetime and main-thread playback budgets, independent of the screen. */
 class PlaybackCoordinator {
     enum class State { RESOLVING, CONNECTING, BUFFERING, PLAYING, RECOVERING, CLOSING, FAILED }
-    @JvmField @Volatile var engine: TorrentEngine? = null
-    @JvmField @Volatile var torrent: Long = 0
-    @JvmField @Volatile var fileBytes: Long = 0
-    @JvmField @Volatile var fileIndex: Int = -1
+    @Volatile var engine: TorrentEngine? = null
+    @Volatile var torrent: Long = 0
+    @Volatile var fileBytes: Long = 0
+    @Volatile var fileIndex: Int = -1
     private var state: State = State.RESOLVING
     private var tapped: Long = 0
     private var budgetStart: Long = 0

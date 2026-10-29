@@ -20,15 +20,15 @@ import javax.net.ssl.SSLPeerUnverifiedException
  */
 @OptIn(markerClass = [UnstableApi::class])
 object PlaybackErrors {
-    class Description(
+    data class Description(
         /** A short code an app can act on, such as "expired" or "network". */
-        @JvmField val code: String,
-        @JvmField val title: String,
-        @JvmField val message: String,
-        @JvmField val detail: String,
-        @JvmField val httpStatus: Int,
+        val code: String,
+        val title: String,
+        val message: String,
+        val detail: String,
+        val httpStatus: Int,
         /** Whether trying the same stream again may help. */
-        @JvmField val retry: Boolean,
+        val retry: Boolean,
     ) {
         @Throws(JSONException::class)
         fun toJson(): JSONObject {
@@ -37,7 +37,6 @@ object PlaybackErrors {
         }
     }
 
-    @JvmStatic
     fun describe(context: Context, exception: PlaybackException): Description {
         var detail = exception.errorCodeName
         val http = httpStatus(exception)
@@ -65,7 +64,6 @@ object PlaybackErrors {
         return of(context, "generic", R.string.error_generic_title, R.string.error_generic, detail, 0, true)
     }
 
-    @JvmStatic
     fun of(context: Context, code: String, title: Int, message: Int, detail: String, http: Int,
             retry: Boolean): Description {
         return Description(code, context.getString(title), context.getString(message), detail, http, retry)

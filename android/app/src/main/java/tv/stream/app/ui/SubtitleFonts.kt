@@ -18,7 +18,7 @@ object SubtitleFonts {
     const val NOTO = 0
     const val ATKINSON = 8
     const val SYSTEM = 9
-    @JvmField val VALUES = arrayOf("standard", "bold", "condensed", "serif", "monospace", "casual", "cursive", "smallcaps", "atkinson", "system")
+    val VALUES = arrayOf("standard", "bold", "condensed", "serif", "monospace", "casual", "cursive", "smallcaps", "atkinson", "system")
     private val LABELS = intArrayOf(R.string.subtitle_font_noto, tv.stream.playback.R.string.font_bold,
             tv.stream.playback.R.string.font_condensed, tv.stream.playback.R.string.font_serif, tv.stream.playback.R.string.font_monospace,
             tv.stream.playback.R.string.font_casual, tv.stream.playback.R.string.font_cursive, tv.stream.playback.R.string.font_smallcaps,
@@ -27,18 +27,18 @@ object SubtitleFonts {
     private var atkinson: Typeface? = null
     private var cyrillicScale = 0f
 
-    @JvmStatic fun selected(preferences: SharedPreferences): Int {
+    fun selected(preferences: SharedPreferences): Int {
         val value = preferences.getString("subtitle_font", "standard")
         for (i in VALUES.indices) if (VALUES[i] == value) return i
         return NOTO
     }
-    @JvmStatic fun labels(context: Context): Array<String> {
+    fun labels(context: Context): Array<String> {
         val labels = arrayOfNulls<String>(LABELS.size)
         for (i in labels.indices) labels[i] = context.getString(LABELS[i])
         @Suppress("UNCHECKED_CAST")
         return labels as Array<String>
     }
-    @JvmStatic @Synchronized fun typeface(context: Context, index: Int): Typeface? {
+    @Synchronized fun typeface(context: Context, index: Int): Typeface? {
         if (index == ATKINSON) {
             var font = atkinson
             if (font == null) { font = context.resources.getFont(R.font.subtitle_atkinson); atkinson = font }
@@ -52,7 +52,7 @@ object SubtitleFonts {
     }
 
     /** Keep semantic emphasis while provider font, size and colour overrides stay under viewer control. */
-    @JvmStatic fun text(context: Context, index: Int, source: CharSequence): SpannableString {
+    fun text(context: Context, index: Int, source: CharSequence): SpannableString {
         val text = SpannableString(source.toString())
         if (source is Spanned) {
             val styled: Spanned = source

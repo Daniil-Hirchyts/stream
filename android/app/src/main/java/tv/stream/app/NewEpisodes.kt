@@ -48,11 +48,13 @@ object NewEpisodes {
     private const val STATE = "newEpisodes"
     private val checking = AtomicBoolean()
 
-    class Notice(@JvmField val title: Title,
+    class Notice(val title: Title,
                  /** The first new episode: the one to watch next. */
-                 @JvmField val episode: Title.Episode,
+                 val episode: Title.Episode,
                  /** The new episodes, from [episode] on. */
-                 @JvmField val episodes: Set<String>) {
+                 episodes: Set<String>) {
+        val episodes: Set<String> = Collections.unmodifiableSet(LinkedHashSet(episodes))
+
         fun label(): String {
             if (episode.number == 1 && episode.season > 1) return "New season"
             return if (episodes.size > 1) episodes.size.toString() + " new episodes" else "New episode"
@@ -60,7 +62,6 @@ object NewEpisodes {
     }
 
     /** The series' episodes in viewing order, without specials. */
-    @JvmStatic
     fun order(title: Title): List<Title.Episode> {
         val out: MutableList<Title.Episode> = ArrayList()
         var numbered = true
@@ -68,7 +69,6 @@ object NewEpisodes {
         if (numbered) out.sortWith(Comparator.comparingInt { e: Title.Episode -> e.season }.thenComparingInt { e -> e.number })
         return out
     }
-    @JvmStatic
     fun finished(p: TvStore.Progress?): Boolean {
         return p != null && (p.watched || WatchCompletion.nearlyFinished(p.positionMs, p.durationMs))
     }
@@ -77,7 +77,6 @@ object NewEpisodes {
         return -1
     }
     /** The episode after the furthest one finished (the first when none is) that has aired; null when there is none yet. */
-    @JvmStatic
     fun nextUp(title: Title, progress: Map<String, TvStore.Progress>, now: Long): Title.Episode? {
         val order = order(title)
         val next = furthest(order, progress) + 1
@@ -90,7 +89,6 @@ object NewEpisodes {
      * When an episode aired, from the provider's ISO date or time; -1 when it doesn't say. A date alone is midnight UTC,
      * the provider's broadcast day.
      */
-    @JvmStatic
     fun aired(released: String?): Long {
         if (released == null || released.length < 10) return -1
         try { return Instant.parse(released).toEpochMilli() }
@@ -104,7 +102,6 @@ object NewEpisodes {
      * The notice a series deserves now, before what the viewer did with earlier ones.
      * @param favouritedMs when a favourite never finished was saved, its starting point; below zero when not a favourite
      */
-    @JvmStatic
     fun find(title: Title, progress: Map<String, TvStore.Progress>, favouritedMs: Long, now: Long): Notice? {
         if (title.type != "series") return null
         val order = order(title)
@@ -129,7 +126,6 @@ object NewEpisodes {
     }
 
     /** Current notices, by title key, in library order. Home passes `shown`: each day it shows one counts. */
-    @JvmStatic
     fun current(store: TvStore, library: List<TvStore.LibraryEntry>, history: List<TvStore.Progress>, now: Long, shown: Boolean): Map<String, Notice> {
         val progress = byTitle(history)
         val out: MutableMap<String, Notice> = LinkedHashMap()
@@ -145,12 +141,10 @@ object NewEpisodes {
         }
         return out
     }
-    @JvmStatic
     fun current(store: TvStore, now: Long): Map<String, Notice> {
         return current(store, store.library(false), store.history(false), now, false)
     }
     /** One saved series' notice, as [current] gives it; showing it elsewhere than Home doesn't count. */
-    @JvmStatic
     fun notice(store: TvStore, entry: TvStore.LibraryEntry, seen: Map<String, TvStore.Progress>, now: Long): Notice? {
         synchronized(store) {
             val ledger = Ledger(store)
@@ -161,14 +155,11 @@ object NewEpisodes {
     }
 
     /** Hides the series' current notice; a later episode brings a new one. */
-    @JvmStatic
     fun hide(store: TvStore, titleKey: String) {
         update(store, titleKey, Change { show -> if (show.has("episode")) show.put("gone", true) })
     }
     /** Turns a series' alerts off or back on. Its episode list is no longer checked while they are off. */
-    @JvmStatic
     fun mute(store: TvStore, titleKey: String, muted: Boolean) { update(store, titleKey, Change { show -> show.put("muted", muted) }) }
-    @JvmStatic
     fun muted(store: TvStore, titleKey: String): Boolean {
         synchronized(store) { return Ledger(store).show(titleKey).optBoolean("muted") }
     }
@@ -179,7 +170,6 @@ object NewEpisodes {
      * closes it), and a series whose provider doesn't answer is asked again next time.
      * @return whether a saved series changed
      */
-    @JvmStatic
     fun check(store: TvStore, addons: AddonRepository, now: Long): Boolean {
         if (!checking.compareAndSet(false, true)) return false
         try {

@@ -15,15 +15,11 @@ import tv.stream.app.addon.AddonException
 import tv.stream.torrent.TorrentException
 
 /** A frozen, offline report. Never contains playable/configured addresses, headers or private file paths. */
-class DiagnosticReport private constructor(@JvmField val id: String, @JvmField val text: String) {
-    @JvmField val pages: List<String>
-
-    init {
-        val chunks = split(text)
-        val numbered: MutableList<String> = ArrayList()
-        for (i in 0 until chunks.size) numbered.add("Stream error " + id + " — " + (i + 1) + "/" + chunks.size
-                + "\nJoin the numbered parts for the complete JSON report.\n" + chunks[i])
-        pages = Collections.unmodifiableList(numbered)
+class DiagnosticReport private constructor(val id: String, val text: String) {
+    val pages: List<String> = split(text).let { chunks ->
+        Collections.unmodifiableList(chunks.mapIndexed { index, chunk ->
+            "Stream error $id — ${index + 1}/${chunks.size}\nJoin the numbered parts for the complete JSON report.\n$chunk"
+        })
     }
 
     companion object {
@@ -33,7 +29,6 @@ class DiagnosticReport private constructor(@JvmField val id: String, @JvmField v
         private val PRIVATE_PATH: Pattern = Pattern.compile("(?i)(?<![\\w.])(?:/[\\w.%+~-]+){2,}[^\\s<>\"']*|[A-Z]:\\\\[^\\s<>\"']+")
         private val SECRET: Pattern = Pattern.compile("(?i)\\b(?:authorization|cookie|set-cookie)[\"']?\\s*[:=]\\s*[^\\r\\n]+|\\bBearer\\s+\\S+|\\b[\\w-]*(?:token|secret|password|api[_-]?key)[\\w-]*[\"']?\\s*[:=]\\s*(?:\"[^\"]*\"|'[^']*'|[^\\s,;}]+)")
 
-        @JvmStatic
         fun capture(context: Context, stage: String?, heading: String?, message: String?, code: String?,
                     cause: Throwable?, state: JSONObject?): DiagnosticReport {
             val id = UUID.randomUUID().toString().substring(0, 8)
@@ -49,7 +44,6 @@ class DiagnosticReport private constructor(@JvmField val id: String, @JvmField v
             } catch (impossible: org.json.JSONException) { throw IllegalStateException(impossible) }
         }
 
-        @JvmStatic
         fun exception(cause: Throwable?): JSONArray {
             var cause = cause
             val causes = JSONArray()
@@ -73,7 +67,6 @@ class DiagnosticReport private constructor(@JvmField val id: String, @JvmField v
             return causes
         }
 
-        @JvmStatic
         fun safe(value: String?): String {
             if (value == null) return ""
             return SECRET.matcher(PRIVATE_PATH.matcher(ADDRESS.matcher(value).replaceAll("[address redacted]")).replaceAll("[path redacted]"))

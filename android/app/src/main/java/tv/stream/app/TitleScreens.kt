@@ -176,7 +176,7 @@ class TitleScreens(private val nav: Navigator, private val services: TvApplicati
     }
 
     /** What the providers answered for one video; reused for a minute while the viewer re-sorts. */
-    private class Fetched(@JvmField val providers: List<InstalledAddon>, @JvmField val found: AddonRepository.Result<MediaSource>?, @JvmField val configuration: Long)
+    private class Fetched(val providers: List<InstalledAddon>, val found: AddonRepository.Result<MediaSource>?, val configuration: Long)
 
     /** The initial and loaded pages share the same fixed toolbar, including during provider requests. */
     fun detailsPage(title: Title, note: String): Page {
@@ -291,13 +291,13 @@ class TitleScreens(private val nav: Navigator, private val services: TvApplicati
         private const val DOT = "  ·  "
 
         /** Catalogue entries can omit a logo that metadata supplies. Wait before choosing text as the title. */
-        @JvmStatic fun pendingTitle(page: Page, title: Title) {
+        fun pendingTitle(page: Page, title: Title) {
             if (title.logo == null && title.provider != "local")
                 for (item in page.items) if (item.kind == Item.Kind.DETAILS) item.loading = true
         }
 
         /** Keep the provider's broadcast day; converting a midnight UTC stamp can move it to yesterday. */
-        @JvmStatic fun episodeDate(released: String?): String {
+        fun episodeDate(released: String?): String {
             if (released == null || released.length < 10) return ""
             try {
                 return java.time.LocalDate.parse(released.substring(0, 10))
@@ -305,7 +305,7 @@ class TitleScreens(private val nav: Navigator, private val services: TvApplicati
             } catch (invalid: java.time.DateTimeException) { return "" }
         }
 
-        @JvmStatic fun kind(source: MediaSource): String {
+        fun kind(source: MediaSource): String {
             return when (source.kind) {
                 MediaSource.Kind.HTTP -> "Direct"
                 MediaSource.Kind.TORRENT -> "Torrent"
@@ -313,16 +313,16 @@ class TitleScreens(private val nav: Navigator, private val services: TvApplicati
                 else -> "Unsupported"
             }
         }
-        @JvmStatic fun size(bytes: Long): String {
+        fun size(bytes: Long): String {
             val gib = bytes / (1L shl 30).toDouble()
             return if (gib >= 1) String.format(java.util.Locale.ROOT, "%.1f GB", gib) else (bytes shr 20).toString() + " MB"
         }
         /** "S1 E4", for a Play button. */
-        @JvmStatic fun shortEpisode(title: Title, video: String): String {
+        fun shortEpisode(title: Title, video: String): String {
             for (e in title.episodes) if (e.id == video) return "S" + e.season + " E" + e.number
             return ""
         }
-        @JvmStatic fun episodeName(title: Title, video: String): String {
+        fun episodeName(title: Title, video: String): String {
             for (e in title.episodes) if (e.id == video) return "S" + e.season + " E" + e.number + " · " + e.name
             return if (title.type == "series") "Episode" else "Film"
         }

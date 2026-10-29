@@ -98,7 +98,6 @@ class TorrentDataSource(private val engine: TorrentEngine) : BaseDataSource(/* i
         const val SCHEME = "torrent"
 
         /** The address of a torrent's file; the name lets Media3 recognise the container by its extension. */
-        @JvmStatic
         fun uri(torrent: Long, file: TorrentFile): Uri {
             return Uri.Builder().scheme(SCHEME).authority(torrent.toString())
                     .appendPath(file.index.toString()).appendPath(file.name()).build()

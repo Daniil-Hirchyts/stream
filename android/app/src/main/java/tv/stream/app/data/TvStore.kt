@@ -115,9 +115,9 @@ class TvStore(context: Context, database: String?) : SQLiteOpenHelper(context.ap
         }
     }
 
-    class LibraryEntry(@JvmField val title: Title, @JvmField val favourite: Boolean,
+    data class LibraryEntry(val title: Title, val favourite: Boolean,
                        /** When the title was last played, favourited or remembered. */
-                       @JvmField val updatedMs: Long)
+                       val updatedMs: Long)
     @Synchronized
     fun remember(title: Title) {
         val v = ContentValues(); v.put("id", title.key())
@@ -143,7 +143,7 @@ class TvStore(context: Context, database: String?) : SQLiteOpenHelper(context.ap
         readableDatabase.rawQuery("SELECT id,data,favourite,updated FROM library" + (if (favouritesOnly) " WHERE favourite=1" else "") + " ORDER BY updated DESC", null).use { c ->
             while (c.moveToNext()) { val entry = entry(c); if (entry != null) out.add(entry) }
         }
-        return out
+        return Collections.unmodifiableList(out)
     }
     /** One saved title, or null when it isn't in the library. */
     @Synchronized
@@ -162,15 +162,18 @@ class TvStore(context: Context, database: String?) : SQLiteOpenHelper(context.ap
     @Synchronized
     fun removeLibrary(titleKey: String) { writableDatabase.delete("library", "id=?", arrayOf(titleKey)) }
 
-    class Progress(c: Cursor) {
-        @JvmField val titleKey: String = c.getString(0)
-        @JvmField val video: String = c.getString(1)
-        @JvmField val positionMs: Long = c.getLong(2)
-        @JvmField val durationMs: Long = c.getLong(3)
-        @JvmField val watched: Boolean = c.getInt(4) != 0
-        @JvmField val updatedMs: Long = c.getLong(5)
+    data class Progress(
+        val titleKey: String,
+        val video: String,
+        val positionMs: Long,
+        val durationMs: Long,
+        val watched: Boolean,
+        val updatedMs: Long,
+    ) {
+        constructor(c: Cursor) : this(c.getString(0), c.getString(1), c.getLong(2), c.getLong(3), c.getInt(4) != 0, c.getLong(5))
+
         /** Belongs in Continue Watching: unwatched, at least 30 seconds in and not at the end. */
-        fun resumable(): Boolean { return !watched && positionMs >= RESUMABLE_MS && (durationMs == 0L || positionMs < durationMs) }
+        fun resumable(): Boolean = !watched && positionMs >= RESUMABLE_MS && (durationMs == 0L || positionMs < durationMs)
     }
     /** Natural completion is supplied explicitly, so a seek near the end alone doesn't mark watched. */
     @Synchronized
@@ -202,7 +205,7 @@ class TvStore(context: Context, database: String?) : SQLiteOpenHelper(context.ap
         readableDatabase.rawQuery("SELECT title,video,position,duration,watched,updated FROM progress WHERE title=? ORDER BY updated DESC", arrayOf(titleKey)).use { c ->
             while (c.moveToNext()) out.add(Progress(c))
         }
-        return out
+        return Collections.unmodifiableList(out)
     }
     @Synchronized
     fun history(continueWatching: Boolean): List<Progress> {
@@ -210,11 +213,11 @@ class TvStore(context: Context, database: String?) : SQLiteOpenHelper(context.ap
         readableDatabase.rawQuery("SELECT title,video,position,duration,watched,updated FROM progress ORDER BY updated DESC", null).use { c ->
             while (c.moveToNext()) { val p = Progress(c); if (!continueWatching || p.resumable()) out.add(p) }
         }
-        return out
+        return Collections.unmodifiableList(out)
     }
 
     /** What happened the last time a source was opened for one video. Keys are `SourcePolicy.key`s, never addresses. */
-    class SourceMark(@JvmField val state: String, @JvmField val updatedMs: Long) {
+    data class SourceMark(val state: String, val updatedMs: Long) {
         companion object {
             const val PLAYED = "played"
             const val FAILED = "failed"
@@ -223,7 +226,7 @@ class TvStore(context: Context, database: String?) : SQLiteOpenHelper(context.ap
     /** Records a source's outcome; a source that played once stays "played" even if a later attempt fails. */
     @Synchronized
     fun markSource(titleKey: String, video: String, sourceKey: String, state: String) {
-        val marks = sourceMarks(titleKey, video)
+        val marks = sourceMarks(titleKey, video).toMutableMap()
         val before = marks[sourceKey]
         val kept = if (state == SourceMark.FAILED && before != null && before.state == SourceMark.PLAYED) SourceMark.PLAYED else state
         marks[sourceKey] = SourceMark(kept, System.currentTimeMillis())
@@ -233,9 +236,9 @@ class TvStore(context: Context, database: String?) : SQLiteOpenHelper(context.ap
         save("preferences", "name", sourceMarksKey(titleKey, video), out.toString())
     }
     @Synchronized
-    fun sourceMarks(titleKey: String, video: String): MutableMap<String, SourceMark> {
+    fun sourceMarks(titleKey: String, video: String): Map<String, SourceMark> {
         val marks: MutableMap<String, SourceMark> = java.util.LinkedHashMap()
-        val value = read("preferences", "name", sourceMarksKey(titleKey, video)) ?: return marks
+        val value = read("preferences", "name", sourceMarksKey(titleKey, video)) ?: return emptyMap()
         try {
             val data = JSONObject(value)
             val keys: Iterator<String> = data.keys()
@@ -244,7 +247,7 @@ class TvStore(context: Context, database: String?) : SQLiteOpenHelper(context.ap
                 marks[key] = SourceMark(mark.getString("state"), mark.optLong("at"))
             }
         } catch (ignored: JSONException) { /* an unreadable history is shown as none */ }
-        return marks
+        return Collections.unmodifiableMap(marks)
     }
 
     @Synchronized
@@ -263,7 +266,7 @@ class TvStore(context: Context, database: String?) : SQLiteOpenHelper(context.ap
     fun importIds(): List<String> {
         val out: MutableList<String> = ArrayList()
         readableDatabase.rawQuery("SELECT id FROM imports ORDER BY updated DESC", null).use { c -> while (c.moveToNext()) out.add(c.getString(0)) }
-        return out
+        return Collections.unmodifiableList(out)
     }
     @Synchronized
     fun removeImport(id: String) { writableDatabase.delete("imports", "id=?", arrayOf(id)) }
@@ -323,7 +326,6 @@ class TvStore(context: Context, database: String?) : SQLiteOpenHelper(context.ap
         /** Hashed, so the plain preference name never reveals which title was watched. */
         private fun sourceMarksKey(titleKey: String, video: String): String { return "sources:" + hash(titleKey + "\n" + video) }
 
-        @JvmStatic
         fun hash(key: String): String {
             try {
                 val b = MessageDigest.getInstance("SHA-256").digest(key.toByteArray(StandardCharsets.UTF_8))

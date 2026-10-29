@@ -6,10 +6,12 @@ import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.function.Consumer
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import tv.stream.app.addon.*
 
 /** Process-local metadata/source handoff. Never opens a torrent, downloads payload, or saves an address. */
-@Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
 class PlaybackPreparation(private val addons: AddonRepository) : AutoCloseable {
     private val workers: java.util.concurrent.ThreadPoolExecutor = Executors.newFixedThreadPool(2) as java.util.concurrent.ThreadPoolExecutor
     private var current: Entry? = null
@@ -31,21 +33,19 @@ class PlaybackPreparation(private val addons: AddonRepository) : AutoCloseable {
         else entry.metadataTask = workers.submit(Runnable {
             try {
                 addons.metadata(title.provider, title.type, title.id, entry.metadataScope, Consumer { result ->
-                    if (!result.items.isEmpty()) synchronized(entry) {
-                        entry.title = result.items.get(0).withProvider(title.provider); entry.metadataReady = true; entry.version++; (entry as Object).notifyAll()
-                    }
+                    result.items.firstOrNull()?.let { entry.publishMetadata(it.withProvider(title.provider)) }
                 })
             } catch (ignored: AddonException) { /* cached details remain useful */ }
-            finally { synchronized(entry) { entry.metadataReady = true; entry.version++; (entry as Object).notifyAll() }; entry.metadataScope.close() }
+            finally { entry.finishMetadata(); entry.metadataScope.close() }
         })
         if (title.type.equals("series") && video.equals(title.id)) { entry.complete = true; return entry }
         entry.streamTask = workers.submit(Runnable {
             try {
                 addons.streams(title.type, video, entry.scope, Consumer { result ->
-                    synchronized(entry) { entry.result = result; entry.version++; (entry as Object).notifyAll() }
+                    entry.publishSources(result)
                 })
             } catch (ignored: AddonException) { /* cancellation or an unavailable provider */ }
-            finally { synchronized(entry) { entry.complete = true; entry.version++; (entry as Object).notifyAll() } }
+            finally { entry.finishSources() }
         })
         return entry
     }
@@ -77,18 +77,19 @@ class PlaybackPreparation(private val addons: AddonRepository) : AutoCloseable {
         discard(); for (entry in pending.values) entry.close(); pending.clear(); workers.shutdownNow()
     }
 
-    class Entry(title: Title, @JvmField val video: String, @JvmField val configuration: Long, @JvmField val created: Long, @JvmField val scope: Cancellation, @JvmField val metadataScope: Cancellation) : AutoCloseable {
-        @JvmField val token: String = UUID.randomUUID().toString()
-        @JvmField val titleKey: String
-        @JvmField @Volatile var title: Title
-        @JvmField @Volatile var complete = false
-        @JvmField @Volatile var metadataReady = false
-        @JvmField @Volatile var claimed = false
-        // Private in Java; Kotlin outer classes cannot reach a nested class's private members.
-        @JvmField var result: AddonRepository.Result<MediaSource>? = null
-        @JvmField var version = 0
-        @JvmField var metadataTask: java.util.concurrent.Future<*>? = null
-        @JvmField var streamTask: java.util.concurrent.Future<*>? = null
+    class Entry(title: Title, val video: String, val configuration: Long, val created: Long, val scope: Cancellation, val metadataScope: Cancellation) : AutoCloseable {
+        val token: String = UUID.randomUUID().toString()
+        val titleKey: String
+        @Volatile var title: Title
+        @Volatile var complete = false
+        @Volatile var metadataReady = false
+        @Volatile var claimed = false
+        private val lock = ReentrantLock()
+        private val changed = lock.newCondition()
+        private var result: AddonRepository.Result<MediaSource>? = null
+        private var version = 0
+        var metadataTask: java.util.concurrent.Future<*>? = null
+        var streamTask: java.util.concurrent.Future<*>? = null
         init {
             this.title = title; titleKey = title.key()
             scope.priority(2); metadataScope.priority(2)
@@ -96,45 +97,60 @@ class PlaybackPreparation(private val addons: AddonRepository) : AutoCloseable {
         fun matches(title: Title, video: String?, configuration: Long, now: Long): Boolean {
             return !scope.isCancelled() && this.configuration == configuration && titleKey.equals(title.key()) && this.video.equals(video) && now - created < 60_000
         }
-        @Synchronized fun sources(): MutableList<MediaSource> {
-            val sources: MutableList<MediaSource> = ArrayList(if (result == null) Collections.emptyList() else result!!.items)
-            for (episode in title.episodes) if (episode.id.equals(video)) sources.addAll(episode.streams)
-            return sources
+        fun publishMetadata(value: Title) = lock.withLock {
+            title = value; metadataReady = true; version++; changed.signalAll()
         }
-        @Synchronized fun version(): Int = version
-        @Synchronized fun result(): AddonRepository.Result<MediaSource> {
-            val base = if (result == null) AddonRepository.Result<MediaSource>(Collections.emptyList(), Collections.emptyMap(), false) else result!!
-            return base.withItems(sources())
+        fun finishMetadata() = lock.withLock {
+            metadataReady = true; version++; changed.signalAll()
+        }
+        fun publishSources(value: AddonRepository.Result<MediaSource>) = lock.withLock {
+            result = value; version++; changed.signalAll()
+        }
+        fun finishSources() = lock.withLock {
+            complete = true; version++; changed.signalAll()
+        }
+        fun sources(): MutableList<MediaSource> = lock.withLock {
+            val sources = (result?.items ?: emptyList()).toMutableList()
+            title.episodes.filter { it.id == video }.forEach { sources.addAll(it.streams) }
+            sources
+        }
+        fun version(): Int = lock.withLock { version }
+        fun result(): AddonRepository.Result<MediaSource> = lock.withLock {
+            val base = result ?: AddonRepository.Result(emptyList(), emptyMap(), false)
+            base.withItems(sources())
         }
         @Throws(Exception::class)
         fun awaitMetadata(caller: Cancellation): Title {
-            synchronized(this) { while (!metadataReady) { caller.check(); scope.check(); (this as Object).wait(100) }; return title }
+            lock.withLock {
+                while (!metadataReady) { caller.check(); scope.check(); changed.await(100, TimeUnit.MILLISECONDS) }
+                return title
+            }
         }
         @Throws(Exception::class)
         fun awaitCandidate(caller: Cancellation, explicit: String?): List<MediaSource> {
             var first: Long = 0; var rankedVersion = -1; var candidates: List<MediaSource> = Collections.emptyList()
-            synchronized(this) {
+            lock.withLock {
                 while (true) {
                     caller.check(); scope.check()
                     if (rankedVersion != version) { candidates = SourcePolicy.ranked(sources()); rankedVersion = version }
                     val ready = if (explicit == null || explicit.isEmpty()) !candidates.isEmpty()
-                            else candidates.stream().anyMatch { source -> SourcePolicy.key(source).equals(explicit) }
+                            else candidates.any { source -> SourcePolicy.key(source) == explicit }
                     val now = SystemClock.elapsedRealtime()
                     if (ready && first == 0L) first = now
                     if (complete && (metadataReady || ready) || ready && (now - first >= 750 || explicit != null && !explicit.isEmpty())) return candidates
-                    (this as Object).wait(50)
+                    changed.await(50, TimeUnit.MILLISECONDS)
                 }
             }
         }
         @Throws(Exception::class)
         fun awaitAlternative(caller: Cancellation, attempted: Set<String>, providers: Set<String>, deadline: Long): List<MediaSource> {
             var rankedVersion = -1; var candidates: List<MediaSource> = Collections.emptyList()
-            synchronized(this) {
+            lock.withLock {
                 while (true) {
                     caller.check(); scope.check()
                     if (rankedVersion != version) { candidates = SourcePolicy.ranked(sources()); rankedVersion = version }
                     if (SourcePolicy.nextCandidate(candidates, attempted, providers) >= 0 || complete && metadataReady || SystemClock.elapsedRealtime() >= deadline) return candidates
-                    (this as Object).wait(50)
+                    changed.await(50, TimeUnit.MILLISECONDS)
                 }
             }
         }
@@ -144,9 +160,9 @@ class PlaybackPreparation(private val addons: AddonRepository) : AutoCloseable {
             while (true) {
                 var snapshot: AddonRepository.Result<MediaSource>? = null; var done = false
                 var waited = false
-                synchronized(this) {
+                lock.withLock {
                     caller.check(); scope.check()
-                    if (seen == version && !(complete && metadataReady)) { (this as Object).wait(100); waited = true }
+                    if (seen == version && !(complete && metadataReady)) { changed.await(100, TimeUnit.MILLISECONDS); waited = true }
                     else { seen = version; snapshot = result(); done = complete && metadataReady }
                 }
                 if (waited) continue
@@ -158,7 +174,7 @@ class PlaybackPreparation(private val addons: AddonRepository) : AutoCloseable {
             scope.close(); metadataScope.close()
             if (metadataTask != null) metadataTask!!.cancel(true)
             if (streamTask != null) streamTask!!.cancel(true)
-            synchronized(this) { (this as Object).notifyAll() }
+            lock.withLock { changed.signalAll() }
         }
     }
 }

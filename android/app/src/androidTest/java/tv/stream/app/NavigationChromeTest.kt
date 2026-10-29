@@ -53,6 +53,8 @@ class NavigationChromeTest : AppHarness() {
         tap("Back", false); waitUntil("Browse restored", 5000) { visible("Generated films") }
         browse!!.onActivity { a -> a.root("Home") }; tap("Generated Film", true); waitUntil("Details", 5000) { visible("Play") }; assertBack()
         tap("Sources", false); waitUntil("Sources", 10000) { visible("Size") }; assertBack()
+        // Sources and Details deliberately hide navigation; Back returns to the tab rail.
+        tap("Back", false); tap("Back", false)
         tap("Settings", true); tap("Add-on store", true); waitUntil("Store", 10000) { visible("All") }; assertBack()
         browse!!.onActivity { a -> a.openImports() }; waitUntil("Imports", 5000) { visible("Add magnet or torrent URL") }; assertBack()
     }

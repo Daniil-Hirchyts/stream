@@ -10,25 +10,45 @@ import java.util.regex.Pattern
 import tv.stream.torrent.TorrentEngine
 
 /** An advertised candidate, including unsupported candidates so Sources can explain them. */
-class MediaSource private constructor(@JvmField val provider: String, o: JSONObject) {
+class MediaSource private constructor(val provider: String, o: JSONObject) {
     enum class Kind { HTTP, TORRENT, MAGNET, UNSUPPORTED }
-    @JvmField val name: String
-    @JvmField val description: String
-    @JvmField val reason: String
-    @JvmField val kind: Kind
-    @JvmField val url: String?
-    @JvmField val infoHash: String?
-    @JvmField val filename: String?
-    @JvmField val videoHash: String?
-    @JvmField val bingeGroup: String?
+    val name: String
+    val description: String
+    /** A playable location or the exact reason it cannot be opened. */
+    sealed interface Location {
+        data class Http(val url: String) : Location {
+            override fun toString(): String = "HTTP source"
+        }
+        data class Torrent(val infoHash: String) : Location {
+            override fun toString(): String = "Torrent source"
+        }
+        data class Magnet(val url: String) : Location {
+            override fun toString(): String = "Magnet source"
+        }
+        data class Unsupported(val reason: String) : Location
+    }
+
+    val location: Location
+    val kind: Kind get() = when (location) {
+        is Location.Http -> Kind.HTTP
+        is Location.Torrent -> Kind.TORRENT
+        is Location.Magnet -> Kind.MAGNET
+        is Location.Unsupported -> Kind.UNSUPPORTED
+    }
+    val reason: String get() = (location as? Location.Unsupported)?.reason.orEmpty()
+    val url: String?
+    val infoHash: String?
+    val filename: String?
+    val videoHash: String?
+    val bingeGroup: String?
     /** -1 means absent; zero is an explicit first file. Invalid values make the candidate unsupported. */
-    @JvmField val fileIndex: Int
-    @JvmField val videoSize: Long
+    val fileIndex: Int
+    val videoSize: Long
     /** Optional advertised availability; -1 is unknown, zero is explicitly no peers. */
-    @JvmField val seeders: Int
-    @JvmField val discovery: List<String>
-    @JvmField val requestHeaders: Map<String, String>
-    @JvmField val subtitles: List<SubtitleSource>
+    val seeders: Int
+    val discovery: List<String>
+    val requestHeaders: Map<String, String>
+    val subtitles: List<SubtitleSource>
 
     init {
         name = Json.string(o, "name", "Source")
@@ -47,24 +67,20 @@ class MediaSource private constructor(@JvmField val provider: String, o: JSONObj
         bingeGroup = Json.string(hints, "bingeGroup")
         discovery = Json.strings(o, "sources")
         subtitles = SubtitleSource.list(provider, o)
-        var unsupported = ""
-        var selected = Kind.UNSUPPORTED
-        if (o.has("externalUrl")) unsupported = "Opens an external browser"
-        else if (o.has("ytId")) unsupported = "Requires a YouTube player"
-        else if (o.has("nzbUrl")) unsupported = "Usenet is unsupported"
-        else if (o.has("rarUrls") || o.has("zipUrls") || o.has("7zipUrls") || o.has("tarUrls") || o.has("tgzUrls")) unsupported = "Archives are unsupported"
-        else if (o.has("drm") || o.has("drmInfo") || hints.has("drm")) unsupported = "Requires DRM"
-        else if (index == -2L || index > Integer.MAX_VALUE) unsupported = "Invalid torrent file index"
-        else if (infoHash != null) {
-            if (infoHash.matches("(?i)[0-9a-f]{40}|[0-9a-f]{64}".toRegex())) selected = Kind.TORRENT
-            else unsupported = "Invalid torrent hash"
-        } else if (url != null && url.regionMatches(0, "magnet:?", 0, 8, ignoreCase = true)) {
-            if (validMagnet(url)) selected = Kind.MAGNET
-            else unsupported = "Invalid magnet link"
-        } else if (Json.webUrl(url) != null) selected = Kind.HTTP
-        else unsupported = "Unsupported source address"
-        kind = selected
-        reason = unsupported
+        location = when {
+            o.has("externalUrl") -> Location.Unsupported("Opens an external browser")
+            o.has("ytId") -> Location.Unsupported("Requires a YouTube player")
+            o.has("nzbUrl") -> Location.Unsupported("Usenet is unsupported")
+            o.has("rarUrls") || o.has("zipUrls") || o.has("7zipUrls") || o.has("tarUrls") || o.has("tgzUrls") -> Location.Unsupported("Archives are unsupported")
+            o.has("drm") || o.has("drmInfo") || hints.has("drm") -> Location.Unsupported("Requires DRM")
+            index == -2L || index > Int.MAX_VALUE -> Location.Unsupported("Invalid torrent file index")
+            infoHash != null -> if (infoHash.matches(INFO_HASH)) Location.Torrent(infoHash)
+                else Location.Unsupported("Invalid torrent hash")
+            url != null && url.regionMatches(0, "magnet:?", 0, 8, ignoreCase = true) ->
+                if (validMagnet(url)) Location.Magnet(url) else Location.Unsupported("Invalid magnet link")
+            Json.webUrl(url) != null -> Location.Http(requireNotNull(url))
+            else -> Location.Unsupported("Unsupported source address")
+        }
         val headers: MutableMap<String, String> = LinkedHashMap()
         val proxy = hints.optJSONObject("proxyHeaders")
         val request = proxy?.optJSONObject("request")
@@ -80,14 +96,15 @@ class MediaSource private constructor(@JvmField val provider: String, o: JSONObj
         requestHeaders = Collections.unmodifiableMap(headers)
     }
 
-    fun playable(): Boolean { return kind != Kind.UNSUPPORTED }
+    fun playable(): Boolean = location !is Location.Unsupported
 
     /** Converts only the explicitly selected torrent; never creates a native session while browsing. */
     fun torrentSource(): TorrentEngine.Source {
-        val source: TorrentEngine.Source
-        if (kind == Kind.TORRENT) source = TorrentEngine.Source.infoHash(infoHash!!)
-        else if (kind == Kind.MAGNET) source = TorrentEngine.Source.magnet(url!!)
-        else throw IllegalStateException("This source is not a torrent")
+        val source = when (val selected = location) {
+            is Location.Torrent -> TorrentEngine.Source.infoHash(selected.infoHash)
+            is Location.Magnet -> TorrentEngine.Source.magnet(selected.url)
+            else -> throw IllegalStateException("This source is not a torrent")
+        }
         val trackers: MutableList<String> = ArrayList()
         for (hint in discovery) if (hint.startsWith("tracker:")) {
             val address = hint.substring(8)
@@ -103,16 +120,16 @@ class MediaSource private constructor(@JvmField val provider: String, o: JSONObj
     }
 
     companion object {
+        private val INFO_HASH = Regex("(?i)[0-9a-f]{40}|[0-9a-f]{64}")
         /**
          * Long-running open trackers, announced to when a source names no trackers of its own (many add-ons send only an
          * info hash). DHT alone finds peers too, but a cold DHT often needs longer than a viewer waits.
          */
-        @JvmField val PUBLIC_TRACKERS: Array<String> = arrayOf(
+        val PUBLIC_TRACKERS: Array<String> = arrayOf(
                 "udp://tracker.opentrackr.org:1337/announce", "udp://open.demonii.com:1337/announce", "udp://open.stealth.si:80/announce",
                 "udp://tracker.torrent.eu.org:451/announce", "udp://exodus.desync.com:6969/announce", "udp://explodie.org:6969/announce",
                 "http://tracker.opentrackr.org:1337/announce")
 
-        @JvmStatic
         fun list(provider: String, response: JSONObject): List<MediaSource> {
             val out: MutableList<MediaSource> = ArrayList()
             for (o in Json.objects(response, "streams")) {
@@ -122,7 +139,6 @@ class MediaSource private constructor(@JvmField val provider: String, o: JSONObj
             return Collections.unmodifiableList(out)
         }
 
-        @JvmStatic
         fun validMagnet(address: String): Boolean {
             try {
                 val uri = URI.create(address)

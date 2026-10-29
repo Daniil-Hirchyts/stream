@@ -20,8 +20,8 @@ import tv.stream.app.ui.Page
 
 /** Home, Search, Library, History and catalogue browsing. Builders run on workers and block on providers. */
 class BrowseScreens(private val nav: Navigator, private val services: TvApplication.Services) {
-    private class SavedResults(@JvmField val result: AddonRepository.CatalogPage, @JvmField val configuration: Long) {
-        @JvmField val saved: Long = android.os.SystemClock.elapsedRealtime()
+    private class SavedResults(val result: AddonRepository.CatalogPage, val configuration: Long) {
+        val saved: Long = android.os.SystemClock.elapsedRealtime()
         fun fresh(revision: Long, restoring: Boolean): Boolean {
             // Returning after a long film updates local progress without replacing the gallery underneath focus.
             // Failed snapshots can be shown while reloading, but must never suppress the recovery request.
@@ -364,7 +364,7 @@ class BrowseScreens(private val nav: Navigator, private val services: TvApplicat
         private const val FRESH_MS: Long = 5 * 60_000
 
         /** Internal episode-query catalogues need app-supplied ID lists, not a viewer-entered filter. */
-        @JvmStatic fun browsable(catalog: AddonManifest.Catalog): Boolean {
+        fun browsable(catalog: AddonManifest.Catalog): Boolean {
             for (extra in catalog.extras)
                 if (extra.required && (extra.name == "lastVideosIds" || extra.name == "calendarVideosIds")) return false
             return true
@@ -389,12 +389,12 @@ class BrowseScreens(private val nav: Navigator, private val services: TvApplicat
         private fun flagged(poster: Tile, news: Map<String, NewEpisodes.Notice>): Tile {
             return if (poster.media != null && news.containsKey(poster.media!!.key())) poster.flag("New") else poster
         }
-        @JvmStatic fun minutes(ms: Long): String {
+        fun minutes(ms: Long): String {
             val minutes = Math.max(1L, Math.round(ms / 60_000.0))
             return if (minutes >= 60) (minutes / 60).toString() + " h " + (minutes % 60) + " min" else minutes.toString() + " min"
         }
         /** "Popular" for films becomes "Popular Films", so a provider's film and series rows are distinguishable. */
-        @JvmStatic fun shelfTitle(catalog: AddonManifest.Catalog): String {
+        fun shelfTitle(catalog: AddonManifest.Catalog): String {
             val type = typeLabel(catalog.type); val name = catalog.name.trim { it <= ' ' }
             if (name.isEmpty()) return type
             val lower = name.lowercase(Locale.ROOT)
@@ -402,7 +402,7 @@ class BrowseScreens(private val nav: Navigator, private val services: TvApplicat
                     || (catalog.type == "movie" && lower.contains("film"))) return name
             return name + " " + type
         }
-        @JvmStatic fun typeLabel(type: String): String {
+        fun typeLabel(type: String): String {
             return when (type) {
                 "movie" -> "Films"
                 "series" -> "Series"
@@ -411,6 +411,6 @@ class BrowseScreens(private val nav: Navigator, private val services: TvApplicat
                 else -> capitalise(type)
             }
         }
-        @JvmStatic fun capitalise(value: String): String { return if (value.isEmpty()) value else Character.toUpperCase(value[0]).toString() + value.substring(1) }
+        fun capitalise(value: String): String { return if (value.isEmpty()) value else Character.toUpperCase(value[0]).toString() + value.substring(1) }
     }
 }

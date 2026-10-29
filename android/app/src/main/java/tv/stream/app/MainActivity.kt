@@ -2,31 +2,28 @@ package tv.stream.app
 
 import tv.stream.playback.SubtitleStyle
 
-import android.app.Activity
-import android.app.Dialog
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Parcelable
-import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
-import android.view.inputmethod.EditorInfo
-import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.ComponentActivity
+import androidx.activity.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 import androidx.recyclerview.widget.RecyclerView
-import org.json.JSONArray
 import java.util.ArrayList
-import java.util.HashSet
 import java.util.concurrent.Callable
-import java.util.concurrent.Future
 import java.util.function.Consumer
 import java.util.function.DoubleSupplier
 import tv.stream.app.addon.AddonException
@@ -49,7 +46,9 @@ import tv.stream.app.ui.Tv
  * TV navigation shell: tabs, back stack, artwork and dialogs. Screens build pages on application workers; each
  * route render owns a cancellable provider scope and a generation, so late results never reach a newer screen.
  */
-class MainActivity : Activity(), Navigator, PageAdapter.Listener {
+class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
+    private val screenModel by viewModels<BrowseViewModel>()
+    private val routes by viewModels<NavigationViewModel>()
     private lateinit var app: TvApplication
     private var services: TvApplication.Services? = null
     private lateinit var list: RecyclerView
@@ -67,7 +66,7 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
     private var shownPage: Page? = null
     private val dirtyPages: MutableSet<Route> = java.util.HashSet()
     private val retainedPages: MutableMap<Route, Page> = java.util.IdentityHashMap()
-    private val tabRoots: MutableMap<String, Route> = java.util.HashMap()
+    private val tabRoots get() = routes.tabRoots
     private var renderedConfiguration: Long = -1
     private lateinit var clock: android.widget.TextClock
     private var clockFormat = "off"
@@ -75,20 +74,23 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
     private var browseClockReady = false
     private var seriesTransition = 0
     private val main = Handler(Looper.getMainLooper())
-    private val stack: MutableList<Route> = ArrayList()
-    private val dialogs: MutableSet<Dialog> = HashSet()
+    private lateinit var stack: MutableList<Route>
+    private lateinit var prompts: BrowseDialogs
     private var browse: BrowseScreens? = null
     private var titles: TitleScreens? = null
     private var setup: SetupScreens? = null
     private var store: StoreScreens? = null
-    private var scope: Cancellation? = null
-    private var pending: Future<*>? = null
-    private var generation = 0
+    private val scope get() = screenModel.request
+    private val generation get() = screenModel.generation
     private var stopped = false
     private var contentReady = false
     private var incomingHandled = false
-    private var searchExpanded = false
-    private var searchReturnTab = "Home"
+    private var searchExpanded: Boolean
+        get() = routes.searchExpanded
+        set(value) { routes.searchExpanded = value }
+    private var searchReturnTab: String
+        get() = routes.searchReturnTab
+        set(value) { routes.searchReturnTab = value }
     private var searchDebounce: Runnable? = null
     /** A tab was chosen: keep focus in the rail until Right enters its content. */
     private var waitingForContentFocus = false
@@ -112,7 +114,12 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
 
     public override fun onCreate(saved: Bundle?) {
         super.onCreate(saved)
+        stack = routes.stack
         app = application as TvApplication
+        prompts = BrowseDialogs(this, { main.post { updateTopBar() } }) {
+            val view = list.findViewWithTag<View>("subtitle-preview")
+            if (view is tv.stream.app.ui.SubtitlePreviewView) view.updateFrom(services!!.playerPreferences)
+        }
         Sounds.get(this)
         incomingHandled = saved != null && saved.getBoolean("incomingHandled")
         incomingFile = if (incomingHandled) null else incoming(intent)
@@ -169,15 +176,30 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
         }
         Tv.control(searchButton, "nav:search", Runnable { search(); enterContent() }, Consumer<String> { }, DoubleSupplier { topBar.lift() }, false)
         Tv.hover(searchButton, DoubleSupplier { topBar.lift() })
-        if (android.os.Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(
-                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, android.window.OnBackInvokedCallback { onBackPressed() })
+        // ComponentActivity bridges this callback to platform Back on API 33+ and onBackPressed below it.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = navigateBack()
+        })
         if (saved != null) {
-            searchReturnTab = saved.getString("searchReturnTab", "Home")
-            restore(saved.getString("routes", ""))
+            routes.restore(saved.getString("routes", ""), saved.getString("searchReturnTab", "Home"))
         }
         if (stack.isEmpty()) stack.add(Route("Starting"))
         if (stack[0].screen == "Search") searchExpanded = true
         searchReturnTab = primaryTab(searchReturnTab)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                screenModel.state.collect { state ->
+                    if (!stopped && !isFinishing) when (state) {
+                        is PageScreenState.Content -> if (state.generation == generation) {
+                            val page = state.content.render()
+                            if (state.partial) showPartial(page) else show(page)
+                        }
+                        is PageScreenState.Failed -> if (state.generation == generation) failed(state.cause)
+                        else -> Unit
+                    }
+                }
+            }
+        }
         loading()
         initialize()
     }
@@ -305,11 +327,8 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
         if (screen == "Search") { search(); return }
         if (services == null) return
         searchExpanded = false
-        rememberFocus(); stack.clear()
-        // The add-on store lives inside Settings rather than in a tab of its own.
-        if (screen == "Add-ons") { stack.add(Route("Settings")); stack.add(StoreScreens.route("All")) }
-        else stack.add(tabRoots.computeIfAbsent(screen) { name -> Route(name) })
-        if (isPrimaryTab(stack[0].screen)) searchReturnTab = stack[0].screen
+        rememberFocus()
+        routes.root(screen)
         render(true)
     }
     override fun search() {
@@ -319,13 +338,14 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
         }
         searchReturnTab = if (stack.isEmpty()) "Home" else primaryTab(stack[0].screen)
         searchExpanded = true
-        rememberFocus(); stack.clear(); stack.add(tabRoots.computeIfAbsent("Search") { name -> Route(name) }); render(true)
+        rememberFocus(); routes.search(searchReturnTab); render(true)
     }
     override fun searchInput(value: String) {
         resetLoadingContent = true
         for (saved in stack) if (saved.screen == "Search") {
             saved.value = value
         }
+        routes.publish()
         if (stack.isEmpty() || route().screen != "Search") return
         if (searchDebounce != null) main.removeCallbacks(searchDebounce!!)
         cancelWork()
@@ -355,12 +375,12 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
         if (screen == "Search") return if (isPrimaryTab(searchReturnTab)) searchReturnTab else "Home"
         return if (isPrimaryTab(screen)) screen else "Home"
     }
-    override fun push(next: Route) { Sounds.play(Sounds.Sound.OPEN); rememberFocus(); stack.add(next); enterDirection = 1; render() }
+    override fun push(next: Route) { Sounds.play(Sounds.Sound.OPEN); rememberFocus(); routes.push(next); enterDirection = 1; render() }
     override fun back() { onBackPressed() }
     override fun refresh() { rememberFocus(); render(false, true) }
     override fun changed() { resetLoadingContent = true; render() }
     private fun cancelLoading() { if (delayedLoading != null) { main.removeCallbacks(delayedLoading!!); delayedLoading = null } }
-    private fun cancelWork() { generation++; cancelLoading(); if (scope != null) scope!!.close(); if (pending != null) pending!!.cancel(true) }
+    private fun cancelWork() { cancelLoading(); screenModel.cancel() }
     private fun render() { render(false) }
     private fun render(restoreOnly: Boolean) { render(restoreOnly, false) }
     private fun render(restoreOnly: Boolean, refreshData: Boolean) {
@@ -371,9 +391,9 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
         if (searchDebounce != null) { main.removeCallbacks(searchDebounce!!); searchDebounce = null }
         cancelWork()
         if (stopped || services == null) return
-        scope = services!!.addons.newRequest()
+        screenModel.begin(services!!.addons.newRequest())
         refreshClock()
-        val route = route(); val request: Cancellation = scope!!
+        val route = route()
         loadStarted = android.os.SystemClock.uptimeMillis()
         keepLoadingContent = shownRoute === route && shownPage != null && !resetLoadingContent
         resetLoadingContent = false
@@ -402,11 +422,10 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
         val updating = shownRoute === route && shownPage != null
         if (!updating) { loading(); updateTopBar() }
         else if (route.screen == "Search" && !(restoreOnly && retained != null)) loading()
-        val mine = generation
-        val progress = Consumer<Page> { partial -> main.post {
-            if (mine == generation && !stopped && !isFinishing) showPartial(partial)
-        } }
-        work(Callable { build(route, request, progress, refreshData, restoreOnly) }, Consumer { page -> show(page) })
+        routes.publish()
+        screenModel.load(app.workers) { request, progress ->
+            build(route, request, Consumer(progress), refreshData, restoreOnly)
+        }
     }
     /** Reads the clock setting off the main thread; a page rebuilt after Settings changes picks up the new one. */
     private fun refreshClock() {
@@ -512,7 +531,7 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
         if (list.isComputingLayout) { list.post { updateTopBar() }; return }
         val offset = list.computeVerticalScrollOffset()
         scrollFade.alpha = if (!stack.isEmpty() && route().screen == "Search") 0f else Math.min(1f, offset / Tv.dp(this, 32f).toFloat())
-        if (!dialogs.isEmpty()) return
+        if (prompts.isShowing) return
         val hidden = hiddenNavigation()
         val state = if (hidden) NavigationRail.State.HIDDEN else if (topBar.hasFocus())
                 (if (topBar.state() == NavigationRail.State.EXPANDED) NavigationRail.State.EXPANDED else NavigationRail.State.WRAPPED)
@@ -706,10 +725,22 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
         list.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
     }
     private fun afterPageLayout(action: Runnable) {
-        if (!list.hasPendingAdapterUpdates() && !list.isLayoutRequested) { list.post(action); return }
+        val afterBindings = Runnable {
+            if (!adapter.hasPendingBindings()) { action.run(); return@Runnable }
+            list.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+                override fun onPreDraw(): Boolean {
+                    if (adapter.hasPendingBindings()) return true
+                    list.viewTreeObserver.removeOnPreDrawListener(this)
+                    action.run()
+                    return true
+                }
+            })
+            list.postInvalidateOnAnimation()
+        }
+        if (!list.hasPendingAdapterUpdates() && !list.isLayoutRequested) { list.post(afterBindings); return }
         list.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
             override fun onGlobalLayout() {
-                list.viewTreeObserver.removeOnGlobalLayoutListener(this); action.run()
+                list.viewTreeObserver.removeOnGlobalLayoutListener(this); afterBindings.run()
             }
         })
     }
@@ -730,11 +761,11 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
         contentReady = false
         if (!stack.isEmpty()) {
             val current = route()
-            if (current.screen == "Sources" && current.title != null) {
+            if (current.screen == "Sources" && current.title != null && titles != null) {
                 val shell = titles!!.sourcesPage(current)
                 showPartial(shell.add(Item.skeleton("Source results"))); return
             }
-            if (current.screen == "Details" && current.title != null) {
+            if (current.screen == "Details" && current.title != null && titles != null) {
                 val shell = titles!!.detailsPage(current.title!!, "")
                 TitleScreens.pendingTitle(shell, current.title!!)
                 showPartial(shell); return
@@ -883,11 +914,9 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
 
     // Workers.
     private fun <T> work(task: Callable<T>, done: Consumer<T>) {
-        val mine = generation
-        pending = app.workers.submit(Runnable {
-            try { val value = task.call(); main.post { if (mine == generation && !stopped && !isFinishing) done.accept(value) } }
-            catch (e: Exception) { main.post { if (mine == generation && !stopped && !isFinishing) failed(e) } }
-        })
+        screenModel.work(app.workers, task) { value ->
+            if (!stopped && !isFinishing) done.accept(value)
+        }
     }
     /** Changes the data behind the current page and rebuilds it in place, keeping its scroll position. */
     override fun mutate(task: Callable<*>) { then(task, Runnable { invalidateLocalPages(); rememberFocus(); render() }) }
@@ -920,81 +949,19 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
         })
     }
 
-    // Contextual panels share one navigation model: Back/Left returns a level or dismisses the root.
-    private fun show(alert: Tv.Alert) {
-        val dialog = alert.dialog
-        dialogs.add(dialog); dialog.setOnDismissListener { ignored -> dialogs.remove(dialog); main.post { updateTopBar() } }
-        alert.show()
-    }
-    /** Long text (licences) scrolls inside the alert, left-aligned for reading. */
-    private fun showGlassMessage(title: String, message: CharSequence, scroll: Boolean, onClose: Runnable?) {
-        val body: CharSequence? = if (scroll) null else message
-        val alert = Tv.alert(this, title, body)
-        if (scroll) {
-            val content = ScrollView(this)
-            content.isVerticalScrollBarEnabled = false; content.isFocusable = true
-            val text = Tv.text(this, message.toString(), 13.5f, R.color.tv_text_secondary)
-            text.setLineSpacing(Tv.dp(this, 3f).toFloat(), 1f)
-            content.addView(text)
-            val contentParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 300f))
-            contentParams.topMargin = Tv.dp(this, 16f)
-            alert.surface.addView(Tv.clipped(content, 0), alert.surface.indexOfChild(alert.buttons), contentParams)
-        }
-        alert.dialog.setOnCancelListener { ignored -> if (onClose != null) onClose.run() }
-        show(alert)
-    }
-    private fun showGlassConfirmation(title: String, message: CharSequence, action: String, onAccept: Runnable, onCancel: Runnable?) {
-        val alert = Tv.alert(this, title, message)
-        alert.button("popup:confirm", action, Runnable { alert.dialog.dismiss(); onAccept.run() })
-        alert.dialog.setOnCancelListener { ignored -> if (onCancel != null) onCancel.run() }
-        show(alert)
-    }
-    override fun edit(title: String, description: String, hint: String, initial: String?, accept: Consumer<String>) {
-        val alert = Tv.alert(this, title, description as CharSequence)
-        val input = EditText(this)
-        input.setSingleLine(true); input.hint = hint; input.setText(initial); input.textSize = 17f
-        input.setTextColor(getColor(R.color.tv_text)); input.setHintTextColor(getColor(R.color.tv_text_tertiary))
-        input.setSelectAllOnFocus(true); input.contentDescription = title; input.imeOptions = EditorInfo.IME_ACTION_DONE
-        input.setBackgroundResource(R.drawable.tv_dialog_field); input.setPadding(Tv.dp(this, 16f), 0, Tv.dp(this, 16f), 0)
-        val inputParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Tv.dp(this, 50f))
-        inputParams.topMargin = Tv.dp(this, 20f)
-        alert.surface.addView(input, alert.surface.indexOfChild(alert.buttons), inputParams)
-        val error = Tv.text(this, "", 13.5f, R.color.tv_warning)
-        error.visibility = View.GONE; error.gravity = Gravity.START; error.setPadding(Tv.dp(this, 12f), Tv.dp(this, 8f), Tv.dp(this, 12f), 0)
-        alert.surface.addView(error, alert.surface.indexOfChild(alert.buttons))
-        val proceed = alert.button("popup:continue", "Continue", Runnable {
-            val text = input.text.toString().trim { it <= ' ' }
-            if (text.isEmpty()) { error.text = "Enter a value"; error.visibility = View.VISIBLE; input.requestFocus(); return@Runnable }
-            error.visibility = View.GONE; alert.dialog.dismiss(); accept.accept(text)
-        })
-        input.setOnEditorActionListener(TextView.OnEditorActionListener { v, action, event ->
-            if (action != EditorInfo.IME_ACTION_DONE) return@OnEditorActionListener false
-            proceed.performClick(); true
-        })
-        show(alert)
-        input.requestFocus()
-    }
-    override fun options(title: String, contents: Consumer<Tv.Alert>) {
-        val menu = Tv.alert(this, title, null as View?); contents.accept(menu); show(menu)
-    }
-    override fun choose(title: String, options: Array<String>, accept: Consumer<Int>) { show(Tv.choices(this, title, options, accept, null)) }
+    // Contextual panels preserve the same native drawing and Back/Left behavior.
+    private fun show(alert: Tv.Alert) = prompts.show(alert)
+    private fun showGlassMessage(title: String, message: CharSequence, scroll: Boolean, onClose: Runnable?) =
+        prompts.message(title, message, scroll, onClose)
+    private fun showGlassConfirmation(title: String, message: CharSequence, action: String, onAccept: Runnable, onCancel: Runnable?) =
+        prompts.confirm(title, message, action, onAccept, onCancel)
+    override fun edit(title: String, description: String, hint: String, initial: String?, accept: Consumer<String>) =
+        prompts.edit(title, description, hint, initial, accept)
+    override fun options(title: String, contents: Consumer<Tv.Alert>) = prompts.options(title, contents)
+    override fun choose(title: String, options: Array<String>, accept: Consumer<Int>) = prompts.choose(title, options, accept)
     override fun chooseWithPreview(title: String, header: View?, options: Array<String>, selected: Int,
-                                   accept: Consumer<Int>, onPreview: Consumer<Int>?) {
-        val accepted = booleanArrayOf(false)
-        val alert = Tv.choices(this, title, header, options, selected, Consumer { index ->
-            accepted[0] = true; accept.accept(index)
-        }, onPreview, null)
-        show(alert)
-        alert.dialog.setOnDismissListener { dialog ->
-            dialogs.remove(dialog as Dialog)
-            main.post { updateTopBar() }
-            if (!accepted[0] && header == null) {
-                val view: View? = list.findViewWithTag("subtitle-preview")
-                if (view is tv.stream.app.ui.SubtitlePreviewView)
-                    view.updateFrom(services!!.playerPreferences)
-            }
-        }
-    }
+                                   accept: Consumer<Int>, onPreview: Consumer<Int>?) =
+        prompts.chooseWithPreview(title, header, options, selected, accept, onPreview)
     override fun previewSubtitle(setting: SubtitleStyle.Setting, index: Int) {
         val view: View? = list.findViewWithTag("subtitle-preview")
         if (view is tv.stream.app.ui.SubtitlePreviewView)
@@ -1120,12 +1087,11 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
 
     // Lifecycle and Back.
     /** Back dismisses navigation first, then restores the overview/previous screen, Home or the launcher. */
-    @Suppress("OVERRIDE_DEPRECATION")
-    override fun onBackPressed() {
+    private fun navigateBack() {
         if (intro != null) { finish(); return }
         if (topBar.hasFocus()) { Sounds.play(Sounds.Sound.BACK); dismissNavigation(); return }
         if (returnToSeriesOverview()) { Sounds.play(Sounds.Sound.BACK); return }
-        if (stack.size > 1) { Sounds.play(Sounds.Sound.BACK); cancelWork(); stack.removeAt(stack.size - 1); enterDirection = -1; render(true); return }
+        if (stack.size > 1) { Sounds.play(Sounds.Sound.BACK); cancelWork(); routes.pop(); enterDirection = -1; render(true); return }
         if (searchExpanded && !stack.isEmpty() && stack[0].screen == "Search") { Sounds.play(Sounds.Sound.BACK); closeSearch(); return }
         if (services != null && route().screen != "Home") { Sounds.play(Sounds.Sound.BACK); root("Home"); return }
         finish()
@@ -1134,6 +1100,8 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
      * Arrows are the viewer's navigation, for the focus ticks. One that moves nothing (a row's end, the page's side)
      * bumps, unless focus arrives a moment later (a list that lays out the next row first).
      */
+    // AndroidX core restricts its inherited override; TV remote routing still uses the framework dispatch contract.
+    @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         // Nothing beneath the start screen is visible yet, so only Back reaches the app.
         if (intro != null && event.keyCode != KeyEvent.KEYCODE_BACK) return true
@@ -1216,7 +1184,8 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
     override fun onDestroy() {
         cancelPageEntrance()
         cancelWork()
-        for (dialog in ArrayList(dialogs)) dialog.dismiss()
+        prompts.close()
+        routes.detach()
         backdrop.release(); artwork.close(); main.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
@@ -1225,16 +1194,8 @@ class MainActivity : Activity(), Navigator, PageAdapter.Listener {
         out.putBoolean("incomingHandled", incomingHandled)
         out.putString("searchReturnTab", searchReturnTab)
         try {
-            val routes = JSONArray()
-            for (r in stack) routes.put(r.save())
-            out.putString("routes", routes.toString())
+            out.putString("routes", routes.save())
         } catch (ignored: Exception) { /* keep normal activity state */ }
-    }
-    private fun restore(text: String?) {
-        try {
-            val saved = JSONArray(text)
-            for (i in 0 until saved.length()) stack.add(Route.restore(saved.getJSONObject(i)))
-        } catch (ignored: Exception) { stack.clear() }
     }
 
     companion object {

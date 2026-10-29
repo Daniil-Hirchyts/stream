@@ -1,6 +1,6 @@
 # Stream Android
 
-Kotlin/XML, minimum API 26, compile/target API 36. Four modules:
+Kotlin with Compose/View interoperability, minimum API 26, compile/target API 36. Four modules:
 
 - `:playback`: repository-owned Media3 UI/session library in `android/playback`.
 - `:codecs`: bundled software decoder integration.
@@ -575,7 +575,48 @@ subtitle discovery. `notWebReady` does not make an Android source unsupported.
 `torrentSource()` maps an explicitly chosen torrent and its supplied trackers
 to the JNI input without starting a session. Discovery DHT hints remain
 available on the model; native DHT is a session setting. `SourcePolicy` and
-`WatchActivity` handle ranking, file selection and native session ownership.
+`PlaybackViewModel` handle ranking and source selection; `WatchActivity` and its
+`PlaybackCoordinator` own the active Media3/native session.
+
+## Screen state and Compose
+
+The Kotlin protocol and playback models expose immutable values and defensive
+collection snapshots. `MediaSource.Location` distinguishes supported transports
+and rejected sources; `PlaybackRequest` accepts named Kotlin arguments while
+keeping its builder for existing callers. Torrent JNI fields and exports retain
+their required JVM names.
+
+`NavigationViewModel` owns the back stack and remembered tab roots, publishing
+navigation identities through `StateFlow`. Focus, category and scroll restoration
+stay on each route. Bundle state contains navigation identity and metadata, never
+resolved playable addresses. Recreation detaches routes from outgoing workers and
+drops activity-bound page callbacks.
+
+`BrowseViewModel` publishes sealed loading/content/failure states for Home,
+Search, Browse, Details and management pages. Blocking builds use application
+workers. A navigation or search cancels all work in its generation and closes its
+provider scope; late progress, results and errors cannot update a newer screen.
+Published pages copy nested render values so workers cannot mutate a visible
+partial page. `MainActivity` renders states and owns the current view tree;
+`BrowseDialogs` presents its native popups.
+
+`PlaybackViewModel` owns source discovery, selection/retry snapshots and sealed
+loading/ready/failure presentation. Each attached activity has its own cancellable
+work owner. Native create/select/close stays ordered on the application's
+`playbackLoader`; outgoing session cleanup cannot close the next activity's
+session. Pause, speed and position still use lifecycle saves and the encrypted
+progress store.
+
+Compose adoption starts with Settings and add-on management and extends to the
+shared Details and browse blocks. `ComposePageBlock` owns block models and applies
+native bindings through `AndroidView`. RecyclerView retains page/shelf identity
+and scrolling; the existing native controls retain drawing, accessibility tags,
+remote focus paths, touch and animations. Complex shelves, grids and the search
+keyboard keep their custom parents. Media3 retains its video surface and the
+player controls migrate last through `ComposePlayerControls`, which binds title,
+episode and watched state without replacing the native controls or their event
+handlers. The player timeline retains its 48 dp touch target and dragging behavior. New Compose
+work must preserve those interaction contracts rather than introduce new styling.
 
 ## Local data
 

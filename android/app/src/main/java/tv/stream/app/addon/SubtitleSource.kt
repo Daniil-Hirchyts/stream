@@ -4,9 +4,11 @@ import org.json.JSONObject
 import java.util.ArrayList
 import java.util.Collections
 
-class SubtitleSource private constructor(@JvmField val provider: String, @JvmField val id: String, @JvmField val url: String, @JvmField val language: String) {
+@ConsistentCopyVisibility
+data class SubtitleSource private constructor(val provider: String, val id: String, val url: String, val language: String) {
+    override fun toString(): String = "Subtitle ($language)"
+
     companion object {
-        @JvmStatic
         fun list(provider: String, response: JSONObject): List<SubtitleSource> {
             val out: MutableList<SubtitleSource> = ArrayList()
             for (o in Json.objects(response, "subtitles")) {

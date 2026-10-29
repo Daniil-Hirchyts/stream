@@ -17,7 +17,7 @@ class StartupWatchdog {
     }
     fun quietMs(now: Long): Long = if (pausedAt >= 0) 0 else now - progressed
     companion object {
-        @JvmStatic fun bufferingStalled(buffering: Boolean, began: Long, quiet: Long, now: Long, threshold: Long): Boolean {
+        fun bufferingStalled(buffering: Boolean, began: Long, quiet: Long, now: Long, threshold: Long): Boolean {
             return buffering && began > 0 && now - began >= threshold && quiet >= threshold
         }
     }

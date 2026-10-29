@@ -16,9 +16,9 @@ object TorrentAddons {
     const val COLLECTION = "Torrent/P2P"
 
     class Entry @Throws(JSONException::class, AddonException::class) constructor(
-            id: String, name: String, version: String, @JvmField val url: String, @JvmField val configureUrl: String, description: String,
+            id: String, name: String, version: String, val url: String, val configureUrl: String, description: String,
             configurationRequired: Boolean, anime: Boolean) {
-        @JvmField val listing: AddonListing
+        val listing: AddonListing
 
         init {
             val types = JSONArray().put("movie").put("series")
@@ -65,10 +65,9 @@ object TorrentAddons {
         LISTINGS = Collections.unmodifiableList(listings)
     }
 
-    @JvmStatic fun listings(): List<AddonListing> { return LISTINGS }
+    fun listings(): List<AddonListing> { return LISTINGS }
 
     /** Recognises configured manifests on the same HTTPS service, without decoding or exposing their settings. */
-    @JvmStatic
     fun find(address: String?): Entry? {
         if (address == null) return null
         try {

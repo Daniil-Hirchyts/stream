@@ -1,96 +1,87 @@
 package tv.stream.playback
 
 import android.net.Uri
-
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
-
 import java.util.Collections
-import java.util.HashMap
 
-/** One media item and everything the player needs before it starts. Immutable; see [Builder]. */
+/** One immutable media request. Collections are copied before a playback worker can consume them. */
 @OptIn(markerClass = [UnstableApi::class])
-class PlaybackRequest private constructor(
+class PlaybackRequest(
+    val uri: Uri,
+    val title: String,
     /** The host's name for this media, such as a provider's video id; the player doesn't read it. */
-    @JvmField val id: String,
-    @JvmField val mediaIdentity: String,
-    @JvmField val title: String,
+    val id: String = "",
+    mediaIdentity: String? = null,
     /** A line under the title, such as "S1 E2"; empty when there is none. */
-    @JvmField val detail: String,
-    @JvmField val uri: Uri,
-    @JvmField val mimeType: String?,
+    val detail: String = "",
+    val mimeType: String? = null,
     /** Sent with media requests over HTTP; a User-Agent replaces the session's own. */
-    @JvmField val headers: Map<String, String>,
-    /** Sent with external subtitle requests, which may need the page's headers when the media doesn't. */
-    @JvmField val subtitleHeaders: Map<String, String>,
-    @JvmField val subtitles: List<SubtitleDownloader.Source>,
-    @JvmField val subtitleRequest: SubtitleTracks.Request,
+    headers: Map<String, String> = emptyMap(),
+    /** Sent with external subtitle requests; omitted headers use the media request's headers. */
+    subtitleHeaders: Map<String, String>? = null,
+    subtitles: List<SubtitleDownloader.Source> = emptyList(),
+    val subtitleRequest: SubtitleTracks.Request = SubtitleTracks.Request(),
     /** Audio track names by the source's own numbering, which pages use for voice-overs. */
-    @JvmField val audioNames: List<String>,
-    /** The audio track to start with, by that numbering; -1 lets [audioLanguage] or the stream decide. */
-    @JvmField val audioIndex: Int,
-    @JvmField val audioLanguage: String?,
-    @JvmField val positionMs: Long,
+    audioNames: List<String> = emptyList(),
+    /** The audio track to start with; -1 lets [audioLanguage] or the stream decide. */
+    val audioIndex: Int = -1,
+    val audioLanguage: String? = null,
+    positionMs: Long = 0,
     /** Keeps the previous media's speed and chosen voice-over, as for the next episode of a series. */
-    @JvmField val continuing: Boolean,
-    @JvmField val startPaused: Boolean,
+    val continuing: Boolean = false,
+    val startPaused: Boolean = false,
     /** Reads the media itself, such as from a torrent; null fetches [uri] over HTTP. */
-    @JvmField val dataSource: DataSource.Factory?,
+    val dataSource: DataSource.Factory? = null,
 ) {
+    val mediaIdentity: String = mediaIdentity ?: uri.toString()
+    val headers: Map<String, String> = Collections.unmodifiableMap(HashMap(headers))
+    val subtitleHeaders: Map<String, String> = Collections.unmodifiableMap(HashMap(subtitleHeaders ?: headers))
+    val subtitles: List<SubtitleDownloader.Source> = Collections.unmodifiableList(ArrayList(subtitles))
+    val audioNames: List<String> = Collections.unmodifiableList(ArrayList(audioNames))
+    val positionMs: Long = positionMs.coerceAtLeast(0)
+
+    /** Compatibility for existing integrations; Kotlin callers can use the constructor's named arguments. */
     class Builder(private val uri: Uri, private val title: String) {
-        private var id: String = ""
-        private var detail: String = ""
+        private var id = ""
+        private var detail = ""
         private var mediaIdentity: String? = null
         private var mimeType: String? = null
         private var audioLanguage: String? = null
-        private var headers: Map<String, String> = Collections.emptyMap()
+        private var headers: Map<String, String> = emptyMap()
         private var subtitleHeaders: Map<String, String>? = null
-        private var subtitles: List<SubtitleDownloader.Source> = Collections.emptyList()
-        private var subtitleRequest: SubtitleTracks.Request = SubtitleTracks.Request(null, null, null)
-        private var audioNames: List<String> = Collections.emptyList()
+        private var subtitles: List<SubtitleDownloader.Source> = emptyList()
+        private var subtitleRequest = SubtitleTracks.Request()
+        private var audioNames: List<String> = emptyList()
         private var audioIndex = -1
-        private var positionMs: Long = 0
+        private var positionMs = 0L
         private var continuing = false
         private var startPaused = false
         private var dataSource: DataSource.Factory? = null
 
-        fun mediaIdentity(value: String?): Builder { mediaIdentity = value; return this }
-        fun id(value: String): Builder { id = value; return this }
-        fun detail(value: String): Builder { detail = value; return this }
-        fun mimeType(value: String?): Builder { mimeType = value; return this }
-        fun headers(value: Map<String, String>): Builder { headers = value; return this }
-        fun subtitleHeaders(value: Map<String, String>?): Builder { subtitleHeaders = value; return this }
-        fun subtitles(value: List<SubtitleDownloader.Source>): Builder { subtitles = value; return this }
-        fun subtitleRequest(value: SubtitleTracks.Request): Builder { subtitleRequest = value; return this }
-        fun audioNames(value: List<String>): Builder { audioNames = value; return this }
-        fun audioIndex(value: Int): Builder { audioIndex = value; return this }
-        fun audioLanguage(value: String?): Builder { audioLanguage = value; return this }
-        fun position(value: Long): Builder { positionMs = Math.max(0, value); return this }
-        fun startPaused(value: Boolean): Builder { startPaused = value; return this }
-        fun continuing(value: Boolean): Builder { continuing = value; return this }
-        fun dataSource(value: DataSource.Factory?): Builder { dataSource = value; return this }
+        fun mediaIdentity(value: String?) = apply { mediaIdentity = value }
+        fun id(value: String) = apply { id = value }
+        fun detail(value: String) = apply { detail = value }
+        fun mimeType(value: String?) = apply { mimeType = value }
+        fun headers(value: Map<String, String>) = apply { headers = value }
+        fun subtitleHeaders(value: Map<String, String>?) = apply { subtitleHeaders = value }
+        fun subtitles(value: List<SubtitleDownloader.Source>) = apply { subtitles = value }
+        fun subtitleRequest(value: SubtitleTracks.Request) = apply { subtitleRequest = value }
+        fun audioNames(value: List<String>) = apply { audioNames = value }
+        fun audioIndex(value: Int) = apply { audioIndex = value }
+        fun audioLanguage(value: String?) = apply { audioLanguage = value }
+        fun position(value: Long) = apply { positionMs = value.coerceAtLeast(0) }
+        fun startPaused(value: Boolean) = apply { startPaused = value }
+        fun continuing(value: Boolean) = apply { continuing = value }
+        fun dataSource(value: DataSource.Factory?) = apply { dataSource = value }
 
-        fun build(): PlaybackRequest {
-            // The Java original's PlaybackRequest(Builder) constructor, evaluated in the same order.
-            return PlaybackRequest(
-                    id,
-                    if (mediaIdentity == null) uri.toString() else mediaIdentity!!,
-                    title,
-                    detail,
-                    uri,
-                    mimeType,
-                    Collections.unmodifiableMap(HashMap(headers)),
-                    Collections.unmodifiableMap(HashMap(
-                            if (subtitleHeaders == null) headers else subtitleHeaders!!)),
-                    Collections.unmodifiableList(ArrayList(subtitles)),
-                    subtitleRequest,
-                    Collections.unmodifiableList(ArrayList(audioNames)),
-                    audioIndex,
-                    audioLanguage,
-                    positionMs,
-                    continuing, startPaused,
-                    dataSource)
-        }
+        fun build() = PlaybackRequest(
+            uri = uri, title = title, id = id, mediaIdentity = mediaIdentity, detail = detail,
+            mimeType = mimeType, headers = headers, subtitleHeaders = subtitleHeaders,
+            subtitles = subtitles, subtitleRequest = subtitleRequest, audioNames = audioNames,
+            audioIndex = audioIndex, audioLanguage = audioLanguage, positionMs = positionMs,
+            continuing = continuing, startPaused = startPaused, dataSource = dataSource,
+        )
     }
 }

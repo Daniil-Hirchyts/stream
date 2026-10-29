@@ -3,7 +3,7 @@ package tv.stream.app.addon
 import java.io.IOException
 
 /** Why an add-on request failed, so a screen can say so and keep other add-ons' results. */
-class AddonException(@JvmField val kind: Kind, message: String?, @JvmField val httpStatus: Int, cause: Throwable?) : IOException(message, cause) {
+class AddonException(val kind: Kind, message: String?, val httpStatus: Int, cause: Throwable?) : IOException(message, cause) {
     enum class Kind {
         /** No connection, or the connection broke. */
         NETWORK,

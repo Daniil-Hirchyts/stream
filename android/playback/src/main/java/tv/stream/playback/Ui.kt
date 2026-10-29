@@ -11,7 +11,6 @@ object Ui {
     private const val FADE_MS = 180
 
     /** Give every action the same pointer, accessibility and keyboard semantics. */
-    @JvmStatic
     fun action(view: View, action: Runnable) {
         view.isClickable = true
         view.isFocusable = true
@@ -27,7 +26,6 @@ object Ui {
     }
 
     /** Cheap to call repeatedly: a view already in the requested state is left alone. */
-    @JvmStatic
     fun fade(view: View, visible: Boolean) {
         // Cancelling also drops a pending fade-out's "gone" step.
         view.animate().cancel()
@@ -43,7 +41,6 @@ object Ui {
     }
 
     /** 0:42, 12:05 or 1:02:09. */
-    @JvmStatic
     fun time(ms: Long): String {
         val total = Math.max(0, ms / 1000)
         val hours = total / 3600

@@ -3,26 +3,25 @@ package tv.stream.app
 import android.os.Parcelable
 import org.json.JSONException
 import org.json.JSONObject
-import java.util.LinkedHashMap
 import tv.stream.app.addon.Title
 
 /** One entry of the browse back stack, saved across activity recreation. */
-class Route(@JvmField val screen: String) {
+class Route(val screen: String) {
     /** The key of the focused view, restored when returning to this route. */
-    @JvmField var focus: String = ""
+    var focus: String = ""
     /** Screen-specific: search text, add-on id or catalogue identity. */
-    @JvmField var value: String = ""
+    var value: String = ""
     /** Selected provider video (episode) ID on Details and Sources. */
-    @JvmField var video: String = ""
-    @JvmField var title: Title? = null
-    @JvmField var season: Int = -1
-    @JvmField var page: Int = 0
-    @JvmField var scroll: Parcelable? = null
-    @JvmField val childScroll: MutableMap<String, Parcelable?> = LinkedHashMap()
-    @JvmField val extras: MutableMap<String, String> = LinkedHashMap()
+    var video: String = ""
+    var title: Title? = null
+    var season: Int = -1
+    var page: Int = 0
+    var scroll: Parcelable? = null
+    val childScroll = linkedMapOf<String, Parcelable?>()
+    val extras = linkedMapOf<String, String>()
     /** A screen's fetched data, kept in memory only so re-sorting or returning does not ask providers again. */
-    @JvmField var cache: Any? = null
-    @JvmField var cachedAt: Long = 0
+    var cache: Any? = null
+    var cachedAt: Long = 0
 
     @Throws(JSONException::class)
     fun save(): JSONObject {
@@ -34,11 +33,11 @@ class Route(@JvmField val screen: String) {
     }
 
     companion object {
-        @JvmStatic fun of(screen: String, title: Title?, video: String?): Route {
-            val route = Route(screen); route.title = title; route.video = video ?: ""; return route
+        fun of(screen: String, title: Title?, video: String?): Route {
+            return Route(screen).apply { this.title = title; this.video = video.orEmpty() }
         }
 
-        @JvmStatic @Throws(JSONException::class)
+        @Throws(JSONException::class)
         fun restore(data: JSONObject): Route {
             val route = Route(data.getString("screen"))
             route.value = data.optString("value"); route.video = data.optString("video"); route.focus = data.optString("focus")
