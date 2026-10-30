@@ -74,8 +74,12 @@ pub struct Config {
     pub listen_interfaces: String,
     pub dht: bool,
     pub lsd: bool,
+    /// UPnP IGD is not implemented: enabling it only logs that it stays off (see native/README.md).
     pub upnp: bool,
+    /// NAT-PMP port mapping through [`Config::natpmp_gateway`]; off by default.
     pub natpmp: bool,
+    /// The IPv4 gateway NAT-PMP talks to, from the platform's default route; nothing is discovered.
+    pub natpmp_gateway: String,
     pub pex: bool,
     /// uTP for incoming peers and when TCP can't connect.
     pub utp: bool,
@@ -112,6 +116,7 @@ impl Default for Config {
             lsd: true,
             upnp: false,
             natpmp: false,
+            natpmp_gateway: String::new(),
             pex: true,
             utp: true,
             tcp: true,
@@ -1553,9 +1558,9 @@ mod tests {
 
     #[test]
     fn port_mapping_is_off_unless_asked_for() {
-        // Not implemented at all (see native/README.md); the defaults must never ask for it either.
+        // NAT-PMP is an explicit opt-in and UPnP is not implemented (see native/README.md); defaults ask for neither.
         let config = Config::default();
-        assert!(!config.upnp && !config.natpmp);
+        assert!(!config.upnp && !config.natpmp && config.natpmp_gateway.is_empty());
     }
 
     #[test]

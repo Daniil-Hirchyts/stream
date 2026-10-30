@@ -5,6 +5,7 @@ use super::dht::Dht;
 use super::lsd::Lsd;
 use super::metainfo::{Id20, Info, InfoHashes, Layers};
 use super::mse::{self, Policy as Encryption};
+use super::natpmp;
 use super::net::{parse_listen, Policy};
 use super::peer::{self, UploadLimit};
 use super::torrent::Torrent;
@@ -36,6 +37,8 @@ pub struct SessionConfig {
     /// TCP listening and dialling; off only to test uTP alone.
     pub tcp: bool,
     pub encryption: Encryption,
+    /// NAT-PMP gateway (see [`super::natpmp`]); `None` maps nothing.
+    pub natpmp_gateway: Option<std::net::SocketAddrV4>,
 }
 
 impl Default for SessionConfig {
@@ -55,6 +58,7 @@ impl Default for SessionConfig {
             utp: true,
             tcp: true,
             encryption: Encryption::Enabled,
+            natpmp_gateway: None,
         }
     }
 }
@@ -76,6 +80,8 @@ pub struct SessionShared {
     pub utp: Option<Arc<librqbit_utp::UtpSocketUdp>>,
     pub tcp: bool,
     port: AtomicU16,
+    /// The gateway's external TCP port when NAT-PMP mapped the listen port to a different one; 0 otherwise.
+    external_port: AtomicU16,
     log_enabled: bool,
     lsd_enabled: bool,
     torrents: Mutex<Vec<Arc<Torrent>>>,
@@ -105,6 +111,14 @@ impl SessionShared {
         self.port.load(Ordering::Relaxed)
     }
 
+    /// The port internet peers reach: the mapped external port, or the listen port.
+    pub fn announce_port(&self) -> u16 {
+        match self.external_port.load(Ordering::Relaxed) {
+            0 => self.port(),
+            p => p,
+        }
+    }
+
     pub fn dht_enabled(&self) -> bool {
         self.dht.lock().unwrap_or_else(|e| e.into_inner()).is_some()
     }
@@ -130,6 +144,7 @@ impl SessionShared {
 pub struct Session {
     pub shared: Arc<SessionShared>,
     runtime: Option<tokio::runtime::Runtime>,
+    mapper: Option<natpmp::Mapper>,
 }
 
 impl Session {
@@ -158,6 +173,7 @@ impl Session {
             utp: None,
             tcp: config.tcp,
             port: AtomicU16::new(0),
+            external_port: AtomicU16::new(0),
             log_enabled: config.log,
             lsd_enabled: config.lsd && !config.public_only,
             torrents: Mutex::new(Vec::new()),
@@ -258,11 +274,37 @@ impl Session {
                 Err(e) => shared.log(format!("Local discovery unavailable: {e}")),
             }
         }
-        Ok(Session { shared, runtime: Some(runtime) })
+        let mapper = match config.natpmp_gateway {
+            Some(gateway) if shared.port() != 0 && !config.public_only => {
+                let mut protocols = Vec::new();
+                if config.tcp {
+                    protocols.push(natpmp::Protocol::Tcp);
+                }
+                if shared.utp.is_some() {
+                    protocols.push(natpmp::Protocol::Udp);
+                }
+                let weak = Arc::downgrade(&shared);
+                let log: natpmp::Log = Arc::new(move |line| if let Some(s) = weak.upgrade() { s.log(line) });
+                let weak = Arc::downgrade(&shared);
+                let external: natpmp::External = Arc::new(move |port| if let Some(s) = weak.upgrade() {
+                    let port = if port == s.port() { 0 } else { port };
+                    s.external_port.store(port, Ordering::Relaxed);
+                });
+                let _guard = runtime.enter();
+                Some(natpmp::Mapper::start(gateway, shared.port(), protocols, log, external))
+            }
+            _ => None,
+        };
+        Ok(Session { shared, runtime: Some(runtime), mapper })
     }
 
     pub fn port(&self) -> u16 {
         self.shared.port()
+    }
+
+    /// The port announced to trackers, the DHT and peers: a NAT-PMP external port, or the listen port.
+    pub fn announce_port(&self) -> u16 {
+        self.shared.announce_port()
     }
 
     /// Starts a torrent; it runs until [`Session::remove`].
@@ -305,6 +347,13 @@ impl Drop for Session {
             t.remove();
         }
         self.shared.torrents().clear();
+        if let (Some(mapper), Some(rt)) = (self.mapper.take(), self.runtime.as_ref()) {
+            // Delete the gateway's mappings now, unless dropped on a runtime thread, where blocking is not allowed;
+            // the lease then expires on its own.
+            if tokio::runtime::Handle::try_current().is_err() {
+                rt.block_on(mapper.stop());
+            }
+        }
         if let Some(rt) = self.runtime.take() {
             rt.shutdown_timeout(Duration::from_secs(2));
         }
@@ -382,7 +431,7 @@ async fn torrent_loop(session: Arc<SessionShared>, t: Arc<Torrent>) {
                     let a = Announce {
                         info_hash: id,
                         peer_id: s.peer_id,
-                        port: s.port(),
+                        port: s.announce_port(),
                         uploaded: up,
                         downloaded: down,
                         left,
@@ -428,7 +477,7 @@ async fn torrent_loop(session: Arc<SessionShared>, t: Arc<Torrent>) {
                 if now >= next_dht {
                     let few = t.lock().peers.len() < 10;
                     next_dht = now + if few { Duration::from_secs(60) } else { Duration::from_secs(900) };
-                    let (t2, port) = (t.clone(), session.port());
+                    let (t2, port) = (t.clone(), session.announce_port());
                     let id = t.id();
                     tokio::spawn(async move {
                         let peers = dht.get_peers(id, Some(port)).await;

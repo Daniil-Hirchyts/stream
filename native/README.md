@@ -70,7 +70,7 @@ sdkmanager --install "ndk;29.0.14206865"
   roots the app writes from Android's store; certificates are always verified.
   `public_network_only` keeps peers, trackers and DHT nodes off loopback and
   private networks.
-- **Not implemented**: port mapping (UPnP/NAT-PMP; see below), BEP 17
+- **Not implemented**: UPnP/PCP port mapping (NAT-PMP is an opt-in; see below), BEP 17
   (Hoffman-style) seeds, the DHT over IPv6 (BEP 32), IPv6 local discovery, uTP
   on more than the first listen interface, BitTorrent v2 block-level hash
   requests after a failed piece (the piece is downloaded again whole), seeding to
@@ -136,17 +136,22 @@ queues, trackers, and concurrent cache/reader lifecycle behaviour.
   documented in `SOAK_INVESTIGATION.md`. It has not been validated on a physical TV
   or across platforms.
 
-**Port mapping** (UPnP IGD and NAT-PMP/PCP) is off by default in the engine
-(`Config::default()`, tested) and in the app (`TorrentEngine.Config`), and is not
-implemented: enabling it only logs that it stays off. It is deliberately not
-implemented. A streaming client downloads from peers it dials, so inbound
-reachability helps uploads and reciprocity more than playback; UPnP needs SSDP
-multicast and SOAP requests to devices on the LAN, which the tests forbid and
-which would contact the owner's router from a TV app without being asked; and
-mappings left behind by a crashed process outlive it. If it is ever wanted, it
-should be an explicit opt-in in Settings, NAT-PMP/PCP first (a single unicast to
-the gateway), with a short lease renewed while a torrent is active, removed on
-shutdown, and tested against a loopback fake gateway.
+**Port mapping** is off by default in the engine (`Config::default()`, tested) and
+the app. NAT-PMP (RFC 6886, `src/bt/natpmp.rs`) is an explicit opt-in: Settings →
+Playback → Router port mapping. With it on, and only outside local-only and
+public-network-only sessions, the app passes the active network's default IPv4
+gateway; the engine sends unicast requests to that address alone (private,
+link-local or loopback addresses only; nothing is discovered or broadcast) to map
+the listen port for TCP and uTP with a ten-minute lease. It renews at half the
+granted lease, announces a differing external TCP port to trackers, the DHT and
+peers, and deletes both mappings when the session closes; a mapping left by a
+process that died expires with its lease. Replies are accepted only from the
+gateway's address, for the opcode and port asked. `tests/natpmp.rs` checks
+mapping, renewal, the announced external port, deletion and a refusing gateway
+against a fake gateway on loopback. PCP and UPnP IGD are not implemented: UPnP
+needs SSDP multicast discovery and SOAP requests to LAN devices, which the tests
+forbid; enabling `upnp` only logs that it stays off. A streaming client mostly
+dials its peers, so mapping helps uploads and reciprocity more than playback.
 
 ## How streaming works
 

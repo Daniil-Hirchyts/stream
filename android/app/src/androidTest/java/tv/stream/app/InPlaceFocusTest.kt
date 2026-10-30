@@ -35,6 +35,9 @@ class InPlaceFocusTest : AppHarness() {
         toggle("interface-sounds", "Interface sounds") { services.store.preference("interfaceSounds", "false") == "true" }
         toggle("autoplay", null) { services.store.preference("autoplay", "true") == "false" }
         toggle("autoplay", "Play next episode") { services.store.preference("autoplay", "false") == "true" }
+        assertFalse("Router port mapping is off until chosen", PortMapping.enabled(services.store))
+        toggle("port-mapping", null) { services.store.preference("portMapping", "false") == "true" }
+        toggle("port-mapping", "Router port mapping") { services.store.preference("portMapping", "true") == "false" }
         assertTrue("Still in Playback", visible("Playback cache"))
     }
 

@@ -9,6 +9,7 @@ pub mod lsd;
 pub mod merkle;
 pub mod metainfo;
 pub mod mse;
+pub mod natpmp;
 pub mod net;
 pub mod peer;
 pub mod session;

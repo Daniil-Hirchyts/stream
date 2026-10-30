@@ -674,7 +674,7 @@ impl Torrent {
                 pex: session.as_ref().filter(|s| s.pex && !st.info.as_ref().is_some_and(|i| i.private)).map(|_| wire::EXT_PEX),
                 donthave: Some(wire::EXT_DONTHAVE),
                 metadata_size: st.info.as_ref().map(|i| i.raw.len()),
-                listen_port: session.as_ref().map(|s| s.port()).filter(|&p| p != 0),
+                listen_port: session.as_ref().map(|s| s.announce_port()).filter(|&p| p != 0),
                 client: session.as_ref().map(|s| s.user_agent.clone()),
                 upload_only: false,
             };

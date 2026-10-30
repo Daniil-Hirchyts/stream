@@ -389,6 +389,10 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
                         val config = if (options.localOnly) TorrentEngine.Config.localOnly(payload.path) else TorrentEngine.Config(payload.path)
                         config.cacheBytes = options.cacheBytes; config.reserveBytes = if (options.localOnly) 0L else 512L shl 20
                         config.publicNetworkOnly = options.publicNetworkOnly
+                        if (!options.localOnly && !options.publicNetworkOnly && PortMapping.enabled(services!!.store)) {
+                            val gateway = PortMapping.gateway(this)
+                            if (gateway != null) { config.natpmp = true; config.natpmpGateway = gateway }
+                        }
                         val roots = File(noBackupFilesDir, "native-trust.pem"); TrustRoots.writePem(roots); config.trustRootsFile = roots.path
                         coordinator.engine = TorrentEngine.create(config)
                     }

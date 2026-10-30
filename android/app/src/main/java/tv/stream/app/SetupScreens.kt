@@ -86,6 +86,7 @@ class SetupScreens(private val context: Context, private val nav: Navigator, pri
         category(categories, panes, "settings:subtitles", R.drawable.ic_tv_subtitles, "Subtitles", subtitles)
 
         val autoplay = services.store.preference("autoplay", "true") == "true"
+        val portMapping = PortMapping.enabled(services.store)
         val sounds = soundsOn(services)
         category(categories, panes, "settings:playback", R.drawable.ic_tv_play, "Playback", Arrays.asList(
                 Item.row("cache-size", 0, "Playback cache", services.store.preference("cacheMiB", "256") + " MiB",
@@ -96,6 +97,10 @@ class SetupScreens(private val context: Context, private val nav: Navigator, pri
                 Item.row("interface-sounds", 0, "Interface sounds", if (sounds) "On" else "Off", Runnable { nav.mutate(Callable {
                     services.store.setPreference("interfaceSounds", if (sounds) "false" else "true")
                     tv.stream.app.ui.Sounds.get(context).setEnabled(!sounds); null
+                }) }),
+                // An explicit opt-in: with it on, the engine asks the router (NAT-PMP) to forward its port during playback.
+                Item.row("port-mapping", 0, "Router port mapping", if (portMapping) "On" else "Off", Runnable { nav.mutate(Callable {
+                    services.store.setPreference(PortMapping.PREFERENCE, if (portMapping) "false" else "true"); null
                 }) }),
                 // Clearing keeps imports, favourites and watch history.
                 Item.row("clear-cache", 0, "Clear app playback and metadata cache", "",

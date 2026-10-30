@@ -20,12 +20,24 @@ pub struct RustSwarm {
 
 impl RustSwarm {
     pub fn create(config: &Config, wake: Arc<Wake>) -> Result<RustSwarm> {
-        if config.upnp || config.natpmp {
-            // Port mapping is not implemented; the app never enables it.
-            if let Some(log) = &config.log {
-                log("port mapping (UPnP/NAT-PMP) is not supported and stays off");
-            }
+        let note = |line: &str| if let Some(log) = &config.log { log(line) };
+        if config.upnp {
+            note("UPnP port mapping is not supported and stays off");
         }
+        let natpmp_gateway = if !config.natpmp {
+            None
+        } else if config.public_network_only {
+            note("NAT-PMP stays off on public-network-only sessions");
+            None
+        } else {
+            match super::natpmp::parse_gateway(&config.natpmp_gateway) {
+                Ok(gateway) => Some(gateway),
+                Err(e) => {
+                    note(&format!("NAT-PMP stays off: {e}"));
+                    None
+                }
+            }
+        };
         let session = Session::new(
             SessionConfig {
                 listen: config.listen_interfaces.clone(),
@@ -42,6 +54,7 @@ impl RustSwarm {
                 utp: config.utp,
                 tcp: config.tcp,
                 encryption: config.encryption,
+                natpmp_gateway,
             },
             Some(Arc::new(move || wake.wake())),
         )

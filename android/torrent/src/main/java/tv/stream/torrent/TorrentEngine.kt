@@ -26,9 +26,12 @@ class TorrentEngine private constructor(private val id: Long, private val cacheD
         @JvmField var listenInterfaces: String = "0.0.0.0:0,[::]:0"
         @JvmField var dht: Boolean = true
         @JvmField var localDiscovery: Boolean = true
-        /** Port mapping is not implemented by the engine; enabling it only logs that it stays off. */
+        /** UPnP is not implemented by the engine; enabling it only logs that it stays off. */
         @JvmField var upnp: Boolean = false
+        /** NAT-PMP maps the listen port at [natpmpGateway] while the engine runs: an explicit opt-in. */
         @JvmField var natpmp: Boolean = false
+        /** The default route's IPv4 gateway; a private or loopback address, optionally with a port. */
+        @JvmField var natpmpGateway: String = ""
         @JvmField var peerExchange: Boolean = true
         @JvmField var multipleConnectionsPerIp: Boolean = false
         /** Internet peers only: no LAN discovery, port mapping, or non-public peer/tracker/DHT addresses. */
@@ -249,7 +252,7 @@ class TorrentEngine private constructor(private val id: Long, private val cacheD
         @Throws(TorrentException::class)
         fun create(c: Config): TorrentEngine {
             return TorrentEngine(nativeCreate(c.cacheDirectory, c.cacheBytes, c.reserveBytes, c.listenInterfaces,
-                    c.dht, c.localDiscovery, c.upnp, c.natpmp, c.peerExchange, c.multipleConnectionsPerIp, c.publicNetworkOnly,
+                    c.dht, c.localDiscovery, c.upnp, c.natpmp, c.natpmpGateway, c.peerExchange, c.multipleConnectionsPerIp, c.publicNetworkOnly,
                     c.trustRootsFile, c.readAheadSeconds), c.cacheDirectory)
         }
 
@@ -276,7 +279,7 @@ class TorrentEngine private constructor(private val id: Long, private val cacheD
 
         @JvmStatic @Throws(TorrentException::class)
         private external fun nativeCreate(cacheDir: String, cacheBytes: Long, reserveBytes: Long, listen: String,
-                dht: Boolean, lsd: Boolean, upnp: Boolean, natpmp: Boolean, pex: Boolean, multiplePerIp: Boolean, publicNetworkOnly: Boolean, caFile: String,
+                dht: Boolean, lsd: Boolean, upnp: Boolean, natpmp: Boolean, natpmpGateway: String, pex: Boolean, multiplePerIp: Boolean, publicNetworkOnly: Boolean, caFile: String,
                 readAheadSeconds: Int): Long
         @JvmStatic private external fun nativeDestroy(id: Long)
         @JvmStatic @Throws(TorrentException::class)
