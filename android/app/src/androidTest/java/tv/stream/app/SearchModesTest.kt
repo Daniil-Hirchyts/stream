@@ -207,6 +207,82 @@ class SearchModesTest : SearchHarness() {
         }
     }
     private fun query(): String = searchQuery()
+    @Test @Throws(Exception::class) fun aPointerSweepLeavesNoKeyHoveredWhileResultsArrive() {
+        // The TV's pointer (or the emulator window's) passing over the keyboard while results arrive left keys drawn
+        // hovered after it moved on.
+        BrowseRecoveryTest.CatalogServer().use { server ->
+            services.addons.newRequest().use { request ->
+                services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", request))
+            }
+            launch(); AppHarness.waitUntil("Home", 10000) { visible("Film 00") }
+            tap("Search", true); AppHarness.waitUntil("keyboard", 5000) { keyboardShown() }
+            focusSearch("keyboard:f")
+            for (letter in "film") {
+                browse!!.onActivity { activity -> activity.searchInput(searchQuery().let { if (it == "Search") "" else it } + letter) }
+                // Sweep across a row of keys while this answer arrives.
+                val from = searchBounds("keyboard:g"); val to = searchBounds("keyboard:l")
+                for (step in 0..20) {
+                    pointerHover(from.centerX() + (to.centerX() - from.centerX()) * step / 20f, from.centerY().toFloat()); SystemClock.sleep(12)
+                }
+            }
+            AppHarness.waitUntil("results", 10000) { visible("Film 00") && query() == "film" }
+            // The pointer leaves the keyboard for an empty part of the page.
+            pointerHover(960f, 140f)
+            SystemClock.sleep(600)
+            assertEquals("Only the focused key is drawn highlighted", listOf("keyboard:f"), litKeys())
+        }
+    }
+    private fun pointerHover(x: Float, y: Float) {
+        val p = android.view.MotionEvent.PointerProperties(); p.id = 0; p.toolType = android.view.MotionEvent.TOOL_TYPE_MOUSE
+        val c = android.view.MotionEvent.PointerCoords(); c.x = x; c.y = y
+        val time = SystemClock.uptimeMillis()
+        val e = android.view.MotionEvent.obtain(time, time, android.view.MotionEvent.ACTION_HOVER_MOVE, 1, arrayOf(p),
+                arrayOf(c), 0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_MOUSE, 0)
+        assertTrue(instrumentation.uiAutomation.injectInputEvent(e, true)); e.recycle()
+    }
+    /** Keys whose platter is drawn white: focused, pressed or hovered. */
+    private fun litKeys(): List<String> {
+        val image = instrumentation.uiAutomation.takeScreenshot()!!
+        val lit = ArrayList<String>()
+        try {
+            for (key in keyboardKeys()) {
+                val tag = key.config[SemanticsProperties.TestTag]
+                val surface = searchBounds("$tag:surface")
+                // A point inside the platter, clear of the centred caption.
+                val pixel = image.getPixel(surface.left + surface.width() / 5, surface.centerY())
+                if (android.graphics.Color.red(pixel) > 200 && android.graphics.Color.green(pixel) > 200 && android.graphics.Color.blue(pixel) > 200) lit.add(tag)
+            }
+        } finally { image.recycle() }
+        return lit
+    }
+    @Test @Throws(Exception::class) fun onlyTheFocusedKeyLooksFocusedWhileResultsArrive() {
+        // Keys the remote typed on or passed over kept their focused white once results started to arrive.
+        BrowseRecoveryTest.CatalogServer().use { server ->
+            services.addons.newRequest().use { request ->
+                services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", request))
+            }
+            launch(); AppHarness.waitUntil("Home", 10000) { visible("Film 00") }
+            tap("Search", true); AppHarness.waitUntil("keyboard", 5000) { keyboardShown() }
+            focusSearch("keyboard:a")
+            var row = 0; var column = 0
+            for (c in "film") {
+                val i = c - 'a'
+                while (row < i / 6) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN); row++; SystemClock.sleep(150) }
+                while (row > i / 6) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP); row--; SystemClock.sleep(150) }
+                while (column < i % 6) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT); column++; SystemClock.sleep(150) }
+                while (column > i % 6) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT); column--; SystemClock.sleep(150) }
+                instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER); SystemClock.sleep(400)
+            }
+            AppHarness.waitUntil("results", 10000) { visible("Film 00") && query() == "film" }
+            // From m: up to g, right to h and i, down to o.
+            for (code in intArrayOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_DOWN)) {
+                instrumentation.sendKeyDownUpSync(code); SystemClock.sleep(200)
+            }
+            AppHarness.waitUntil("focus on o", 5000) { focus() == "keyboard:o" }
+            SystemClock.sleep(600) // Let focus growth and fades finish.
+            assertEquals("Only the focused key is drawn focused", listOf("keyboard:o"), litKeys())
+        }
+    }
     @Test @Throws(Exception::class) fun remoteAndPointerSwitchModesAnimateAndPreserveTheQueryAndSelectedFilm() {
         BrowseRecoveryTest.CatalogServer().use { server ->
             services.addons.newRequest().use { request ->

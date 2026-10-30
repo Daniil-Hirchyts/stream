@@ -1,8 +1,6 @@
 package tv.stream.app.ui
 
 import android.graphics.drawable.Drawable
-import android.os.Handler
-import android.os.Looper
 import android.view.KeyEvent as PlatformKeyEvent
 import androidx.annotation.ColorRes
 import androidx.annotation.DrawableRes
@@ -249,26 +247,37 @@ internal object PageControls {
      * Draws a drawable resource (a shape or state selector, which `painterResource` can't load) at this size, with the
      * selector's own enter and exit fades.
      */
+    /** Focus fades of the selectors that have them (enter, exit in ms); the selectors' own fades are not used. */
+    private fun focusFade(@DrawableRes resource: Int): Pair<Int, Int> = when (resource) {
+        R.drawable.tv_keyboard_key, R.drawable.tv_keyboard_action -> 120 to 160
+        R.drawable.tv_utility_button, R.drawable.tv_tab -> 150 to 200
+        else -> 0 to 0
+    }
+
+    /**
+     * Draws a state-list drawable for a control. Focus fades in Compose: a focused copy is drawn over the control's
+     * other state with animated opacity. The platform selector's own fade, run from a Compose draw, sometimes
+     * stopped part-way under heavy recomposition (Search with results arriving), leaving keys the remote had left
+     * drawn focused and the focused key drawn plain.
+     */
     @Composable
     fun rememberDrawing(@DrawableRes resource: Int, focused: Boolean = false, pressed: Boolean = false, hovered: Boolean = false, activated: Boolean = false): DrawScope.() -> Unit {
         val context = LocalContext.current
-        var tick by remember { mutableIntStateOf(0) }
-        val drawable = remember(resource) {
-            context.getDrawable(resource)!!.mutate().also {
-                it.callback = object : Drawable.Callback {
-                    private val main = Handler(Looper.getMainLooper())
-                    override fun invalidateDrawable(who: Drawable) { tick++ }
-                    override fun scheduleDrawable(who: Drawable, what: Runnable, time: Long) { main.postAtTime(what, who, time) }
-                    override fun unscheduleDrawable(who: Drawable, what: Runnable) { main.removeCallbacks(what, who) }
-                }
-            }
-        }
-        val wanted = states(focused, pressed, hovered, activated)
-        drawable.state = wanted
+        val base = remember(resource) { context.getDrawable(resource)!!.mutate() }
+        val lit = remember(resource) { context.getDrawable(resource)!!.mutate() }
+        // Each copy switches at once; the fade between them is the opacity below.
+        base.state = states(false, pressed, hovered, activated); base.jumpToCurrentState()
+        lit.state = states(true, pressed, hovered, activated); lit.jumpToCurrentState()
+        val (enter, exit) = focusFade(resource)
+        val opacity by animateFloatAsState(if (focused) 1f else 0f, tween(if (focused) enter else exit), label = "focus")
         return {
-            @Suppress("UNUSED_EXPRESSION") tick // Redraw while the selector fades.
-            drawable.setBounds(0, 0, size.width.toInt(), size.height.toInt())
-            drawIntoCanvas { drawable.draw(it.nativeCanvas) }
+            base.setBounds(0, 0, size.width.toInt(), size.height.toInt())
+            drawIntoCanvas { base.draw(it.nativeCanvas) }
+            if (opacity > 0f) {
+                lit.setBounds(0, 0, size.width.toInt(), size.height.toInt())
+                lit.alpha = (opacity * 255).toInt()
+                drawIntoCanvas { lit.draw(it.nativeCanvas) }
+            }
         }
     }
 

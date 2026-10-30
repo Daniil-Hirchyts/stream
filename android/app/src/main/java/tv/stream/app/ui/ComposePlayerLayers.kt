@@ -96,8 +96,10 @@ internal class ComposePlayerLayers(private val activity: Activity, private val d
         val old = activity.findViewById<View>(id)
         val root = if (old is ViewGroup) old else {
             val parent = old.parent as ViewGroup; val index = parent.indexOfChild(old)
+            // It keeps the replaced view's id but saves nothing: after recreation the inflated view under that id
+            // (a ProgressBar for buffering) restores before this runs again and can't read a plain View's state.
             FrameLayout(activity).apply {
-                this.id = id; layoutParams = old.layoutParams; visibility = old.visibility
+                this.id = id; isSaveEnabled = false; layoutParams = old.layoutParams; visibility = old.visibility
                 parent.removeViewAt(index); parent.addView(this, index)
             }
         }

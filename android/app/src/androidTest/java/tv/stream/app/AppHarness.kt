@@ -57,6 +57,18 @@ abstract class AppHarness {
                 .putString("peer", InstrumentationRegistry.getArguments().getString("seeder", "127.0.0.1:58134"))
                 .putString("addonDirectory", "$origin/addon/good/directory/manifest.json").commit()
         app.resetServices(); services = app.services()
+        parkPointer()
+    }
+    /**
+     * Ends any hover an earlier test's mouse left behind. Injected pointers keep hovering until they exit, and a
+     * parked one hovers whatever later slides under it, leaving controls drawn hovered.
+     */
+    fun parkPointer() {
+        val p = MotionEvent.PointerProperties(); p.id = 0; p.toolType = MotionEvent.TOOL_TYPE_MOUSE
+        val c = MotionEvent.PointerCoords(); c.x = 0f; c.y = 0f
+        val time = SystemClock.uptimeMillis()
+        val exit = MotionEvent.obtain(time, time, MotionEvent.ACTION_HOVER_EXIT, 1, arrayOf(p), arrayOf(c), 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0)
+        instrumentation.uiAutomation.injectInputEvent(exit, true); exit.recycle()
     }
     @After @Throws(Exception::class) open fun cleanup() {
         if (browse != null) browse!!.close()
