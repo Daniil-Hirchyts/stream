@@ -154,6 +154,9 @@ run_data_tests() {
     device exec-out run-as tv.stream.app cat files/validation-profile.json >"$SIM_DIR/.cache/evidence/playback-profile.json" || status=1
     device exec-out run-as tv.stream.app cat files/validation-profile.png >"$SIM_DIR/.cache/evidence/playback-profile.png" || status=1
   } ;; esac
+  case "$test_classes" in *NavigationPerformanceTest*) [ "$status" -ne 0 ] || {
+    device exec-out run-as tv.stream.app cat files/validation-navigation-performance.json >"$SIM_DIR/.cache/evidence/navigation-performance.json" || status=1
+  } ;; esac
   clear_test_mode
   return "$status"
 }
