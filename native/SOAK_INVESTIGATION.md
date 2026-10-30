@@ -64,9 +64,11 @@ fails; so would one where playback stopped (ended or stalled) before the poll sa
 | `soak-instrumentation.txt`, `soak-summary.json` (2026-10-22) | libtorrent | `OK (1 test)`, 1,813.183 s, 177 cycles, slowest seek 3,466 ms |
 | The 2026-10-23 09:20:06 instrumentation record (former package name) | libtorrent | **Timed out at seek 159** |
 | `soak-rust/runner.txt`, `soak-rust/soak.json`, `soak.json` (2026-10-30) | Rust | `OK (1 test)`, 1,813.923 s, 183 cycles, slowest seek 3,369 ms, 0 hash failures, max PSS 177,164,288 |
+| `modernization/soak-final/soak-2.log`, `soak.json` (2026-10-30, after the reader, scheduling and eviction-latch fixes) | Rust | `OK (1 test)`, 1,829.992 s, 186 cycles, median seek 1,667 ms, slowest 2,768 ms, 0 hash failures, 3,430 evictions, none left pending, max PSS 185 MiB |
 
-So the libtorrent engine passed once and failed once with the same test, and the Rust engine has passed once. One pass
-is not proof that an intermittent failure is gone.
+So the libtorrent engine passed once and failed once with the same test, and the Rust engine has passed twice, the
+second time with the fixes below. Passes are not proof that an intermittent failure is gone; a failure would now leave
+its own record.
 
 ## Host reproduction attempt (Rust engine)
 
