@@ -1,20 +1,19 @@
 package tv.stream.app.ui
 
-import android.graphics.Rect
 import android.view.View
-import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.core.view.doOnAttach
-import androidx.lifecycle.setViewTreeLifecycleOwner
-import androidx.lifecycle.setViewTreeViewModelStoreOwner
-import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
-import org.junit.Rule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
+import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -23,6 +22,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import tv.stream.app.PlayerControlsState
 import tv.stream.app.R
+import tv.stream.playback.ControlsOverlay
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w960dp-h540dp-land-television-xhdpi")
@@ -33,97 +33,89 @@ class ComposePlayerControlsTest {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val activity = controller.get()
         try {
-            activity.setTheme(R.style.TvTheme)
-            val root = activity.layoutInflater.inflate(R.layout.activity_watch, null) as FrameLayout
-            root.setViewTreeLifecycleOwner(activity)
-            root.setViewTreeViewModelStoreOwner(activity)
-            root.setViewTreeSavedStateRegistryOwner(activity)
-            val controls = root.findViewById<FrameLayout>(R.id.controls)
+            val root = FrameLayout(activity)
+            val layer = FrameLayout(activity).apply { id = R.id.controls }
+            root.addView(layer, FrameLayout.LayoutParams(-1, -1))
             var ready = false
-            controls.doOnAttach {
-                ComposePlayerControls.install(controls, MutableStateFlow(PlayerControlsState("Film"))) {
-                    assertNotNull(root.findViewById<View>(R.id.progress))
-                    assertNotNull(root.findViewById<View>(R.id.control_options))
+            lateinit var host: ComposePlayerControls
+            layer.doOnAttach {
+                host = ComposePlayerControls.install(layer, MutableStateFlow(PlayerControlsState("Film")), {}) {
+                    assertTrue("Declarative controls register before opening media", host.focus.hasControls)
                     ready = true
                 }
             }
             activity.setContentView(root)
             settle(root)
-            assertTrue("The player can resolve media after its native controls attach", ready)
-            assertEquals("Film", root.findViewById<TextView>(R.id.controls_title).text.toString())
+            assertTrue("The player can resolve media after its controls attach", ready)
+            composition.onNodeWithTag(activity.resources.getResourceName(R.id.controls_title)).assertTextEquals("Film")
         } finally { controller.pause().stop().destroy() }
     }
 
-    @Test fun compositionKeepsNativeControlGeometryParentsFocusAndActions() {
+    @Test fun compositionKeepsControlGeometryFocusAndCurrentActionsAcrossStateUpdates() {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val activity = controller.get()
         try {
-            activity.setTheme(R.style.TvTheme)
-            activity.setContentView(R.layout.activity_watch)
-            val root = activity.findViewById<FrameLayout>(R.id.player_root)
-            val controls = activity.findViewById<FrameLayout>(R.id.controls).apply { visibility = View.VISIBLE }
-            activity.findViewById<TextView>(R.id.controls_title).text = "Film"
-            activity.findViewById<TextView>(R.id.watching_info).apply { text = "S1 E2"; visibility = View.VISIBLE }
-            settle(root)
-            val ids = intArrayOf(R.id.player_header, R.id.control_stop, R.id.control_watched,
-                R.id.control_options, R.id.control_settings, R.id.progress, R.id.elapsed, R.id.remaining)
-            val views = ids.associateWith { activity.findViewById<View>(it) }
-            val before = views.mapValues { bounds(root, it.value) }
-            val timelineParent = views.getValue(R.id.progress).parent
-            val controlsParent = controls.parent
-            val button = views.getValue(R.id.control_watched)
-            var clicks = 0
-            button.isFocusable = true
-            // onKey grants the native header target touch-mode focus before requesting it.
-            button.isFocusableInTouchMode = true
-            assertTrue("Baseline native header accepts remote focus", button.requestFocus())
-            assertSame(button, root.findFocus())
-            root.requestFocus()
-            button.setOnClickListener { clicks++ }
+            val root = FrameLayout(activity)
+            val layer = FrameLayout(activity)
+            root.addView(layer, FrameLayout.LayoutParams(-1, -1)); activity.setContentView(root)
+            val clicks = ArrayList<Int>()
             val state = MutableStateFlow(PlayerControlsState("Film", "S1 E2", false))
+            val host = ComposePlayerControls.install(layer, state, { clicks.add(it) })
+            host.render(ControlsOverlay.State(seekable = true, progress = 428, buffered = 520, elapsed = "41:02", remaining = "−55:21"))
+            settle(root); controller.windowFocusChanged(true)
+            val timeline = host.bounds(R.id.progress)!!
+            assertEquals((48 * activity.resources.displayMetrics.density).toInt(), timeline.height())
+            assertFalse("Composition boundary doesn't take remote focus", host.isFocusable)
+            assertTrue(host.request(R.id.control_watched)); settle(root)
+            assertEquals(R.id.control_watched, host.focusedId())
+            host.activate(R.id.control_watched)
+            assertEquals(listOf(R.id.control_watched), clicks)
 
-            val composition = ComposePlayerControls.install(controls, state)
+            state.value = PlayerControlsState("Film", "S1 E3", true); settle(root)
+            assertEquals("Recomposition keeps the focused action", R.id.control_watched, host.focusedId())
+            composition.onNodeWithTag(activity.resources.getResourceName(R.id.control_watched)).assertContentDescriptionEquals("Mark unwatched")
+            composition.onNodeWithTag(activity.resources.getResourceName(R.id.watching_info)).assertTextEquals("S1 E3")
+            assertEquals("State updates don't move the timeline", timeline, host.bounds(R.id.progress))
+            composition.onNodeWithTag(activity.resources.getResourceName(R.id.control_watched)).performTouchInput { click() }
+            assertEquals(listOf(R.id.control_watched, R.id.control_watched), clicks)
+        } finally { controller.pause().stop().destroy() }
+    }
+    @Test fun timelineTapTogglesAndADragSeeksOnlyWhenReleased() {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
+        try {
+            val activity = controller.get()
+            val root = FrameLayout(activity); activity.setContentView(root)
+            val host = ComposePlayerControls.install(root, MutableStateFlow(PlayerControlsState("Film")), {})
+            var toggles = 0; var starts = 0; var stops = 0
+            val previews = ArrayList<Int>()
+            host.bind(object : ControlsOverlay.Input {
+                override fun togglePlay() { toggles++ }
+                override fun startScrub() { starts++ }
+                override fun scrub(value: Int) { previews.add(value) }
+                override fun stopScrub() { stops++ }
+            }, Runnable {})
+            host.render(ControlsOverlay.State(seekable = true))
             settle(root)
-
-            assertFalse(composition.isFocusable)
-            assertSame(controlsParent, controls.parent)
-            assertSame(timelineParent, activity.findViewById<View>(R.id.progress).parent)
-            for (id in ids) {
-                assertSame("Native view identity $id", views.getValue(id), activity.findViewById<View>(id))
-                assertEquals("Control bounds $id", before.getValue(id), bounds(root, views.getValue(id)))
+            val timeline = composition.onNodeWithTag(activity.resources.getResourceName(R.id.progress))
+            timeline.performTouchInput { click() }
+            assertEquals(1, toggles); assertEquals(0, starts)
+            timeline.performTouchInput {
+                down(Offset(width * .1f, height / 2f))
+                moveTo(Offset(width * .5f, height / 2f), delayMillis = 100)
             }
-            assertEquals((48 * activity.resources.displayMetrics.density).toInt(), views.getValue(R.id.progress).height)
-            assertEquals("Film", activity.findViewById<TextView>(R.id.controls_title).text.toString())
-            assertTrue(button.requestFocus())
-            assertSame(button, root.findFocus())
-            button.performClick()
-            assertEquals(1, clicks)
-
-            state.value = PlayerControlsState("Film", "S1 E3", true)
-            settle(root)
-            assertSame(button, root.findFocus())
-            assertSame(button, activity.findViewById<View>(R.id.control_watched))
-            assertTrue(button.isActivated)
-            assertEquals("Mark unwatched", button.contentDescription)
-            assertEquals("Mark unwatched", button.tooltipText)
-            assertEquals("S1 E3", activity.findViewById<TextView>(R.id.watching_info).text.toString())
-            assertEquals(before.getValue(R.id.progress), bounds(root, views.getValue(R.id.progress)))
-            button.performClick()
-            assertEquals(2, clicks)
+            assertEquals(1, starts); assertEquals("The drag only previews before release", 0, stops)
+            timeline.performTouchInput { up() }
+            assertEquals(1, stops); assertEquals("A drag must not also toggle playback", 1, toggles)
+            assertTrue(previews.isNotEmpty()); assertTrue(previews.last() in 490..510)
         } finally { controller.pause().stop().destroy() }
     }
 
     private fun settle(root: View) {
+        repeat(3) {
+            composition.waitForIdle()
+            root.measure(View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY))
+            root.layout(0, 0, 1920, 1080)
+        }
         composition.waitForIdle()
-        root.measure(View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY))
-        root.layout(0, 0, 1920, 1080)
-        composition.waitForIdle()
-    }
-
-    private fun bounds(root: View, view: View): Rect {
-        val at = IntArray(2); val origin = IntArray(2)
-        view.getLocationInWindow(at); root.getLocationInWindow(origin)
-        return Rect(at[0] - origin[0], at[1] - origin[1], at[0] - origin[0] + view.width, at[1] - origin[1] + view.height)
     }
 }

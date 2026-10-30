@@ -39,12 +39,12 @@ class WatchCompletionInteractionTest : AppHarness() {
         dragTo(0.94f)
         SystemClock.sleep(100)
         instrumentation.runOnMainSync {
-            val info = activity!!.findViewById<View>(R.id.timeline_info); val end = activity.findViewById<View>(R.id.remaining)
-            assertTrue("Time and feedback stay on screen", info.x >= 0)
-            assertTrue("Time, pause and seek feedback clear the end label", info.x + info.width < end.left)
+            val info = activity!!.playerControlBounds(R.id.timeline_info)!!; val end = activity.playerControlBounds(R.id.remaining)!!
+            assertTrue("Time and feedback stay on screen", info.left >= 0)
+            assertTrue("Time, pause and seek feedback clear the end label", info.right < end.left)
             assertEquals("Pause and seek share one status slot",
-                    !activity.findViewById<View>(R.id.seek_bubble).isShown, activity.findViewById<View>(R.id.timeline_paused).isShown)
-            assertEquals("Centre transport occupies no picture", 0, activity.findViewById<View>(R.id.center_icon).width.toLong())
+                    activity.playerControlBounds(R.id.seek_bubble) == null, activity.playerControlBounds(R.id.timeline_paused) != null)
+            assertNull("Centre transport occupies no picture", activity.playerControlBounds(R.id.center_icon))
         }
         screenshot("validation-player-timeline.png")
         control(R.id.control_watched, true)
@@ -116,7 +116,7 @@ class WatchCompletionInteractionTest : AppHarness() {
 
     private fun dragTo(fraction: Float) {
         val activity = watch(); val bounds = Rect()
-        instrumentation.runOnMainSync { assertTrue(activity!!.findViewById<View>(R.id.progress).getGlobalVisibleRect(bounds)) }
+        instrumentation.runOnMainSync { assertTrue(activity!!.playerControlBounds(R.id.progress)?.let { bounds.set(it); true } == true) }
         val time = SystemClock.uptimeMillis()
         for (i in 0..10) {
             val x = bounds.left + bounds.width() * (0.1f + (fraction - 0.1f) * i / 10f)

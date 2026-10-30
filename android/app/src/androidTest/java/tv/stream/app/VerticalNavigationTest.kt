@@ -76,7 +76,7 @@ class VerticalNavigationTest : AppHarness() {
         key(KeyEvent.KEYCODE_DPAD_LEFT); expanded("nav:Browse", "04-catalogue-expanded")
         key(KeyEvent.KEYCODE_BACK); collapsed("04-catalogue-wrapped-returned")
         browse!!.onActivity { a -> assertSame("Back dismisses navigation and restores the exact catalogue control", catalogueFocus.get(), a.currentFocus) }
-        browse!!.onActivity { a -> a.findViewById<View>(R.id.page_rows).findViewWithTag<View>("filter:genre:").requestFocus() }
+        browse!!.onActivity { a -> assertNotNull(focusKey(a, "filter:genre:")) }
         key(KeyEvent.KEYCODE_DPAD_UP)
         browse!!.onActivity { a -> assertEquals("Up reaches Back, independent of rail state", R.id.page_back.toLong(), a.currentFocus!!.id.toLong()) }
 

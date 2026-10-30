@@ -3,10 +3,7 @@ package tv.stream.app
 import org.junit.Assert.*
 import android.graphics.Bitmap
 import android.os.SystemClock
-import android.view.View
-import android.view.ViewGroup
-import android.widget.ImageView
-import android.widget.TextView
+import android.graphics.Rect
 import java.io.BufferedReader
 import java.io.ByteArrayOutputStream
 import java.io.InputStreamReader
@@ -23,9 +20,11 @@ import org.json.JSONObject
 import org.junit.Test
 import tv.stream.app.addon.Cancellation
 import tv.stream.app.addon.Title
+import tv.stream.app.ui.TitleBlocks
 
 /** Cold, missing and late artwork through the actual details page, using emulator-loopback HTTP only. */
 class TitleArtworkTest : AppHarness() {
+    @org.junit.After fun clearDrawObserver() { TitleBlocks.titleDrawn = null }
     @Test @Throws(Exception::class) fun metadataLogoIsTheFirstVisibleTitleAndCachedReopenDoesNotFlashText() {
         LogoServer(false).use { server ->
             launch(); AppHarness.waitUntil("Home", 10000) { visible("Make yourself at home") }
@@ -35,10 +34,7 @@ class TitleArtworkTest : AppHarness() {
             val title = Title.parse(services.store.addons()[0].id, server.title(false))!!
             val flashed = AtomicBoolean()
             browse!!.onActivity { activity ->
-                activity.findViewById<View>(R.id.page_rows).viewTreeObserver.addOnDrawListener {
-                    val text = titleText(activity.findViewById(R.id.page_rows))
-                    if (text != null && text.isShown) flashed.set(true)
-                }
+                TitleBlocks.titleDrawn = Runnable { flashed.set(true) }
                 activity.push(Route.of("Details", title, ""))
             }
             assertTrue(server.metaRequested.await(5, TimeUnit.SECONDS))
@@ -86,23 +82,10 @@ class TitleArtworkTest : AppHarness() {
         }
     }
 
-    private fun textShown(): Boolean {
-        val shown = AtomicBoolean()
-        browse!!.onActivity { activity -> val text = titleText(activity.findViewById(R.id.page_rows)); shown.set(text != null && text.isShown) }
-        return shown.get()
-    }
-    private fun logoShown(): Boolean {
-        val shown = AtomicBoolean()
-        browse!!.onActivity { activity ->
-            val text = titleText(activity.findViewById(R.id.page_rows)) ?: return@onActivity
-            val header = text.parent as ViewGroup
-            for (i in 0 until header.childCount) {
-                val child = header.getChildAt(i)
-                if (child is ImageView && child.isShown && child.drawable != null) shown.set(true)
-            }
-        }
-        return shown.get()
-    }
+    private fun textShown(): Boolean = revealed("details-title")
+    private fun logoShown(): Boolean = revealed("details-logo")
+    /** The header hides its parts from accessibility until it's revealed, so a node means it can be seen. */
+    private fun revealed(key: String): Boolean = shownKey(Rect()) { it == key }
 
     private class LogoServer @Throws(Exception::class) constructor(invalid: Boolean) : AutoCloseable {
         @JvmField val server: ServerSocket
@@ -149,12 +132,5 @@ class TitleArtworkTest : AppHarness() {
 
     companion object {
         private const val NAME = "Logo fixture film"
-        private fun titleText(view: View?): TextView? {
-            if (view is TextView && NAME.contentEquals(view.text)) return view
-            if (view is ViewGroup) for (i in 0 until view.childCount) {
-                val found = titleText(view.getChildAt(i)); if (found != null) return found
-            }
-            return null
-        }
     }
 }

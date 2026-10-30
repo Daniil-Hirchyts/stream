@@ -165,6 +165,7 @@ class Sounds private constructor(context: Context) {
         }
         /** {@code sound} leaning with {@code view}'s place across the screen, like a focus tick. */
         fun at(sound: Sound, view: View) { val s = instance; if (s != null) s.sound(sound, s.across(view)) }
+        fun atX(sound: Sound, screenX: Float) { val s = instance; if (s != null) s.sound(sound, s.across(screenX)) }
         /** OK on a control. Waits a frame: whatever the control does may have a sound of its own, heard instead. */
         fun click() {
             val s = instance ?: return

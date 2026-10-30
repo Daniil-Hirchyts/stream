@@ -87,8 +87,8 @@ class MorphDialog(context: Context, contextual: Boolean) : Dialog(context) {
         opener = if (activated != null) activated else if (owner == null || !contextual) null else owner.currentFocus
         var surface = opener
         val tagged: Any? = if (surface == null) null else surface.getTag(R.id.popup_anchor)
-        artwork = tagged is View
-        if (artwork) surface = tagged as View
+        artwork = tagged is View || region?.artwork == true
+        if (tagged is View) surface = tagged
         else if (surface is ViewGroup) {
             val selected = selectedControl(surface); if (selected != null) surface = selected
         }

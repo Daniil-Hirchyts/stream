@@ -47,7 +47,7 @@ class NavigationChromeTest : AppHarness() {
             assertTrue(a.findViewById<View>(R.id.navigation).findViewWithTag<View>("nav:Browse").isActivated)
         }
         tap("Generated films", false); waitUntil("Catalogue", 10000) { visible("Generated Film") }; assertBack()
-        browse!!.onActivity { a -> a.findViewById<View>(R.id.page_rows).findViewWithTag<View>("filter:genre:").requestFocus() }
+        browse!!.onActivity { a -> assertNotNull(focusKey(a, "filter:genre:")) }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP)
         browse!!.onActivity { a -> assertEquals("Up reaches the separate Back control", R.id.page_back.toLong(), a.currentFocus!!.id.toLong()) }
         tap("Back", false); waitUntil("Browse restored", 5000) { visible("Generated films") }

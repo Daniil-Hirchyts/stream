@@ -98,9 +98,9 @@ class AutoplayInteractionTest : AppHarness() {
     }
     private fun stateDuration(activity: WatchActivity): Long { return activity.playbackSnapshot()!!.durationMs }
     private fun shown(id: Int): Boolean { val value = AtomicBoolean(); val activity = watch()
-        if (activity != null) instrumentation.runOnMainSync { value.set(activity.findViewById<View>(id).isShown) }; return value.get() }
+        if (activity != null) instrumentation.runOnMainSync { value.set(activity.findViewById<View>(id)?.isShown ?: (activity.playerControlBounds(id) != null)) }; return value.get() }
     private fun focused(id: Int): Boolean { val value = AtomicBoolean(); val activity = watch()
-        if (activity != null) instrumentation.runOnMainSync { value.set(activity.findViewById<View>(id).isFocused) }; return value.get() }
+        if (activity != null) instrumentation.runOnMainSync { value.set(activity.playerControlFocused(id) || activity.findViewById<View>(id)?.isFocused == true) }; return value.get() }
     @Throws(Exception::class)
     private fun screenshot(name: String) {
         val image: Bitmap? = instrumentation.uiAutomation.takeScreenshot(); assertNotNull(image)

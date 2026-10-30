@@ -22,12 +22,23 @@ import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Test
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import tv.stream.app.addon.AddonClient
 import tv.stream.app.addon.Cancellation
 import tv.stream.app.addon.Title
 
 /** Real loading, metadata, playback tracks and durable watched changes, using only loopback fixtures. */
 class PlayerPresentationTest : AppHarness() {
+    private fun rendered(id: Int) = semanticNode(context.resources.getResourceName(id))
+    private fun renderedText(id: Int, expected: String) {
+        val node = rendered(id); assertNotNull("Rendered text for $id", node)
+        assertEquals(expected, node!!.config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text })
+    }
+    private fun renderedDescription(id: Int, expected: String) {
+        val node = rendered(id); assertNotNull("Rendered action for $id", node)
+        assertEquals(expected, node!!.config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString(""))
+    }
     @Test @Throws(Exception::class) fun textTitlesKeepFilmMetadataOffThePlayerAndWatchedActionsWorking() {
         captureIntro()
         PresentationServer(false, false).use { server ->
@@ -36,43 +47,44 @@ class PlayerPresentationTest : AppHarness() {
             val activity = watch()
             instrumentation.runOnMainSync {
                 assertTrue(activity!!.findViewById<View>(R.id.loading).isShown)
-                assertEquals("Presentation film", (activity.findViewById<View>(R.id.loading_title) as TextView).text.toString())
-                assertFalse("Normal loading has no step names", activity.findViewById<View>(R.id.loading_step).isShown)
-                assertFalse(activity.findViewById<View>(R.id.loading_message).isShown)
+
             }
+            renderedText(R.id.loading_title, "Presentation film")
+            assertNull(rendered(R.id.loading_step))
+            assertNull(rendered(R.id.loading_message))
             screenshot("validation-player-text-loading.png")
             server.streamGate.countDown()
             AppHarness.waitUntil("video renders", 30000) { state() != null && state()!!.renderedFirstFrame && state()!!.positionMs > 1000 }
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PAUSE)
             AppHarness.waitUntil("paused controls", 5000) { !state()!!.playWhenReady && shown(R.id.controls_title) }
             instrumentation.runOnMainSync {
-                assertEquals("Presentation film", (activity!!.findViewById<View>(R.id.controls_title) as TextView).text.toString())
-                assertFalse("Year and genre stay off the player", activity.findViewById<View>(R.id.watching_info).isShown)
-                assertTrue(activity.findViewById<View>(R.id.player_clock).isShown)
-                val watched = activity.findViewById<View>(R.id.control_watched); val audio = activity.findViewById<View>(R.id.control_options); val settings = activity.findViewById<View>(R.id.control_settings)
+                assertTrue(activity!!.findViewById<View>(R.id.player_clock).isShown)
+                val watched = activity.playerControlBounds(R.id.control_watched)!!; val audio = activity.playerControlBounds(R.id.control_options)!!; val settings = activity.playerControlBounds(R.id.control_settings)!!
                 assertTrue("Watched comes first", watched.left < audio.left)
                 assertTrue(audio.left < settings.left)
-                assertEquals("Mark watched", watched.contentDescription)
             }
+            renderedText(R.id.controls_title, "Presentation film")
+            assertNull(rendered(R.id.watching_info))
+            renderedDescription(R.id.control_watched, "Mark watched")
             AppHarness.waitUntil("embedded subtitles available", 5000) { !state()!!.textTracks.isEmpty() }
             control(R.id.control_options, true); tap(state()!!.textTracks[0].label, false)
             AppHarness.waitUntil("subtitle selected", 5000) { state()!!.subtitles != null && !shown(R.id.menu) }
             AppHarness.waitUntil("controls visible after selecting subtitles", 5000) { shown(R.id.controls_title) }
-            instrumentation.runOnMainSync { assertFalse("Track updates cannot show the subtitle summary", activity!!.findViewById<View>(R.id.controls_details).isShown) }
+            assertNull(rendered(R.id.controls_details))
             control(R.id.control_watched, true)
             AppHarness.waitUntil("marked watched", 5000) { services.store.progress(server.title.key(), server.video)!!.watched }
             instrumentation.runOnMainSync {
-                assertEquals("Mark unwatched", activity!!.findViewById<View>(R.id.control_watched).contentDescription)
-                assertFalse("Marking watched never shows a toast", activity.findViewById<View>(R.id.notice).isShown)
+                assertFalse("Marking watched never shows a toast", activity!!.findViewById<View>(R.id.notice).isShown)
             }
+            renderedDescription(R.id.control_watched, "Mark unwatched")
             control(R.id.control_watched, false)
             AppHarness.waitUntil("marked unwatched", 5000) { !services.store.progress(server.title.key(), server.video)!!.watched }
             SystemClock.sleep(1200)
             assertFalse("Later progress preserves the viewer's choice", services.store.progress(server.title.key(), server.video)!!.watched)
             instrumentation.runOnMainSync {
-                assertEquals("Mark watched", activity!!.findViewById<View>(R.id.control_watched).contentDescription)
-                assertFalse("Marking unwatched never shows a toast", activity.findViewById<View>(R.id.notice).isShown)
+                assertFalse("Marking unwatched never shows a toast", activity!!.findViewById<View>(R.id.notice).isShown)
             }
+            renderedDescription(R.id.control_watched, "Mark watched")
             assertEquals("Text titles never request logo artwork", 0, server.logoRequests.get().toLong())
             screenshot("validation-player-text-controls.png")
             control(R.id.control_stop, true); AppHarness.waitUntil("player exits", 5000) { watch() == null }
@@ -88,20 +100,20 @@ class PlayerPresentationTest : AppHarness() {
             AppHarness.waitUntil("developer sees the loading stage", 5000) { shown(R.id.loading_step) }
             val activity = watch()
             instrumentation.runOnMainSync {
-                assertFalse((activity!!.findViewById<View>(R.id.loading_step) as TextView).text.toString().isEmpty())
-                assertTrue(activity.findViewById<View>(R.id.loading_title).isShown)
-                assertEquals("Presentation series", (activity.findViewById<View>(R.id.loading_title) as TextView).text.toString())
+                assertTrue(activity!!.playerControlBounds(R.id.loading_title) != null)
             }
+            renderedText(R.id.loading_title, "Presentation series")
+            assertTrue("Nonempty developer stage", rendered(R.id.loading_step)?.config?.getOrNull(SemanticsProperties.Text)?.any { it.text.isNotEmpty() } == true)
             server.streamGate.countDown()
             AppHarness.waitUntil("video renders without artwork", 30000) { state() != null && state()!!.renderedFirstFrame }
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PAUSE)
             AppHarness.waitUntil("readable series title", 5000) { shown(R.id.controls_title) }
             instrumentation.runOnMainSync {
-                assertEquals("Presentation series", (activity!!.findViewById<View>(R.id.controls_title) as TextView).text.toString())
-                assertFalse("Player clock preference still applies", activity.findViewById<View>(R.id.player_clock).isShown)
-                assertEquals("S1 E2 · Pilot", (activity.findViewById<View>(R.id.watching_info) as TextView).text.toString())
-                assertFalse(activity.findViewById<View>(R.id.controls_details).isShown)
+                assertFalse("Player clock preference still applies", activity!!.findViewById<View>(R.id.player_clock).isShown)
             }
+            renderedText(R.id.controls_title, "Presentation series")
+            renderedText(R.id.watching_info, "S1 E2 · Pilot")
+            assertNull(rendered(R.id.controls_details))
             assertEquals(0, server.logoRequests.get().toLong())
         }
     }
@@ -117,7 +129,7 @@ class PlayerPresentationTest : AppHarness() {
     }
     private fun shown(id: Int): Boolean {
         val result = AtomicReference(false)
-        val activity = watch(); if (activity != null) instrumentation.runOnMainSync { result.set(activity.findViewById<View>(id).isShown) }
+        val activity = watch(); if (activity != null) instrumentation.runOnMainSync { result.set(activity.findViewById<View>(id)?.isShown ?: (activity.playerControlBounds(id) != null)) }
         return result.get()
     }
     @Throws(Exception::class)

@@ -35,7 +35,7 @@ class ScreenStateInteractionTest : AppHarness() {
         tap("Generated Film", false)
         waitUntil("Details", 10_000) { visible("Play") && visible("Sources") }
         browse!!.onActivity { activity ->
-            assertTrue(activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("sources").requestFocus())
+            assertNotNull(focusKey(activity, "sources"))
         }
         browse!!.recreate()
         waitUntil("Details actions restored", 10_000) { visible("Play") && visible("Sources") }

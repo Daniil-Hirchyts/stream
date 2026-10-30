@@ -10,6 +10,10 @@ import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import androidx.compose.ui.platform.ViewRootForTest
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getAllSemanticsNodes
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
@@ -97,6 +101,26 @@ abstract class AppHarness {
         val result = AtomicReference<JSONObject>(JSONObject())
         instrumentation.runOnMainSync { for (a in ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)) if (a is WatchActivity) result.set(a.diagnosticSnapshot()) }; return result.get()
     }
+    /** Reads the live unmerged tree without installing a virtual Compose clock into real-time device tests. */
+    @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+    fun semanticNodes(matches: (SemanticsNode) -> Boolean): List<SemanticsNode> {
+        val result = ArrayList<SemanticsNode>()
+        val read = Runnable {
+            fun collect(view: android.view.View) {
+                if (!view.isShown) return
+                if (view is ViewRootForTest) {
+                    view.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false).filterTo(result) { matches(it) && !it.boundsInWindow.isEmpty }
+                    return
+                }
+                if (view is android.view.ViewGroup) for (i in 0 until view.childCount) collect(view.getChildAt(i))
+            }
+            for (activity in ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)) collect(activity.window.decorView)
+        }
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) read.run() else instrumentation.runOnMainSync(read)
+        return result
+    }
+    fun semanticNode(tag: String): SemanticsNode? = semanticNodes { it.config.getOrElse(SemanticsProperties.TestTag) { "" } == tag }.firstOrNull()
+
     open fun visible(label: String): Boolean { return findWindow(label) != null }
     /**
      * Compose sends semantics changes only when an accessibility service is enabled, which UiAutomation is not, so its
@@ -148,12 +172,47 @@ abstract class AppHarness {
         }
         return false
     }
-    private fun keyedNode(node: AccessibilityNodeInfo?, matches: (String) -> Boolean): AccessibilityNodeInfo? {
+    private fun keyedNode(node: AccessibilityNodeInfo?, matches: (String) -> Boolean, focusable: Boolean = true): AccessibilityNodeInfo? {
         if (node == null || !node.isVisibleToUser) return null
         val id = node.viewIdResourceName
-        if (id != null && node.isFocusable && matches(id)) return node
-        for (i in 0 until node.childCount) { val found = keyedNode(node.getChild(i), matches); if (found != null) return found }
+        if (id != null && (node.isFocusable || !focusable) && matches(id)) return node
+        for (i in 0 until node.childCount) { val found = keyedNode(node.getChild(i), matches, focusable); if (found != null) return found }
         return null
+    }
+    /** A visible page control keyed `key`, native or declarative. */
+    open fun shownControl(key: String): Boolean {
+        val native = java.util.concurrent.atomic.AtomicBoolean()
+        browse!!.onActivity { activity -> val view = activity.findViewById<android.view.View>(R.id.page_rows).findViewWithTag<android.view.View>(key); native.set(view != null && view.isShown) }
+        return native.get() || shownKey(Rect()) { it == key }
+    }
+    /** Whether a declarative control is exposed as selected (a favourite, a chosen chip). */
+    open fun selectedKey(key: String): Boolean {
+        for (window in windows()) {
+            if (!window.isFocused) continue
+            val node = keyedNode(window.root, { it == key }, false) ?: continue
+            return node.isSelected || node.isCheckable && node.isChecked
+        }
+        return false
+    }
+    /** Visible text in the focused window containing `part`. Compose answers no text searches, so this walks the nodes. */
+    open fun textContains(part: String): Boolean {
+        fun search(node: AccessibilityNodeInfo?): Boolean {
+            if (node == null || !node.isVisibleToUser) return false
+            if (node.text?.contains(part, ignoreCase = true) == true || node.contentDescription?.contains(part, ignoreCase = true) == true) return true
+            for (i in 0 until node.childCount) if (search(node.getChild(i))) return true
+            return false
+        }
+        for (window in windows()) if (window.isFocused && search(window.root)) return true
+        return false
+    }
+    /** A visible declarative element whose key matches, whether or not it takes focus (a caption, a logo). */
+    open fun shownKey(bounds: Rect, matches: (String) -> Boolean): Boolean {
+        for (window in windows()) {
+            if (!window.isFocused) continue
+            val node = keyedNode(window.root, matches, false) ?: continue
+            node.getBoundsInScreen(bounds); return !bounds.isEmpty
+        }
+        return false
     }
     open fun tap(label: String, mouse: Boolean) {
         revealNavigationFor(label, mouse)
@@ -233,6 +292,12 @@ abstract class AppHarness {
         val time = SystemClock.uptimeMillis()
         val p = MotionEvent.PointerProperties(); p.id = 0; p.toolType = if (mouse) MotionEvent.TOOL_TYPE_MOUSE else MotionEvent.TOOL_TYPE_FINGER
         val c = MotionEvent.PointerCoords(); c.x = x; c.y = y; c.pressure = 1f; c.size = 1f
+        // A real mouse moves to the target before pressing. Compose hit-tests a mouse on hover, so a bare DOWN would
+        // reach whichever control the previous click left hovered.
+        if (mouse) {
+            val hover = MotionEvent.obtain(time, time, MotionEvent.ACTION_HOVER_MOVE, 1, arrayOf(p), arrayOf(c), 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0)
+            assertTrue(instrumentation.uiAutomation.injectInputEvent(hover, true)); hover.recycle()
+        }
         for (action in intArrayOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
             val e = MotionEvent.obtain(time, SystemClock.uptimeMillis(), action, 1, arrayOf(p), arrayOf(c), 0, if (mouse && action == MotionEvent.ACTION_DOWN) MotionEvent.BUTTON_PRIMARY else 0, 1f, 1f, 0, 0, if (mouse) InputDevice.SOURCE_MOUSE else InputDevice.SOURCE_TOUCHSCREEN, 0)
             assertTrue(instrumentation.uiAutomation.injectInputEvent(e, true)); e.recycle()
@@ -244,7 +309,12 @@ abstract class AppHarness {
     }
     open fun control(id: Int, mouse: Boolean) {
         val activity = watch(); assertNotNull(activity); val bounds = Rect()
-        instrumentation.runOnMainSync { assertTrue(activity!!.findViewById<android.view.View>(id).getGlobalVisibleRect(bounds)) }; pointer(bounds.centerX().toFloat(), bounds.centerY().toFloat(), mouse)
+        instrumentation.runOnMainSync {
+            val view = activity!!.findViewById<android.view.View>(id)
+            if (view != null) assertTrue(view.getGlobalVisibleRect(bounds))
+            else { val drawn = activity.playerControlBounds(id); assertNotNull("Player control $id", drawn); bounds.set(drawn!!) }
+        }
+        pointer(bounds.centerX().toFloat(), bounds.centerY().toFloat(), mouse)
     }
     /** Play is automatic; Sources still exercises explicit pointer selection when that page is open. */
     open fun chooseFirstSource() {

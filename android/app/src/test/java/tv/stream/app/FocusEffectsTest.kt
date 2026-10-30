@@ -31,6 +31,8 @@ import org.robolectric.annotation.LooperMode
 import tv.stream.app.ui.Item
 import tv.stream.app.ui.Page
 import tv.stream.app.ui.PageAdapter
+import tv.stream.app.ui.PageFocus
+import androidx.compose.ui.test.onNodeWithTag
 import tv.stream.app.ui.Tv
 
 /**
@@ -43,6 +45,7 @@ import tv.stream.app.ui.Tv
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @LooperMode(LooperMode.Mode.PAUSED)
 class FocusEffectsTest {
+    @get:org.junit.Rule val composition = androidx.compose.ui.test.junit4.createEmptyComposeRule()
     private lateinit var activity: Activity
     private lateinit var out: File
 
@@ -89,58 +92,58 @@ class FocusEffectsTest {
         page.add(Item.header("Fixture"))
         page.add(Item.shelf("shelf", "Popular", "", Item.Tile.Style.POSTER, tiles))
         show(main, page)
-        val first = find("tile:0"); val second = find("tile:1")
-        val shelf = first.getParent().getParent() as RecyclerView
-        val restingLeft = drawn(art(first)).left
-        second.requestFocus(); settle(500)
-        val scroll = shelf.computeHorizontalScrollOffset()
-        val thirdLeft = drawn(find("tile:2")).left
+        val rows: RecyclerView = main.findViewById(R.id.page_rows)
+        val restingLeft = art("tile:0").left
+        assertTrue(PageFocus.request(rows, "tile:1")); settle(500)
+        val secondLeft = card("tile:1").left
+        val thirdLeft = art("tile:2").left
         // By remote, then by a pointer click as on the emulator.
-        first.requestFocus(); settle(500)
+        assertTrue(PageFocus.request(rows, "tile:0")); settle(500)
         snap("shelf-first-focused")
-        assertTrue("first tile grew", art(first).getScaleX() > 1.05f)
-        assertEquals("first tile's left edge while grown", restingLeft, drawn(art(first)).left, 1f)
-        second.requestFocus(); settle(500)
-        val at = IntArray(2); first.getLocationInWindow(at)
+        assertEquals("first tile focused by the remote", "tile:0", main.window.decorView.findFocus()?.tag)
+        assertTrue("first tile grew", art("tile:0").width > card("tile:0").width * 1.05f)
+        assertEquals("first tile's left edge while grown", restingLeft, art("tile:0").left, 1f)
+        assertTrue(PageFocus.request(rows, "tile:1")); settle(500)
+        val first = card("tile:0"); val at = IntArray(2); main.window.decorView.getLocationInWindow(at)
         val `when` = android.os.SystemClock.uptimeMillis()
-        val x = at[0] + first.getWidth() / 2f; val y = at[1] + first.getHeight() / 3f
+        val x = first.left + first.width / 2f - at[0]; val y = first.top + first.height / 3f - at[1]
         main.getWindow().getDecorView().dispatchTouchEvent(android.view.MotionEvent.obtain(`when`, `when`, android.view.MotionEvent.ACTION_DOWN, x, y, 0))
         main.getWindow().getDecorView().dispatchTouchEvent(android.view.MotionEvent.obtain(`when`, `when` + 60, android.view.MotionEvent.ACTION_UP, x, y, 0))
         settle(500)
-        assertTrue("first tile focused by the pointer", first.isFocused())
-        assertEquals("shelf scroll", scroll, shelf.computeHorizontalScrollOffset())
-        assertEquals("third tile", thirdLeft, drawn(find("tile:2")).left, 1f)
-        assertEquals("first tile's left edge after a click", restingLeft, drawn(art(first)).left, 1f)
+        assertEquals("first tile focused by the pointer", "tile:0", main.window.decorView.findFocus()?.tag)
+        assertEquals("shelf scroll", secondLeft, card("tile:1").left, 1f)
+        assertEquals("third tile", thirdLeft, art("tile:2").left, 1f)
+        assertEquals("first tile's left edge after a click", restingLeft, art("tile:0").left, 1f)
     }
+    /** A card's painted artwork, including its focus growth; [card] is the unscaled card. */
+    private fun art(key: String): androidx.compose.ui.geometry.Rect = composition.onNodeWithTag("$key:art", useUnmergedTree = true).fetchSemanticsNode().boundsInWindow
+    private fun card(key: String): androidx.compose.ui.geometry.Rect = composition.onNodeWithTag(key).fetchSemanticsNode().boundsInWindow
 
     @Test @Throws(Exception::class) fun playerButtonsGrowWholeAndTheSkipLabelMovesNothing() {
-        activity = Robolectric.buildActivity(Activity::class.java).setup().get()
-        activity.setContentView(R.layout.activity_watch)
-        activity.findViewById<View>(R.id.controls).setVisibility(View.VISIBLE)
-        activity.findViewById<View>(R.id.center_icon).setVisibility(View.VISIBLE)
-        activity.findViewById<View>(R.id.player_clock).setVisibility(View.VISIBLE)
-        settle(300)
-        val strip = activity.findViewById<View>(R.id.progress).getParent() as View
-        val before = intArrayOf(strip.getTop(), strip.getHeight(), activity.findViewById<View>(R.id.elapsed).getTop())
-        activity.findViewById<View>(R.id.seek_bubble).setVisibility(View.VISIBLE)
-        activity.findViewById<android.widget.TextView>(R.id.seek_label).setText("+30 s")
-        settle(300)
-        assertEquals("timeline strip top", before[0], strip.getTop())
-        assertEquals("timeline strip height", before[1], strip.getHeight())
-        assertEquals("elapsed time", before[2], activity.findViewById<View>(R.id.elapsed).getTop())
-        assertNull("no box behind the skip label", activity.findViewById<View>(R.id.seek_bubble).getBackground())
-        for (id in intArrayOf(R.id.control_rewind, R.id.control_forward))
-            assertTrue("skip buttons stay hidden", activity.findViewById<View>(id).getVisibility() != View.VISIBLE)
-        val clipped: MutableList<String> = ArrayList()
-        for (id in WatchActivity.LIFTED) {
-            val button = activity.findViewById<View>(id)
-            button.setScaleX(Tv.LIFT_ICON); button.setScaleY(Tv.LIFT_ICON)
-            val problem = clipping(button)
-            if (problem != null) clipped.add(name(button) + ": " + problem)
-        }
-        settle(100)
-        snap("player-grown")
-        assertTrue("clipped while grown:\n" + java.lang.String.join("\n", clipped), clipped.isEmpty())
+        val controller = Robolectric.buildActivity(androidx.activity.ComponentActivity::class.java).setup().visible()
+        activity = controller.get()
+        try {
+            activity.setContentView(R.layout.activity_watch)
+            val layer = activity.findViewById<android.widget.FrameLayout>(R.id.controls).apply { visibility = View.VISIBLE }
+            val host = tv.stream.app.ui.ComposePlayerControls.install(layer, kotlinx.coroutines.flow.MutableStateFlow(PlayerControlsState("Film")), {})
+            var state = tv.stream.playback.ControlsOverlay.State(progress = 500, elapsed = "10:00", remaining = "−10:00")
+            host.render(state); controller.windowFocusChanged(true); settle(300); composition.waitForIdle()
+            val timeline = host.bounds(R.id.progress)!!; val elapsed = host.bounds(R.id.elapsed)!!
+            state = state.copy(seekLabel = "+30 s"); host.render(state); settle(300); composition.waitForIdle()
+            assertEquals("timeline strip", timeline, host.bounds(R.id.progress))
+            assertEquals("elapsed time", elapsed, host.bounds(R.id.elapsed))
+            assertNull("No rewind button covers the picture", host.bounds(R.id.control_rewind))
+            assertNull("No fast-forward button covers the picture", host.bounds(R.id.control_forward))
+            val picture = android.graphics.Rect(0, 0, activity.window.decorView.width, activity.window.decorView.height)
+            val rests = WatchActivity.LIFTED.associateWith { host.bounds(it)!! }
+            for (id in WatchActivity.LIFTED) {
+                assertTrue(host.request(id)); settle(300); composition.waitForIdle()
+                val grown = host.bounds(id)!!
+                assertTrue("Focused button grows", grown.width() > rests.getValue(id).width())
+                assertTrue("The entire grown control is visible", picture.contains(grown))
+            }
+            snap("player-grown")
+        } finally { controller.pause().stop().destroy() }
     }
 
     // The sweep.

@@ -50,7 +50,7 @@ class PlayerInteractionTest : AppHarness() {
         control(tv.stream.playback.R.id.player_view, true)
         val activity = watch(); val timeline = Rect()
         instrumentation.runOnMainSync {
-            assertTrue(activity!!.findViewById<View>(tv.stream.playback.R.id.progress).getGlobalVisibleRect(timeline))
+            assertTrue(activity!!.playerControlBounds(tv.stream.playback.R.id.progress)?.let { timeline.set(it); true } == true)
             val captions = activity.findViewById<View>(tv.stream.playback.R.id.subtitles)
             assertTrue("Captions clear the timeline touch target", captions.height - captions.paddingBottom < timeline.top)
         }
@@ -65,7 +65,9 @@ class PlayerInteractionTest : AppHarness() {
             event.source = InputDevice.SOURCE_TOUCHSCREEN
             assertTrue(instrumentation.uiAutomation.injectInputEvent(event, true)); event.recycle(); SystemClock.sleep(30)
         }
-        AppHarness.waitUntil("timeline drag seeks while paused", 10_000) { !state()!!.playWhenReady && Math.abs(state()!!.positionMs - target) < 2000 }
+        val gesture = java.util.concurrent.atomic.AtomicReference("")
+        instrumentation.runOnMainSync { gesture.set(activity!!.playerTimelineDiagnostics()) }
+        AppHarness.waitUntil("timeline drag seeks while paused: ${gesture.get()}, actual=${state()!!.positionMs}/${state()!!.durationMs}, play=${state()!!.playWhenReady}", 10_000) { !state()!!.playWhenReady && Math.abs(state()!!.positionMs - target) < 2000 }
         control(tv.stream.playback.R.id.progress, true)
         AppHarness.waitUntil("pointer resumes after drag", 10_000) { state()!!.playing }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU)
@@ -77,7 +79,7 @@ class PlayerInteractionTest : AppHarness() {
         AppHarness.waitUntil("toolbar after the menu", 5000) { shown(tv.stream.playback.R.id.controls) && watch()!!.hasWindowFocus() }
         val playing = watch()
         instrumentation.runOnMainSync { assertTrue("Back exits from the playback toolbar",
-                playing!!.findViewById<View>(tv.stream.playback.R.id.control_stop).isShown) }
+                playing!!.playerControlBounds(tv.stream.playback.R.id.control_stop) != null) }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         if (watch() != null) instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         AppHarness.waitUntil("Back closes playback", 10_000) { watch() == null }
@@ -89,10 +91,10 @@ class PlayerInteractionTest : AppHarness() {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP)
         val activity = watch()
         instrumentation.runOnMainSync { assertTrue("Up focuses the first action, watched",
-                activity!!.findViewById<View>(R.id.control_watched).hasFocus()) }
+                activity!!.playerControlFocused(R.id.control_watched)) }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
         instrumentation.runOnMainSync { assertTrue("Right reaches Audio & subtitles",
-                activity!!.findViewById<View>(tv.stream.playback.R.id.control_options).hasFocus()) }
+                activity!!.playerControlFocused(tv.stream.playback.R.id.control_options)) }
         AppHarness.waitUntil("Active controls include the clock", 2000) { shown(R.id.player_clock) }
         SystemClock.sleep(2500)
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
@@ -132,7 +134,7 @@ class PlayerInteractionTest : AppHarness() {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_UP)
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
         instrumentation.runOnMainSync { assertTrue("Down focuses the timeline",
-                activity!!.findViewById<View>(tv.stream.playback.R.id.progress).hasFocus()) }
+                activity!!.playerControlFocused(tv.stream.playback.R.id.progress)) }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
         AppHarness.waitUntil("remote pauses", 5000) { !state()!!.playWhenReady }
         SystemClock.sleep(4500)
@@ -158,7 +160,7 @@ class PlayerInteractionTest : AppHarness() {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PAUSE)
         AppHarness.waitUntil("paused clock and controls", 5000) { shown(R.id.controls) && shown(R.id.player_clock) }
         val activity = watch(); val timeline = Rect()
-        instrumentation.runOnMainSync { assertTrue(activity!!.findViewById<View>(R.id.progress).getGlobalVisibleRect(timeline)) }
+        instrumentation.runOnMainSync { assertTrue(activity!!.playerControlBounds(R.id.progress)?.let { timeline.set(it); true } == true) }
         control(R.id.progress, true)
         AppHarness.waitUntil("timeline click resumes", 5000) { state()!!.playing }
         AppHarness.waitUntil("Pointer transport hides after resume", 6000) { !shown(R.id.controls) }
@@ -187,7 +189,7 @@ class PlayerInteractionTest : AppHarness() {
     private fun shown(id: Int): Boolean {
         val shown = java.util.concurrent.atomic.AtomicBoolean()
         val activity = watch()
-        if (activity != null) instrumentation.runOnMainSync { shown.set(activity.findViewById<View>(id).visibility == View.VISIBLE) }
+        if (activity != null) instrumentation.runOnMainSync { shown.set(activity.findViewById<View>(id)?.isShown ?: (activity.playerControlBounds(id) != null)) }
         return shown.get()
     }
 }

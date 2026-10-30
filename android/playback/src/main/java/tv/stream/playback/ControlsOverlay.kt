@@ -15,18 +15,28 @@ import androidx.media3.common.Player
  * seconds after playback resumes.
  */
 class ControlsOverlay(activity: Activity, private val session: PlaybackSession, private val handler: Handler,
-        private val onVisibilityChanged: Runnable) {
+        private val onVisibilityChanged: Runnable, private val presentation: Presentation? = null) {
     private val root: View
-    private val seekBubble: View
-    private val centerIcon: ImageView
-    private val title: TextView
-    private val details: TextView
-    private val elapsed: TextView
-    private val remaining: TextView
-    private val seekLabel: TextView
-    private val seekIcon: ImageView
-    private val progress: SeekBar
-    private val playButton: TextView
+    /** Toolkit-independent values: no player or activity references leave the playback owner. */
+    data class State(val title: String = "", val details: String = "", val elapsed: String = "0:00",
+        val remaining: String = "", val progress: Int = 0, val buffered: Int = 0,
+        val seekable: Boolean = false, val playing: Boolean = false, val seekLabel: String = "", val seekBack: Boolean = false)
+
+    /** An app may render controls declaratively while sharing transport, drag and timeout behavior. */
+    interface Presentation {
+        fun bind(input: Input, layoutChanged: Runnable)
+        fun render(state: State)
+        /** Bottom of video to top of the complete toolbar, including the timeline's touch target and caption gap. */
+        fun bottomClearance(): Int
+    }
+    interface Input {
+        fun startScrub()
+        fun scrub(value: Int)
+        fun stopScrub()
+        fun togglePlay()
+    }
+    private var state = State()
+    private val native: NativePresentation?
     private var scrubbing = false
     /** Where a drag on the timeline would seek; the seek waits for the release. */
     private var dragTarget = C.TIME_UNSET
@@ -47,42 +57,25 @@ class ControlsOverlay(activity: Activity, private val session: PlaybackSession, 
     init {
         this.player = session.player()
         root = activity.findViewById(R.id.controls)
-        title = activity.findViewById(R.id.controls_title)
-        details = activity.findViewById(R.id.controls_details)
-        centerIcon = activity.findViewById(R.id.center_icon)
-        playButton = activity.findViewById(R.id.control_play)
-        seekBubble = activity.findViewById(R.id.seek_bubble)
-        seekIcon = activity.findViewById(R.id.seek_icon)
-        seekLabel = activity.findViewById(R.id.seek_label)
-        progress = activity.findViewById(R.id.progress)
-        elapsed = activity.findViewById(R.id.elapsed)
-        remaining = activity.findViewById(R.id.remaining)
-        (progress.parent as View).addOnLayoutChangeListener { view, left, top, right, bottom,
-                oldLeft, oldTop, oldRight, oldBottom ->
-            if (shown && (top != oldTop || bottom != oldBottom)) onVisibilityChanged.run()
-        }
-        progress.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onStartTrackingTouch(bar: SeekBar) {
-                scrubbing = true
-                dragTarget = C.TIME_UNSET
-                handler.removeCallbacks(hide)
+        native = if (presentation == null) NativePresentation(activity) else null
+        (presentation ?: native!!).bind(object : Input {
+            override fun startScrub() {
+                scrubbing = true; dragTarget = C.TIME_UNSET; handler.removeCallbacks(hide)
             }
-            override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) {
+            override fun scrub(value: Int) {
                 val duration = player.duration
-                if (!fromUser || duration <= 0 || duration == C.TIME_UNSET) return
-                val target = duration * value / 1000
-                // A drag shows where it would land and seeks on release, so a stream skips the positions on the way.
-                if (scrubbing) dragTarget = target
-                else session.seekTo(target)
+                if (duration <= 0 || duration == C.TIME_UNSET) return
+                val target = duration * value.coerceIn(0, 1000) / 1000
+                if (scrubbing) dragTarget = target else session.seekTo(target)
                 update()
             }
-            override fun onStopTrackingTouch(bar: SeekBar) {
+            override fun stopScrub() {
                 scrubbing = false
                 if (dragTarget != C.TIME_UNSET) session.seekTo(dragTarget)
-                dragTarget = C.TIME_UNSET
-                show()
+                dragTarget = C.TIME_UNSET; show()
             }
-        })
+            override fun togglePlay() { session.togglePlay(); show() }
+        }, onVisibilityChanged)
     }
 
     fun isShown(): Boolean {
@@ -91,22 +84,16 @@ class ControlsOverlay(activity: Activity, private val session: PlaybackSession, 
 
     /** Keep captions above the full touch target, including its time labels and buttons. */
     fun bottomClearance(): Int {
-        val strip = progress.parent as View
-        val fallback = root.resources.getDimensionPixelSize(R.dimen.controls_height)
-        val gap = Math.round(16 * root.resources.displayMetrics.density)
-        // Apps can supply a shorter toolbar. The shared fallback is only for the first, unmeasured frame.
-        return if (strip.height > 0 && root.height > 0)
-            root.height - strip.top + gap else fallback
+        return (presentation ?: native!!).bottomClearance()
     }
 
     fun setTitle(text: String?) {
-        title.text = text
+        state = state.copy(title = text.orEmpty()); publish()
     }
 
     /** The voice-over and subtitles under the title, such as "Eng.Original · Subtitles: English". */
     fun setDetails(text: String) {
-        details.text = text
-        details.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
+        state = state.copy(details = text); publish()
     }
 
     fun show() {
@@ -149,35 +136,79 @@ class ControlsOverlay(activity: Activity, private val session: PlaybackSession, 
 
     /** Shows the accumulated jump, such as +30 s, while the viewer holds or repeats a seek button. */
     fun showSeek(deltaMs: Long) {
-        seekIcon.setImageResource(if (deltaMs < 0) R.drawable.ic_rewind else R.drawable.ic_forward)
         val amount = Math.abs(deltaMs)
-        seekLabel.text = (if (deltaMs < 0) "−" else "+") + (if (amount < 60_000) (amount / 1000).toString() + " s" else Ui.time(amount))
-        Ui.fade(seekBubble, true)
+        val label = (if (deltaMs < 0) "−" else "+") + (if (amount < 60_000) (amount / 1000).toString() + " s" else Ui.time(amount))
+        state = state.copy(seekLabel = label, seekBack = deltaMs < 0)
         handler.removeCallbacks(hideSeek)
         handler.postDelayed(hideSeek, SEEK_LABEL_MS)
         show()
     }
 
     private fun hideSeek() {
-        Ui.fade(seekBubble, false)
-        update()
+        state = state.copy(seekLabel = ""); update()
     }
 
     private fun update() {
         val duration = player.duration
         val position = if (scrubbing && dragTarget != C.TIME_UNSET) dragTarget else session.position()
         val known = duration != C.TIME_UNSET && duration > 0
-        progress.isEnabled = known && player.isCurrentMediaItemSeekable
-        if (!scrubbing) progress.progress = if (known) (position * 1000 / duration).toInt() else 0
-        progress.secondaryProgress = if (known) (player.bufferedPosition * 1000 / duration).toInt() else 0
-        elapsed.text = Ui.time(position)
-        remaining.text = if (player.isCurrentMediaItemLive) root.context.getString(R.string.live)
-                else if (known) "−" + Ui.time(duration - position) else ""
-        centerIcon.setImageResource(if (active()) R.drawable.ic_pause else R.drawable.ic_play)
-        val label = if (active()) R.string.control_pause else R.string.control_play
-        centerIcon.contentDescription = root.context.getString(label)
-        playButton.setText(label)
-        Ui.fade(centerIcon, seekBubble.visibility != View.VISIBLE)
+        state = state.copy(seekable = known && player.isCurrentMediaItemSeekable,
+            progress = if (known) (position * 1000 / duration).toInt().coerceIn(0, 1000) else 0,
+            buffered = if (known) (player.bufferedPosition * 1000 / duration).toInt().coerceIn(0, 1000) else 0,
+            elapsed = Ui.time(position),
+            remaining = if (player.isCurrentMediaItemLive) root.context.getString(R.string.live)
+                else if (known) "−" + Ui.time(duration - position) else "",
+            playing = active())
+        publish()
+    }
+
+    private fun publish() { (presentation ?: native!!).render(state) }
+
+    /** Default View renderer for applications that use the reusable player's resources. */
+    private class NativePresentation(activity: Activity) : Presentation {
+        private val root = activity.findViewById<View>(R.id.controls)
+        private val seekBubble = activity.findViewById<View>(R.id.seek_bubble)
+        private val centerIcon = activity.findViewById<ImageView>(R.id.center_icon)
+        private val title = activity.findViewById<TextView>(R.id.controls_title)
+        private val details = activity.findViewById<TextView>(R.id.controls_details)
+        private val elapsed = activity.findViewById<TextView>(R.id.elapsed)
+        private val remaining = activity.findViewById<TextView>(R.id.remaining)
+        private val seekLabel = activity.findViewById<TextView>(R.id.seek_label)
+        private val seekIcon = activity.findViewById<ImageView>(R.id.seek_icon)
+        private val progress = activity.findViewById<SeekBar>(R.id.progress)
+        private val playButton = activity.findViewById<TextView>(R.id.control_play)
+        private var scrubbing = false
+        override fun bind(input: Input, layoutChanged: Runnable) {
+            (progress.parent as View).addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+                if (top != oldTop || bottom != oldBottom) layoutChanged.run()
+            }
+            progress.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onStartTrackingTouch(bar: SeekBar) { scrubbing = true; input.startScrub() }
+                override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) { if (fromUser) input.scrub(value) }
+                override fun onStopTrackingTouch(bar: SeekBar) { scrubbing = false; input.stopScrub() }
+            })
+        }
+        override fun bottomClearance(): Int {
+            val strip = progress.parent as View
+            val gap = Math.round(16 * root.resources.displayMetrics.density)
+            return if (strip.height > 0 && root.height > 0) root.height - strip.top + gap
+                else root.resources.getDimensionPixelSize(R.dimen.controls_height)
+        }
+        override fun render(state: State) {
+            title.text = state.title
+            details.text = state.details; details.visibility = if (state.details.isEmpty()) View.GONE else View.VISIBLE
+            progress.isEnabled = state.seekable
+            if (!scrubbing) progress.progress = state.progress
+            progress.secondaryProgress = state.buffered
+            elapsed.text = state.elapsed; remaining.text = state.remaining
+            centerIcon.setImageResource(if (state.playing) R.drawable.ic_pause else R.drawable.ic_play)
+            val label = if (state.playing) R.string.control_pause else R.string.control_play
+            centerIcon.contentDescription = root.context.getString(label); playButton.setText(label)
+            seekIcon.setImageResource(if (state.seekBack) R.drawable.ic_rewind else R.drawable.ic_forward)
+            seekLabel.text = state.seekLabel
+            Ui.fade(seekBubble, state.seekLabel.isNotEmpty())
+            Ui.fade(centerIcon, seekBubble.visibility != View.VISIBLE)
+        }
     }
 
     private fun active(): Boolean {

@@ -34,6 +34,7 @@ import tv.stream.playback.*
 import tv.stream.app.addon.*
 import tv.stream.app.data.TvStore
 import tv.stream.app.ui.ComposePlayerControls
+import tv.stream.app.ui.ComposePlayerLayers
 import tv.stream.app.ui.Failures
 import tv.stream.app.ui.Sounds
 import tv.stream.app.ui.Tv
@@ -117,6 +118,8 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
     private val resetPayloads: MutableSet<String> = java.util.HashSet()
     private var resettingPayload = false
     private var lastDemandUpdate: Long = 0
+    private var playerControls: ComposePlayerControls? = null
+    private var playerLayers: ComposePlayerLayers? = null
     private var startedIntent = false
     private var recoveryStarted: Long = 0
     private var discoveryVersion = -1
@@ -138,6 +141,10 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         /** A source's own name, on one line, under the title while it opens. */
         private fun sourceLabel(source: MediaSource?): String { return if (source == null) "Import" else source.name.replace('\n', ' ').trim { it <= ' ' } }
     }
+
+    internal fun playerTimelineDiagnostics(): String = playerControls?.timelineDiagnostics().orEmpty()
+    internal fun playerControlBounds(id: Int): android.graphics.Rect? = playerControls?.bounds(id) ?: playerLayers?.bounds(id)
+    internal fun playerControlFocused(id: Int): Boolean = playerControls?.focusedId() == id || playerLayers?.focusedId() == id
 
     private fun show(alert: Tv.Alert): Dialog { alert.show(); return alert.dialog }
 
@@ -194,7 +201,7 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
                 main.post(Runnable {
                     if (!current(mine)) return@Runnable
                     services = setup.services; title = setup.title; developerMode = setup.developerMode
-                    findViewById<View>(R.id.loading_diagnostics).visibility = if (developerMode) View.VISIBLE else View.GONE
+                    // Declarative loading diagnostics follow the same developer-mode preference.
                     playerClockFormat = setup.clockFormat; playerClockEnabled = setup.clockEnabled
                     session = PlaybackSession(this, setup.services.playerPreferences, getString(R.string.app_name), "Stream/0.1", this, 24 shl 20, StreamDecoders())
                     session!!.player().setTrackSelectionParameters(session!!.player().getTrackSelectionParameters().buildUpon().setMaxVideoSize(1920, 1080).build())
@@ -211,19 +218,24 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
                         }
                     })
                     androidx.media3.ui.StreamSubtitleOutput.install(findViewById(tv.stream.playback.R.id.subtitles))
-                    screen = PlayerScreen(this, session!!, this); screen!!.keepControlsBehindMenu(true); screen!!.setTitle(title!!.name)
+                    playerLayers = ComposePlayerLayers(this, developerMode) { hideNextEpisode(); onNextEpisode() }.also { it.install() }
+                    val controls = findViewById<android.widget.FrameLayout>(R.id.controls)
+                    playerControls = ComposePlayerControls.install(controls, playback.controls, { id ->
+                        when (id) {
+                            R.id.progress -> keepPausedOnRecovery = false
+                            R.id.control_stop -> onExit()
+                            R.id.control_watched -> setWatched(!progress.watched)
+                            R.id.control_options -> playerMenus?.open(true, playerControls!!.origin(id))
+                            R.id.control_settings -> playerMenus?.open(false, playerControls!!.origin(id))
+                        }
+                    }) {
+                        if (current(mine)) { resolve(true); main.post(tick) }
+                    }
+                    screen = PlayerScreen(this, session!!, this, playerControls, playerLayers); screen!!.keepControlsBehindMenu(true); screen!!.setTitle(title!!.name)
                     androidx.media3.ui.StreamSubtitleOutput.font(findViewById(R.id.subtitles), tv.stream.app.ui.SubtitleFonts.selected(services!!.playerPreferences))
                     androidx.media3.ui.StreamSubtitleOutput.configure(findViewById(R.id.subtitles))
                     bindRemoteFocus()
                     updateWatchingInfo()
-                    val controls = findViewById<android.widget.FrameLayout>(R.id.controls)
-                    controls.doOnAttach layerAttached@ {
-                        if (!current(mine)) return@layerAttached
-                        ComposePlayerControls.install(controls, playback.controls) {
-                            if (!current(mine)) return@install
-                            resolve(true); main.post(tick)
-                        }
-                    }
                 })
             } catch (e: Exception) { main.post { if (current(mine)) {
                 val alert = Tv.alert(this, "Could not open this title", Failures.message(e))
@@ -290,62 +302,16 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
                 page.body(body)
             }
         })
-        tv.stream.playback.Ui.action(findViewById(R.id.control_options), Runnable { playerMenus!!.open(true, findViewById(R.id.control_options)) })
-        tv.stream.playback.Ui.action(findViewById(R.id.control_settings), Runnable { playerMenus!!.open(false, findViewById(R.id.control_settings)) })
-        findViewById<View>(R.id.error).setOnClickListener { view -> onExit() }
-        tv.stream.playback.Ui.action(findViewById(R.id.control_watched), Runnable { setWatched(!progress.watched) })
-        findViewById<View>(R.id.center_icon).isFocusable = false
-        findViewById<View>(R.id.center_icon).isClickable = false
-        val timeline = findViewById<View>(R.id.progress)
-        timeline.setOnClickListener { view ->
-            keepPausedOnRecovery = false
-            session!!.togglePlay(); screen!!.showControls()
-        }
-        tv.stream.playback.Ui.action(findViewById(R.id.next_episode_play), Runnable {
-            hideNextEpisode(); onNextEpisode()
-        })
-        for (id in LIFTED) {
-            val button = findViewById<View>(id)
-            button.setOnFocusChangeListener { view, has -> lift(view, has || view.isHovered) }
-            button.setOnHoverListener { view, event ->
-                val action = event.actionMasked
-                if (action == android.view.MotionEvent.ACTION_HOVER_ENTER) lift(view, true)
-                else if (action == android.view.MotionEvent.ACTION_HOVER_EXIT) lift(view, view.isFocused)
+        findViewById<View>(R.id.error).setOnClickListener { onExit() }
+        for (id in intArrayOf(R.id.player_root, tv.stream.playback.R.id.player_view, R.id.controls)) {
+            findViewById<View>(id).setOnTouchListener { _, event ->
+                if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) surface.requestFocus()
                 false
             }
         }
-        for (id in intArrayOf(R.id.player_root, tv.stream.playback.R.id.player_view, R.id.controls,
-                R.id.control_watched, R.id.control_options, R.id.control_settings, R.id.control_stop, R.id.progress)) {
-            findViewById<View>(id).setOnTouchListener { view, event ->
-                if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
-                    // A pointer click must activate immediately, rather than only taking keyboard focus.
-                    if (view !== surface && view.id != R.id.progress && view.id != R.id.controls
-                            && view.id != tv.stream.playback.R.id.player_view) view.isFocusableInTouchMode = false
-                    if (view.id == R.id.progress) { keepPausedOnRecovery = false; screen!!.showControls() }
-                    surface.requestFocus()
-                }
-                false
-            }
-        }
-        for (id in ERROR_BUTTONS) {
-            val button = findViewById<View>(id); button.isFocusableInTouchMode = true
-            button.setOnTouchListener { view, event ->
-                if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) view.requestFocus()
-                false
-            }
-        }
+
     }
-    private val lifts: MutableMap<View, android.animation.Animator> = java.util.HashMap()
-    /** Scales with its own animator: the overlay's fades cancel a view's property animation on every tick. */
-    private fun lift(view: View, on: Boolean) {
-        val running = lifts.remove(view)
-        if (running != null) running.cancel()
-        val scale = if (on) Tv.LIFT_ICON else 1f
-        val animator: android.animation.Animator = android.animation.ObjectAnimator.ofPropertyValuesHolder(view,
-                android.animation.PropertyValuesHolder.ofFloat(View.SCALE_X, scale), android.animation.PropertyValuesHolder.ofFloat(View.SCALE_Y, scale))
-        animator.setDuration(if (on) 200L else 160L)
-        lifts[view] = animator; animator.start()
-    }
+
     private fun cancelPreparation() {
         work.cancel(); ranking = false; polling = false
         if (choiceDialog != null) { choiceDialog!!.dismiss(); choiceDialog = null }
@@ -708,14 +674,14 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
             app.lastErrorReport = DiagnosticReport.capture(this, diagnosticStage, heading, message, code,
                     if (failureCause != null) failureCause else session!!.player().playerError, state)
         }
-        ErrorQrPanel.attach(findViewById(R.id.error_diagnostics), developerMode, if (developerMode) app.lastErrorReport else null)
+        playerLayers?.diagnostics(if (developerMode) app.lastErrorReport else null)
         handledError = PlaybackErrors.Description(code, heading, message, "", 0, true)
         session!!.fail(handledError)
         cancelPreparation(); loader.execute { closeNative() }
         playback.failed(handledError!!)
     }
     private fun clearErrorQr() {
-        ErrorQrPanel.attach(findViewById(R.id.error_diagnostics), false, null)
+        playerLayers?.diagnostics(null)
         failureCause = null
     }
     private fun queueFailure(message: String, code: String) {
@@ -731,7 +697,6 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         if (!visible) { if (snapshot.playWhenReady) session!!.pause(); return }
         updateWatchingInfo()
         if (playerMenus != null) playerMenus!!.changed()
-        (findViewById<View>(R.id.progress) as tv.stream.app.ui.PlayerTimeline).setPaused(!snapshot.playWhenReady && !snapshot.ended)
         if (keepPausedOnRecovery && snapshot.error == null) {
             if (snapshot.playWhenReady) { session!!.pause(); return }
             if (snapshot.started) keepPausedOnRecovery = false
@@ -797,7 +762,7 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         Sounds.play(if (next != null) Sounds.Sound.UP_NEXT else Sounds.Sound.FINISHED)
         if (next != null) {
             screen!!.offerUpNext(next.name, "Season " + next.season, Runnable { episode(next) })
-            val play = findViewById<View>(R.id.up_next_play); play.isFocusableInTouchMode = true; play.requestFocus()
+            playerLayers?.request(R.id.up_next_play)
         }
     }
     private fun updateNextEpisode(state: PlaybackSnapshot) {
@@ -866,12 +831,13 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
             if (ok && focused != null && (focused.id == R.id.error_qr_previous || focused.id == R.id.error_qr_next)) {
                 focused.performClick(); return true
             }
-            if (ok && focused != null) for (id in ERROR_BUTTONS)
-                if (focused.id == id) { focused.performClick(); return true }
+            val target = playerLayers?.focusedId() ?: View.NO_ID
+            if (ok && target in ERROR_BUTTONS) { playerLayers?.activate(target); return true }
             return false
         }
         if (switching || !session!!.started() || screen!!.isMenuOpen()) return false
-        val focus = if (focused == null) View.NO_ID else focused.id
+        val focus = playerControls?.focusedId()?.takeIf { it != View.NO_ID }
+            ?: playerLayers?.focusedId()?.takeIf { it != View.NO_ID } ?: focused?.id ?: View.NO_ID
         val header = headerIndex(focus) >= 0
         if (code == KeyEvent.KEYCODE_BACK && (header || focus == R.id.progress))
             findViewById<View>(R.id.player_root).requestFocus()
@@ -879,28 +845,24 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
                 || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) keepPausedOnRecovery = false
         if (findViewById<View>(R.id.next_episode_offer).isShown) {
             if (focus == R.id.next_episode_play) {
-                if (ok) { focused!!.performClick(); return true }
-                if (code == KeyEvent.KEYCODE_DPAD_UP) { screen!!.showControls(); findViewById<View>(R.id.progress).requestFocus(); return true }
+                if (ok) { playerLayers?.activate(R.id.next_episode_play); return true }
+                if (code == KeyEvent.KEYCODE_DPAD_UP) { screen!!.showControls(); playerControls?.request(R.id.progress); return true }
                 if (code == KeyEvent.KEYCODE_BACK) { episodes.dismiss(); hideNextEpisode(); return true }
             } else if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
-                findViewById<View>(R.id.next_episode_play).requestFocus(); return true
+                playerLayers?.request(R.id.next_episode_play); return true
             }
         }
-        if (ok && header) { focused!!.performClick(); return true }
+        if (ok && header) { playerControls?.activate(focus); return true }
         if (header && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
             screen!!.showControls()
             val next = Math.max(0, Math.min(HEADER.size - 1, headerIndex(focus) + (if (code == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1)))
-            val destination = findViewById<View>(HEADER[next])
-            destination.isFocusableInTouchMode = true; destination.requestFocus()
+            playerControls?.request(HEADER[next])
             return true
         }
         if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) {
             screen!!.showControls()
             val target = if (code == KeyEvent.KEYCODE_DPAD_UP) R.id.control_watched else R.id.progress
-            var destination = findViewById<View>(target)
-            if (!destination.isShown) destination = findViewById(if (code == KeyEvent.KEYCODE_DPAD_UP) R.id.control_stop else R.id.progress)
-            destination.isFocusableInTouchMode = true
-            destination.requestFocus()
+            playerControls?.request(target)
             return true
         }
         return false
@@ -908,11 +870,9 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
     /** An error alert opens with its first button focused, so the remote is on it at once. */
     override fun onScreenChanged() {
         updatePlayerClock()
-        val error = findViewById<View>(R.id.error); val focused = currentFocus
-        if (session == null || session!!.error() == null || error == null || error.visibility != View.VISIBLE) return
-        var v: View? = focused
-        while (v != null) { if (v === error) return; v = if (v.parent is View) v.parent as View else null }
-        for (id in ERROR_BUTTONS) { val button = findViewById<View>(id); if (button.visibility == View.VISIBLE) { button.requestFocus(); return } }
+        val error = findViewById<View>(R.id.error)
+        if (session == null || session!!.error() == null || !error.isShown || error.hasFocus()) return
+        playerLayers?.focusError()
     }
     private var clockTargetVisible = false
     /** The clock accompanies active controls as well as paused playback and menus. */
@@ -934,10 +894,9 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         clock.post { updatePlayerHeaderInset() }
     }
     private fun updatePlayerHeaderInset() {
-        val clock = findViewById<View>(R.id.player_clock); val header = findViewById<View>(R.id.player_header)
-        val params = header.layoutParams as android.widget.FrameLayout.LayoutParams
+        val clock = findViewById<View>(R.id.player_clock)
         val inset = Tv.dp(this, 48f) + (if (clock.isShown) clock.width + Tv.dp(this, 16f) else 0)
-        if (params.marginEnd != inset) { params.marginEnd = inset; header.layoutParams = params }
+        playerControls?.headerInset(inset)
     }
     override fun menuItems(leading: Boolean): List<MenuPanel.Item> {
         val result: MutableList<MenuPanel.Item> = ArrayList()
@@ -1102,15 +1061,14 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
             val select = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER
             if (select || code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) {
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                    val play = findViewById<View>(R.id.up_next_play); val cancel = findViewById<View>(R.id.up_next_cancel)
-                    if (select) { val focused = currentFocus; (if (focused === cancel) cancel else play).performClick() }
-                    else { val target = if (code == KeyEvent.KEYCODE_DPAD_DOWN) cancel else play; target.isFocusableInTouchMode = true; target.requestFocus() }
+                    if (select) playerLayers?.activate(if (playerLayers?.focusedId() == R.id.up_next_cancel) R.id.up_next_cancel else R.id.up_next_play)
+                    else playerLayers?.request(if (code == KeyEvent.KEYCODE_DPAD_DOWN) R.id.up_next_cancel else R.id.up_next_play)
                 }
                 return true
             }
         }
         if (playerMenus != null && (event.keyCode == KeyEvent.KEYCODE_MENU || event.keyCode == KeyEvent.KEYCODE_CAPTIONS)) {
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) playerMenus!!.open(false, findViewById(R.id.control_settings))
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) playerMenus!!.open(false, playerControls!!.origin(R.id.control_settings))
             return true
         }
         val before = currentFocus
@@ -1148,8 +1106,6 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         releasing = true; retainedWhileStopped = false
         if (session != null) { val state = session!!.snapshot(); rememberViewerState(state); save(state) }
         cancelPreparation(); work.close(); playback.released(); main.removeCallbacksAndMessages(null)
-        for (animator in lifts.values) animator.cancel()
-        lifts.clear()
         if (playerMenus != null) { playerMenus!!.close(); playerMenus = null }
         if (screen != null) screen!!.release()
         if (session != null) session!!.release()

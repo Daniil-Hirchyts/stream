@@ -102,18 +102,20 @@ constructor(private val disk: File?) : AutoCloseable {
     }
 
     /** Resolve a title once before revealing it; a slow/failed logo keeps the text fallback for this binding. */
-    fun titleLogo(url: String?, done: Consumer<Bitmap>, failed: Runnable) {
+    fun titleLogo(url: String?, done: Consumer<Bitmap>, failed: Runnable): Handle {
+        val handle = Handle()
         val generation = this.generation
         val settled = booleanArrayOf(false) // All completions run on the main thread, including memory-cache hits.
         val timeout = Runnable {
-            if (settled[0] || generation != this.generation) return@Runnable
+            if (settled[0] || handle.cancelled || generation != this.generation) return@Runnable
             settled[0] = true; failed.run()
         }
         main.postDelayed(timeout, 2000)
-        fetch(url, LOGO, true, SHARP, Consumer { bitmap ->
-            if (settled[0]) return@Consumer
+        handle.ticket = fetch(url, LOGO, true, SHARP, Consumer { bitmap ->
+            if (settled[0] || handle.cancelled) return@Consumer
             settled[0] = true; main.removeCallbacks(timeout); done.accept(bitmap)
         }, timeout)
+        return handle
     }
 
     /** A heavily blurred version, for artwork behind lists (Sources). Computed once per image on a worker. */

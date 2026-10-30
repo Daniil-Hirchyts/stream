@@ -6,25 +6,11 @@ import android.view.KeyEvent as PlatformKeyEvent
 import android.view.View
 import androidx.annotation.ColorRes
 import androidx.annotation.DrawableRes
-import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.PressInteraction
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.role
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -44,7 +30,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,36 +38,18 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.nativeKeyCode
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -100,9 +67,6 @@ internal object PageRows {
     const val ROW_INSET = 16
     /** Settings' columns grow their focused row by this much in total, whatever its width. */
     const val ROW_GROWTH = 12
-    /** [android.view.animation.DecelerateInterpolator] (2.2), the native controls' focus easing. */
-    private val Decelerate = Easing { 1f - Math.pow((1f - it).toDouble(), 4.4).toFloat() }
-
     /** How a row's platter grows on focus: not at all on pages, a fixed few dp in Settings' columns. */
     enum class Growth { NONE, SETTINGS }
 
@@ -129,31 +93,22 @@ internal object PageRows {
         }
     }
 
-    @OptIn(ExperimentalComposeUiApi::class)
     @Composable
     private fun Platter(item: Item, page: Page, growth: Growth, selected: Boolean, onKey: ((Int) -> Boolean)?,
                         content: @Composable (State) -> Unit) {
-        val owner = LocalView.current
-        val registry = PageFocus.Local.current
-        val interaction = remember { MutableInteractionSource() }
-        val requester = remember { FocusRequester() }
-        val focused by interaction.collectIsFocusedAsState()
-        val pressed by interaction.collectIsPressedAsState()
-        val hovered by interaction.collectIsHoveredAsState()
-        val action = item.action
-        val key = item.key
-        val latestPage by rememberUpdatedState(page)
-        var width by remember { mutableStateOf(0) }
-        var bounds by remember { mutableStateOf<LayoutCoordinates?>(null) }
-        val density = LocalDensity.current
-        val lift = if (growth == Growth.SETTINGS && width > 0) 1f + with(density) { ROW_GROWTH.dp.toPx() } / width else Tv.LIFT_ROW
-        val scale by animateFloatAsState(if (focused) lift else 1f, tween(if (focused) 200 else 160, easing = Decelerate), label = "lift")
-        val raise by animateDpAsState(if (focused) 10.dp else 0.dp, tween(if (focused) 200 else 160, easing = Decelerate), label = "raise")
         val radius = when (item.kind) {
             Item.Kind.SOURCE -> 14.dp
             Item.Kind.FIELD -> dimensionResource(R.dimen.tv_radius_control)
             else -> dimensionResource(R.dimen.tv_radius_capsule)
         }
+        val control = PageControls.control(item.key, label(item), item.action, page, radius, onKey = onKey)
+        val focused = control.focused
+        val pressed = control.pressed
+        var width by remember { mutableStateOf(0) }
+        val density = LocalDensity.current
+        val lift = if (growth == Growth.SETTINGS && width > 0) 1f + with(density) { ROW_GROWTH.dp.toPx() } / width else Tv.LIFT_ROW
+        val scale by animateFloatAsState(if (focused) lift else 1f, tween(if (focused) 200 else 160, easing = PageControls.Decelerate), label = "lift")
+        val raise by animateDpAsState(if (focused) 10.dp else 0.dp, tween(if (focused) 200 else 160, easing = PageControls.Decelerate), label = "raise")
         val shape = RoundedCornerShape(radius)
         val fill = when {
             focused -> colorResource(R.color.tv_focus)
@@ -162,84 +117,18 @@ internal object PageRows {
             item.kind == Item.Kind.FIELD -> colorResource(R.color.tv_platter)
             else -> Color.Transparent
         }
-        val label = label(item)
-        val radiusPx = with(density) { radius.toPx() }
-        val region = remember(radiusPx) {
-            Tv.Region({ bounds?.takeIf { it.isAttached }?.boundsInWindow()?.let { r ->
-                android.graphics.Rect(r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt()) } }, radiusPx)
-        }
-        var keyPress by remember { mutableStateOf<PressInteraction.Press?>(null) }
-        // Pointer input outlives recomposition: it reads the current item's action through this state.
-        val activate by rememberUpdatedState {
-            latestPage.focused(key); Sounds.click()
-            if (action != null) Tv.activate(owner, region, action)
-        }
-        val isFocused by rememberUpdatedState(focused)
-        if (action != null && registry != null) DisposableEffect(registry, key) {
-            registry.register(key, requester, region)
-            onDispose { registry.unregister(key, requester) }
-        }
-        if (action != null && key == page.restore) LaunchedEffect(key) { awaitFrame(); runCatching { requester.requestFocus() } }
-        var control = Modifier
+        val row = Modifier
             .onSizeChanged { width = it.width }
             .graphicsLayer {
                 scaleX = scale; scaleY = scale
                 shadowElevation = raise.toPx(); this.shape = shape; clip = false
             }
             // Inside the layer, so popups and sounds see the grown platter as native controls' visible rects do.
-            .onGloballyPositioned { bounds = it }
+            .then(control.placed)
             .background(fill, shape)
-            .semantics { testTagsAsResourceId = true }
-            .testTag(key)
-        if (action != null) {
-            control = control
-                .focusRequester(requester)
-                .onFocusChanged { state ->
-                    registry?.focused(owner, key, state.isFocused)
-                    if (state.isFocused && registry?.announces(key) != false) {
-                        latestPage.focused(key)
-                        val at = bounds?.takeIf { it.isAttached }?.boundsInWindow()
-                        val window = IntArray(2).also { owner.getLocationOnScreen(it) }
-                        if (at != null) Sounds.focusAt(window[0] + at.center.x) else Sounds.focus(owner)
-                    }
-                }
-                .onPreviewKeyEvent { event ->
-                    onKey != null && event.type == KeyEventType.KeyDown && onKey(event.key.nativeKeyCode)
-                }
-                .onKeyEvent { event ->
-                    // As a View: confirm keys press on the first down and click on the up that follows.
-                    val native = event.nativeKeyEvent
-                    if (!confirm(native.keyCode)) return@onKeyEvent false
-                    if (native.action == PlatformKeyEvent.ACTION_DOWN) {
-                        if (native.repeatCount == 0 && keyPress == null) {
-                            keyPress = PressInteraction.Press(Offset.Zero).also { interaction.tryEmit(it) }
-                        }
-                    } else if (native.action == PlatformKeyEvent.ACTION_UP) {
-                        val press = keyPress ?: return@onKeyEvent false
-                        keyPress = null; interaction.tryEmit(PressInteraction.Release(press)); activate()
-                    }
-                    true
-                }
-                .pointerInput(key) {
-                    detectTapGestures(onPress = { at ->
-                        Sounds.input()
-                        if (!isFocused) runCatching { requester.requestFocus() }
-                        val press = PressInteraction.Press(at); interaction.emit(press)
-                        interaction.emit(if (tryAwaitRelease()) PressInteraction.Release(press) else PressInteraction.Cancel(press))
-                    }, onTap = { activate() })
-                }
-                .hoverable(interaction)
-                // Focusable after a touch too, as native controls are; `clickable` would only focus in key mode.
-                .focusable(interactionSource = interaction)
-                .semantics { role = Role.Button; onClick { activate(); true } }
-        }
-        Box(control.semantics { contentDescription = label }) {
-            content(State(focused, pressed, hovered))
-        }
+            .then(control.input)
+        Box(row) { content(State(focused, pressed, control.hovered)) }
     }
-
-    private fun confirm(code: Int): Boolean = code == PlatformKeyEvent.KEYCODE_DPAD_CENTER || code == PlatformKeyEvent.KEYCODE_ENTER
-            || code == PlatformKeyEvent.KEYCODE_NUMPAD_ENTER || code == PlatformKeyEvent.KEYCODE_SPACE
 
     fun label(item: Item): String = when (item.kind) {
         Item.Kind.SOURCE -> item.title + ". " + item.meta + ". " + item.value

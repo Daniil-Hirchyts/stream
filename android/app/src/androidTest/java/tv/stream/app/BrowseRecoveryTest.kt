@@ -5,8 +5,6 @@ import android.graphics.Rect
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
-import android.view.ViewGroup
-import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -28,12 +26,12 @@ import tv.stream.app.addon.Title
 import tv.stream.app.ui.PageAdapter
 
 /** Real navigation and HTTP failure paths, served inside the emulator with isolated owner data. */
-class BrowseRecoveryTest : AppHarness() {
+class BrowseRecoveryTest : SearchHarness() {
     @Test @Throws(Exception::class) fun settingsReturnsToTheChosenPaneAndRow() {
         launch(); waitUntil("empty Home", 10000) { visible("Make yourself at home") }
         tap("Settings", true); tap("Languages", true)
         waitUntil("keyboard language row", 5000) { visible("Keyboard languages") }
-        browse!!.onActivity { activity -> activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("keyboard-languages").requestFocus() }
+        browse!!.onActivity { activity -> assertNotNull(focusKey(activity, "keyboard-languages")) }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
         waitUntil("keyboard language page", 5000) { visible("English") }
         tap("Back", true)
@@ -154,23 +152,32 @@ class BrowseRecoveryTest : AppHarness() {
             val adapter = outer.adapter as PageAdapter
             outer.scrollToPosition(adapter.position(key))
         }
-        if (section == "search" || section.contains(":movie:")) {
-            waitUntil("nested results row attached", 5000) {
+        if (section == "search") {
+            waitUntil("search grid attached", 5000) {
                 val ready = AtomicReference(false)
                 browse!!.onActivity { activity ->
-                    val outer = activity.findViewById<RecyclerView>(R.id.page_rows)
-                    val holder = outer.findViewHolderForAdapterPosition((outer.adapter as PageAdapter).position(key))
-                    if (holder != null) { val child = nested(holder.itemView); if (child != null) { child.scrollToPosition(index); ready.set(true) } }
-                }; ready.get()
+                    val adapter = activity.findViewById<RecyclerView>(R.id.page_rows).adapter as PageAdapter
+                    adapter.searchState?.let { it.scrollToResult(index); ready.set(true) }
+                }
+                ready.get()
+            }
+        } else if (section.contains(":movie:")) {
+            // Drive the real lazy shelf: offscreen cards are composed as the remote reaches them.
+            val first = section + ":" + JSONArray().put(services.store.addons()[0].id).put("movie").put("browse:0")
+            waitUntil("first shelf card laid out", 5000) { shownControl(first) }
+            browse!!.onActivity { activity -> assertNotNull(focusKey(activity, first)) }
+            waitUntil("first shelf card focused", 5000) { focus() == first }
+            for (i in 1..index) {
+                instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
+                val next = section + ":" + JSONArray().put(services.store.addons()[0].id).put("movie").put("browse:$i")
+                waitUntil("remote reaches shelf card $i", 5000) { focus() == next }
             }
         }
-        waitUntil("selected film laid out", 5000) {
-            val found = AtomicReference(false)
-            browse!!.onActivity { activity -> found.set(activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>(key) != null) }; found.get()
-        }
-        browse!!.onActivity { activity -> val selected = activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>(key); selected.requestFocus() }
+        waitUntil("selected film laid out", 5000) { shownControl(key) }
+        browse!!.onActivity { activity -> assertNotNull("Selected film can receive focus", focusKey(activity, key)) }
+        waitUntil("selected film focused", 5000) { focus() == key }
         SystemClock.sleep(350)
-        browse!!.onActivity { activity -> val bounds = Rect(); assertTrue(activity.currentFocus!!.getGlobalVisibleRect(bounds)); before.set(bounds) }
+        before.set(controlBounds(key))
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
         waitUntil("film details", 10000) { visible("Play") }
         if (favourite) {
@@ -181,19 +188,12 @@ class BrowseRecoveryTest : AppHarness() {
         tap("Back", false)
         waitUntil("exact film regains focus", 5000) { key == focus() }
         SystemClock.sleep(350)
-        browse!!.onActivity { activity ->
-            val after = Rect(); assertTrue(activity.currentFocus!!.getGlobalVisibleRect(after))
-            assertEquals("Same horizontal viewport", before.get().left.toFloat(), after.left.toFloat(), 3f)
-            assertEquals("Same vertical viewport in $section", before.get().top.toFloat(), after.top.toFloat(), 3f)
-        }
+        val after = controlBounds(key)
+        assertEquals("Same horizontal viewport", before.get().left.toFloat(), after.left.toFloat(), 3f)
+        assertEquals("Same vertical viewport in $section", before.get().top.toFloat(), after.top.toFloat(), 3f)
     }
-    private fun nested(view: View): RecyclerView? {
-        if (view is ViewGroup) for (i in 0 until view.childCount) {
-            val child = view.getChildAt(i)
-            if (child is RecyclerView) return child
-            val found = nested(child); if (found != null) return found
-        }
-        return null
+    private fun controlBounds(key: String): Rect = Rect().also { bounds ->
+        assertTrue("Visible bounds of selected control $key", keyed(bounds) { it == key })
     }
     private fun focus(): String {
         val result = AtomicReference("")
@@ -213,15 +213,7 @@ class BrowseRecoveryTest : AppHarness() {
             } catch (e: Exception) { throw AssertionError(e) }
         }
     }
-    private fun text(fragment: String): Boolean {
-        val found = AtomicReference(false)
-        browse!!.onActivity { activity -> found.set(contains(activity.findViewById(R.id.page_rows), fragment)) }; return found.get()
-    }
-    private fun contains(view: View, fragment: String): Boolean {
-        if (view is TextView && view.isShown && view.text.toString().contains(fragment)) return true
-        if (view is ViewGroup) for (i in 0 until view.childCount) if (contains(view.getChildAt(i), fragment)) return true
-        return false
-    }
+    private fun text(fragment: String): Boolean = textContains(fragment)
 
     class CatalogServer @Throws(Exception::class) constructor() : AutoCloseable {
         @JvmField val server: ServerSocket

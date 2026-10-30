@@ -18,6 +18,7 @@ import tv.stream.app.addon.Title
 
 /** Focus and pointer navigation through the production series screen, with an isolated local title. */
 class SeriesBrowseTest : AppHarness() {
+    @org.junit.After fun clearObserver() { tv.stream.app.ui.TileBlocks.seasonDrawn = null }
     @Test @Throws(Exception::class) fun seasonsFollowFocusAndKeepShowTitleAboveEpisodes() {
         LogoServer().use { logo ->
         val episodes = JSONArray()
@@ -35,44 +36,29 @@ class SeriesBrowseTest : AppHarness() {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
         AppHarness.waitUntil("episode browsing replaces overview", 5000) { focused("season:1") && !visible("Play") }
         AppHarness.waitUntil("compact show title", 5000) { shown("series-header") }
-        AppHarness.waitUntil("title logo loads", 5000) {
-            val loaded = AtomicBoolean()
-            browse!!.onActivity { activity ->
-                val image = activity.findViewById<View>(R.id.page_rows).findViewWithTag<android.widget.ImageView>("series-logo")
-                loaded.set(image != null && image.isShown && image.drawable != null)
-            }
-            loaded.get()
-        }
+        AppHarness.waitUntil("title logo loads", 5000) { semanticNode("series-logo") != null }
         SystemClock.sleep(400)
         assertFalse("No redundant Episodes heading", visible("Episodes"))
         val title = bounds("series-header")
         assertTrue("Show title remains near the top", title.top < dp(140))
         assertTrue("Episodes are brought into the main viewport", bounds("episode:sample:s1e1").bottom < context.resources.displayMetrics.heightPixels)
-        val stripButton = arrayOfNulls<View>(1)
+        val stripButton = arrayOfNulls<tv.stream.app.ui.Tv.Region>(1)
+        browse!!.onActivity { activity -> stripButton[0] = tv.stream.app.ui.PageFocus.owner(activity.findViewById(R.id.page_rows), "season:2")?.region("season:2") }
         val seasonMotion = AtomicBoolean()
-        val motionObserver = arrayOfNulls<android.view.ViewTreeObserver.OnDrawListener>(1)
-        browse!!.onActivity { activity -> stripButton[0] = activity.findViewById<View>(R.id.page_rows).findViewWithTag("season:2") }
-        browse!!.onActivity { activity ->
-            val rows = activity.findViewById<View>(R.id.page_rows)
-            motionObserver[0] = android.view.ViewTreeObserver.OnDrawListener {
-                val shelf = rows.findViewWithTag<android.view.ViewGroup>("season-shelf")
-                if (shelf != null && shelf.childCount > 0) {
-                    val incoming = shelf.getChildAt(0)
-                    if (incoming.alpha > .01f && incoming.alpha < .99f && incoming.translationX > 0f) seasonMotion.set(true)
-                }
-            }
-            rows.viewTreeObserver.addOnDrawListener(motionObserver[0])
+        tv.stream.app.ui.TileBlocks.seasonDrawn = { key, alpha, x ->
+            if (key == "season:2" && alpha > .01f && alpha < .99f && x > 0f) seasonMotion.set(true)
         }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
         AppHarness.waitUntil("focus alone changes season", 5000) { focused("season:2") && shown("episode:sample:s2e1") }
         AppHarness.waitUntil("episode shelf slides and crossfades", 5000) { seasonMotion.get() }
-        browse!!.onActivity { activity -> activity.findViewById<View>(R.id.page_rows).viewTreeObserver.removeOnDrawListener(motionObserver[0]) }
-        assertFalse("Previous season is replaced", shown("episode:sample:s1e1"))
+        tv.stream.app.ui.TileBlocks.seasonDrawn = null
+        AppHarness.waitUntil("previous season finishes fading", 5000) { !shown("episode:sample:s1e1") }
         browse!!.onActivity { activity ->
-            val selected = activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("season:2")
-            assertSame("Season focus survives without rebuilding the strip", stripButton[0], selected)
-            assertTrue(selected.isActivated)
+            val selected = tv.stream.app.ui.PageFocus.owner(activity.findViewById(R.id.page_rows), "season:2")?.region("season:2")
+            assertNotNull(selected)
+            assertSame("Season control survives without rebuilding the strip", stripButton[0], selected)
         }
+        assertTrue("Focused season is also selected", selectedKey("season:2"))
         assertEquals("Show title stays in position", title, bounds("series-header"))
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
         AppHarness.waitUntil("Down enters selected season's episodes", 5000) { focused("episode:sample:s2e1") }
@@ -89,22 +75,23 @@ class SeriesBrowseTest : AppHarness() {
         AppHarness.waitUntil("Down enters episodes", 5000) { focused("episode:sample:s1e1") }
         assertEquals("Show title stays visible while browsing episodes", title, bounds("series-header"))
         SystemClock.sleep(350)
-        browse!!.onActivity { activity ->
-            val episode = activity.findViewById<View>(R.id.page_rows).findViewWithTag<android.view.ViewGroup>("episode:sample:s1e1")
-            val number = episode.findViewWithTag<android.widget.TextView>("episode-number")
-            val name = episode.findViewWithTag<android.widget.TextView>("tile-title")
-            val description = episode.findViewWithTag<android.widget.TextView>("episode-description")
-            val date = episode.findViewWithTag<android.widget.TextView>("episode-release-date")
-            assertEquals("Episode 1", number.text.toString()); assertEquals("First season 1", name.text.toString())
-            assertTrue(number.top < name.top); assertTrue(name.top < description.top)
-            assertEquals(3, description.maxLines.toLong()); assertTrue(description.lineCount > 1)
-            assertNotNull("Provider release date is shown", date); assertTrue(date.text.toString().contains("2025"))
-            assertTrue("Release date follows the synopsis", date.top > description.top)
-            val complete = Rect(); assertTrue(episode.getGlobalVisibleRect(complete))
-            assertTrue("All episode information fits on screen", complete.height() >= episode.height - 1)
-            val undated = activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("episode:sample:s1e2")
-            assertNotNull(undated); assertNull("Missing dates add no empty caption", undated.findViewWithTag<View>("episode-release-date"))
-        }
+        val episodeKey = "episode:sample:s1e1"
+        fun caption(part: String) = semanticNode(episodeKey + ":" + part) ?: throw AssertionError("Missing episode $part")
+        assertEquals("Episode 1", caption("number").config[androidx.compose.ui.semantics.SemanticsProperties.Text].single().text)
+        assertEquals("First season 1", caption("title").config[androidx.compose.ui.semantics.SemanticsProperties.Text].single().text)
+        val number = caption("number").boundsInRoot
+        val name = caption("title").boundsInRoot
+        val description = caption("description")
+        val date = caption("date")
+        assertTrue(number.top < name.top); assertTrue(name.top < description.boundsInRoot.top)
+        val lines = ArrayList<androidx.compose.ui.text.TextLayoutResult>()
+        instrumentation.runOnMainSync { assertTrue(description.config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action!!.invoke(lines)) }
+        assertTrue("Synopsis wraps but stays within three lines", lines.single().lineCount in 2..3)
+        assertTrue(date.config[androidx.compose.ui.semantics.SemanticsProperties.Text].joinToString().contains("2025"))
+        assertTrue("Release date follows the synopsis", date.boundsInRoot.top > description.boundsInRoot.top)
+        val complete = bounds(episodeKey)
+        assertTrue("All episode information fits on screen", complete.bottom <= context.resources.displayMetrics.heightPixels)
+        assertNull("Missing dates add no empty caption", semanticNode("episode:sample:s1e2:date"))
         screenshot("series-episode-layout.png")
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
         AppHarness.waitUntil("episode actions", 5000) { visible("Play") && visible("Choose source") }
@@ -118,12 +105,7 @@ class SeriesBrowseTest : AppHarness() {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
         tap("Mark watched", true)
         AppHarness.waitUntil("episode marked", 5000) {
-            val marked = AtomicBoolean()
-            browse!!.onActivity { activity ->
-                val episode = activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("episode:sample:s1e1")
-                marked.set(episode != null && episode.contentDescription.toString().endsWith("Watched"))
-            }
-            marked.get()
+            textContains("Watched") && services.store.progress(series.key(), "sample:s1e1")?.watched == true
         }
         AppHarness.waitUntil("episode card receives input after marking", 5000) {
             val ready = AtomicBoolean(); browse!!.onActivity { activity -> ready.set(activity.hasWindowFocus()) }
@@ -161,11 +143,17 @@ class SeriesBrowseTest : AppHarness() {
         assertFalse(visible("Mark unwatched"))
         tap("Mark watched", true)
         AppHarness.waitUntil("only this episode marked", 5000) { services.store.progress(series.key(), "menu:episode:2")!!.watched }
+        AppHarness.waitUntil("marked episode is rendered before reopening its actions", 5000) {
+            runCatching {
+                semanticNode("episode:menu:episode:2")!!
+                    .config[androidx.compose.ui.semantics.SemanticsProperties.ContentDescription].any { it.endsWith("Watched") }
+            }.getOrDefault(false)
+        }
         assertNull("Episode one was not changed", services.store.progress(series.key(), "menu:episode:1"))
         assertTrue("Episode three stays watched", services.store.progress(series.key(), "menu:episode:3")!!.watched)
         assertFalse("No option button on the episode artwork", visible("Episode 2 options"))
-        browse!!.onActivity { activity -> assertEquals("The episode has no child action buttons", 0,
-                childActions(activity.findViewById<View>(R.id.page_rows).findViewWithTag("episode:menu:episode:2")).toLong()) }
+        val card = semanticNode("episode:menu:episode:2")!!
+        assertEquals("The episode has no child action buttons", 0, card.children.count { it.config.contains(androidx.compose.ui.semantics.SemanticsActions.OnClick) })
         tap("Episode menu 2", false)
         AppHarness.waitUntil("single state-specific action", 5000) { visible("Mark unwatched") }
         assertFalse(visible("Mark watched"))
@@ -202,6 +190,7 @@ class SeriesBrowseTest : AppHarness() {
             assertTrue("Only the visible portion of a 20-episode season is fetched", first > 0 && first < 20)
             assertTrue("Hidden seasons have no artwork requests", images.requests.stream().allMatch { path -> path.startsWith("/s1") })
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
+            AppHarness.waitUntil("second season focused and rendered", 5000) { focused("season:2") && shown("episode:art:s2e1") }
             AppHarness.waitUntil("new season artwork requested on focus", 5000) { images.requests.contains("/s2e1.png") }
             SystemClock.sleep(300)
             assertFalse("Unvisited season stays unloaded", images.requests.stream().anyMatch { path -> path.startsWith("/s3") })
@@ -261,18 +250,10 @@ class SeriesBrowseTest : AppHarness() {
         browse!!.onActivity { activity -> result.set(activity.hasWindowFocus() && activity.currentFocus != null && key == activity.currentFocus!!.tag) }
         return result.get()
     }
-    private fun shown(key: String): Boolean {
-        val result = AtomicBoolean()
-        browse!!.onActivity { activity -> val view = activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>(key); result.set(view != null && view.isShown) }
-        return result.get()
-    }
+    private fun shown(key: String): Boolean = semanticNode(key) != null
     private fun bounds(key: String): Rect {
-        val rect = Rect()
-        browse!!.onActivity { activity ->
-            val view = activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>(key)
-            assertNotNull(key, view); assertTrue(key, view.getGlobalVisibleRect(rect))
-        }
-        return rect
+        val r = semanticNode(key)?.boundsInWindow ?: throw AssertionError("Missing $key")
+        return Rect(Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom))
     }
     private fun hover(bounds: Rect) {
         val time = SystemClock.uptimeMillis()

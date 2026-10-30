@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The capsule a button's backdrop blur is clipped to; its platter is drawn over the blur. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@android:color/transparent" />
+    <corners android:radius="@dimen/tv_radius_capsule" />
+</shape>

@@ -339,6 +339,13 @@ class ArtworkTest {
         pump("next") { arrived }
     }
 
+    @Test fun disposingATitleHeaderCancelsItsQueuedFallbackAndTimeout() {
+        var delivered = 0
+        artwork.titleLogo(null, Consumer { delivered++ }, Runnable { delivered++ }).cancel()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(2100))
+        assertEquals("A disposed header cannot be revealed by a late fallback", 0, delivered)
+    }
+
     @Test fun aSlowTitleLogoFallsBackOnceAndStaysFallenBack() {
         val gate = CountDownLatch(1)
         var done = 0; var failed = 0

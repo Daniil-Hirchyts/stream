@@ -39,9 +39,9 @@ object Tv {
     fun activatingControl(): View? { return ACTIVATING.get() }
     /**
      * Part of a view that a popup grows from and returns to: a declarative control inside its composition owner.
-     * `bounds` reads the control's current rectangle in its window (null once it has gone); `radius` is its corner in px.
+     * `bounds` reads the control's current rectangle in its window (null once it has gone); `radius` is its corner in px; `artwork` opens popups beside it, as from a poster.
      */
-    class Region(val bounds: () -> android.graphics.Rect?, val radius: Float)
+    class Region(val bounds: () -> android.graphics.Rect?, val radius: Float, val artwork: Boolean = false)
     private val ACTIVATING_REGION = ThreadLocal<Region>()
     fun activatingRegion(): Region? { return ACTIVATING_REGION.get() }
     /** Runs a control's action with `control` as the [activatingControl], where popups grow from. */

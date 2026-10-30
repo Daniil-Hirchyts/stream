@@ -87,7 +87,7 @@ class DiscoveryRecoveryTest : AppHarness() {
         services.addons.newRequest().use { request -> services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", request)) }
     }
     private fun focus(): String { val key = AtomicReference(""); browse!!.onActivity { activity -> if (activity.currentFocus != null) key.set((activity.currentFocus!!.tag as Any?).toString()) }; return key.get() }
-    private fun text(part: String): Boolean { return instrumentation.uiAutomation.rootInActiveWindow.findAccessibilityNodeInfosByText(part).stream().anyMatch { node -> node.isVisibleToUser } }
+    private fun text(part: String): Boolean = textContains(part)
     @Throws(Exception::class)
     private fun screenshot(name: String) { val image: Bitmap? = instrumentation.uiAutomation.takeScreenshot(); assertNotNull(image); FileOutputStream(File(context.filesDir, name)).use { out -> image!!.compress(Bitmap.CompressFormat.PNG, 100, out) }; image!!.recycle() }
 }

@@ -28,7 +28,9 @@ import java.util.function.Supplier
  * and remote. The activity forwards keys and Back, and adds its own layers through [PlaybackHost].
  */
 @OptIn(markerClass = [UnstableApi::class])
-class PlayerScreen(private val activity: Activity, private val session: PlaybackSession, private val host: PlaybackHost) :
+class PlayerScreen(private val activity: Activity, private val session: PlaybackSession, private val host: PlaybackHost,
+        private val controlsPresentation: ControlsOverlay.Presentation? = null,
+        private val layers: Layers? = null) :
         PlaybackSession.Listener, MenuPanel.Listener {
     /** What the screen says while there is no picture yet. */
     class Loading(
@@ -40,24 +42,32 @@ class PlayerScreen(private val activity: Activity, private val session: Playback
         @JvmField val untilReady: Boolean,
     )
 
+    /** Immutable values for loading, errors and the next-episode card; apps may render these in another toolkit. */
+    data class LayerState(val loading: Boolean = false, val buffering: Boolean = false, val title: String = "", val step: String = "", val message: String = "",
+        val errorTitle: String = "", val errorMessage: String = "", val retry: Boolean = false, val sources: Boolean = false,
+        val nextTitle: String = "", val nextDetail: String = "", val notice: String = "")
+    interface Layers {
+        fun bind(input: LayerInput)
+        fun render(state: LayerState)
+    }
+    interface LayerInput {
+        fun retry()
+        fun sources()
+        fun exit()
+        fun playNext()
+        fun cancelNext()
+    }
+    private var layerState = LayerState()
+    private val layerBinding: Layers
     private val player: Player
     private val handler = Handler(Looper.getMainLooper())
     private val playerView: PlayerView
     private val subtitles: SubtitleView
     private val loadingView: View
     private val errorView: View
-    private val errorRetry: View
-    private val errorSources: View
     private val bufferingView: View
     private val upNextView: View
-    private val loadingStep: TextView
-    private val loadingTitle: TextView
-    private val loadingMessage: TextView
-    private val errorTitle: TextView
-    private val errorMessage: TextView
-    private val notice: TextView
-    private val upNextTitle: TextView
-    private val upNextDetail: TextView
+    private val noticeView: View
     private val controls: ControlsOverlay
     private val menu: MenuPanel
     private var controlsBehindMenu = false
@@ -84,19 +94,10 @@ class PlayerScreen(private val activity: Activity, private val session: Playback
         this.player = session.player()
         playerView = activity.findViewById(R.id.player_view)
         loadingView = activity.findViewById(R.id.loading)
-        loadingStep = activity.findViewById(R.id.loading_step)
-        loadingTitle = activity.findViewById(R.id.loading_title)
-        loadingMessage = activity.findViewById(R.id.loading_message)
         bufferingView = activity.findViewById(R.id.buffering)
         errorView = activity.findViewById(R.id.error)
-        errorTitle = activity.findViewById(R.id.error_title)
-        errorMessage = activity.findViewById(R.id.error_message)
-        errorRetry = activity.findViewById(R.id.error_retry)
-        errorSources = activity.findViewById(R.id.error_sources)
-        notice = activity.findViewById(R.id.notice)
+        noticeView = activity.findViewById(R.id.notice)
         upNextView = activity.findViewById(R.id.up_next)
-        upNextTitle = activity.findViewById(R.id.up_next_title)
-        upNextDetail = activity.findViewById(R.id.up_next_detail)
         subtitles = activity.findViewById(R.id.subtitles)
         playerView.subtitleView!!.visibility = View.GONE
         playerView.player = player
@@ -107,8 +108,16 @@ class PlayerScreen(private val activity: Activity, private val session: Playback
         style = SubtitleStyle(session.preferences())
         style.applyTo(subtitles)
         sample = Collections.singletonList(Cue.Builder().setText(activity.getString(R.string.subtitle_sample)).build())
-        controls = ControlsOverlay(activity, session, handler, Runnable { layoutSubtitles() })
+        controls = ControlsOverlay(activity, session, handler, Runnable { layoutSubtitles() }, controlsPresentation)
         menu = MenuPanel(activity, this)
+        layerBinding = layers ?: NativeLayers(activity)
+        layerBinding.bind(object : LayerInput {
+            override fun retry() { host.onRetry() }
+            override fun sources() { host.onChooseSource() }
+            override fun exit() { host.onExit() }
+            override fun playNext() { playUpNext() }
+            override fun cancelNext() { cancelUpNext(); controls.show() }
+        })
         bindPointerControls()
         session.addListener(this)
     }
@@ -118,7 +127,7 @@ class PlayerScreen(private val activity: Activity, private val session: Playback
     fun setTitle(text: String) {
         title = text
         controls.setTitle(text)
-        if (loading != null) loadingTitle.text = text
+        layerState = layerState.copy(title = text); publishLayers()
     }
 
     /** Shows a step before the picture, such as opening or converting; null hides it. */
@@ -180,14 +189,14 @@ class PlayerScreen(private val activity: Activity, private val session: Playback
     }
 
     fun notice(text: String?) {
-        notice.text = text
-        Ui.fade(notice, true)
+        layerState = layerState.copy(notice = text.orEmpty()); publishLayers()
+        Ui.fade(noticeView, true)
         handler.removeCallbacks(hideNotice)
         handler.postDelayed(hideNotice, NOTICE_MS)
     }
 
     private fun hideNotice() {
-        Ui.fade(notice, false)
+        Ui.fade(noticeView, false)
     }
 
     fun showControls() {
@@ -211,7 +220,7 @@ class PlayerScreen(private val activity: Activity, private val session: Playback
         upNextContext = context
         upNextSeconds = UP_NEXT_SECONDS
         controls.hide()
-        upNextTitle.text = nextTitle
+        layerState = layerState.copy(nextTitle = nextTitle.orEmpty()); publishLayers()
         Ui.fade(upNextView, true)
         countDown()
     }
@@ -234,7 +243,8 @@ class PlayerScreen(private val activity: Activity, private val session: Playback
             next!!.run()
             return
         }
-        upNextDetail.text = upNextContext + "  ·  " + activity.getString(R.string.up_next_countdown, upNextSeconds)
+        layerState = layerState.copy(nextDetail = upNextContext + "  ·  " + activity.getString(R.string.up_next_countdown, upNextSeconds))
+        publishLayers()
         upNextSeconds--
         handler.postDelayed(countdown, 1000)
     }
@@ -256,25 +266,22 @@ class PlayerScreen(private val activity: Activity, private val session: Playback
                 // The error replaces whatever step was showing.
                 loading = null
                 cancelUpNext()
-                errorTitle.text = error.title
-                errorMessage.text = error.message
-                errorRetry.visibility = if (error.retry && host.canRetry()) View.VISIBLE else View.GONE
-                errorSources.visibility = if (host.canChooseSource()) View.VISIBLE else View.GONE
+                layerState = layerState.copy(errorTitle = error.title, errorMessage = error.message,
+                    retry = error.retry && host.canRetry(), sources = host.canChooseSource())
             }
         }
         val failed = error != null
         val preparing = !failed && loading != null
         Ui.fade(loadingView, preparing)
         Ui.fade(errorView, failed)
-        bufferingView.visibility = if (!failed && !preparing && session.started()
-                && player.playbackState == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
+        val buffering = !failed && !preparing && session.started() && player.playbackState == Player.STATE_BUFFERING
+        bufferingView.visibility = if (buffering) View.VISIBLE else View.GONE
+        layerState = layerState.copy(loading = preparing, buffering = buffering)
         if (failed || preparing || !session.started() || menu.isOpen() && !controlsBehindMenu) controls.hide()
         if (preparing) {
-            loadingTitle.text = title
-            loadingStep.text = loading!!.overline
-            loadingMessage.text = if (loading!!.message == null) "" else loading!!.message
-            loadingMessage.visibility = if (loadingMessage.text.length > 0) View.VISIBLE else View.GONE
+            layerState = layerState.copy(title = title, step = loading!!.overline, message = loading!!.message.orEmpty())
         }
+        publishLayers()
         // The screensaver may start while idle or paused, never during a video or while it opens.
         keepScreenOn(preparing || player.isPlaying)
         host.onScreenChanged()
@@ -549,20 +556,14 @@ class PlayerScreen(private val activity: Activity, private val session: Playback
 
     /** Pointer actions use the same playback and menu paths as remote keys. */
     private fun bindPointerControls() {
+        if (controlsPresentation == null) {
         Ui.action(activity.findViewById(R.id.control_options), Runnable { openMenu() })
         Ui.action(activity.findViewById(R.id.center_icon), Runnable { togglePlay() })
         Ui.action(activity.findViewById(R.id.control_play), Runnable { togglePlay() })
         Ui.action(activity.findViewById(R.id.control_rewind), Runnable { session.seekBy(-PlaybackSession.SEEK_STEP_MS) })
         Ui.action(activity.findViewById(R.id.control_forward), Runnable { session.seekBy(PlaybackSession.SEEK_STEP_MS) })
         Ui.action(activity.findViewById(R.id.control_stop), Runnable { host.onExit() })
-        Ui.action(errorRetry, Runnable { host.onRetry() })
-        Ui.action(errorSources, Runnable { host.onChooseSource() })
-        Ui.action(activity.findViewById(R.id.error_close), Runnable { host.onExit() })
-        Ui.action(activity.findViewById(R.id.up_next_play), Runnable { playUpNext() })
-        Ui.action(activity.findViewById(R.id.up_next_cancel), Runnable {
-            cancelUpNext()
-            controls.show()
-        })
+        }
         val surface = View.OnClickListener { view ->
             if (menu.isOpen()) menu.close()
             else if (session.started() && session.error() == null && loading == null) {
@@ -634,6 +635,37 @@ class PlayerScreen(private val activity: Activity, private val session: Playback
     private fun togglePlay() {
         session.togglePlay()
         controls.show()
+    }
+
+    private fun publishLayers() { layerBinding.render(layerState) }
+
+    /** Default native layer bindings, retained for reusable-player consumers. */
+    private class NativeLayers(activity: Activity) : Layers {
+        private val title = activity.findViewById<TextView>(R.id.loading_title)
+        private val step = activity.findViewById<TextView>(R.id.loading_step)
+        private val message = activity.findViewById<TextView>(R.id.loading_message)
+        private val errorTitle = activity.findViewById<TextView>(R.id.error_title)
+        private val errorMessage = activity.findViewById<TextView>(R.id.error_message)
+        private val retry = activity.findViewById<View>(R.id.error_retry)
+        private val sources = activity.findViewById<View>(R.id.error_sources)
+        private val exit = activity.findViewById<View>(R.id.error_close)
+        private val nextTitle = activity.findViewById<TextView>(R.id.up_next_title)
+        private val nextDetail = activity.findViewById<TextView>(R.id.up_next_detail)
+        private val nextPlay = activity.findViewById<View>(R.id.up_next_play)
+        private val nextCancel = activity.findViewById<View>(R.id.up_next_cancel)
+        private val notice = activity.findViewById<TextView>(R.id.notice)
+        override fun bind(input: LayerInput) {
+            Ui.action(retry, Runnable { input.retry() }); Ui.action(sources, Runnable { input.sources() }); Ui.action(exit, Runnable { input.exit() })
+            Ui.action(nextPlay, Runnable { input.playNext() }); Ui.action(nextCancel, Runnable { input.cancelNext() })
+        }
+        override fun render(state: LayerState) {
+            title.text = state.title; step.text = state.step; message.text = state.message
+            message.visibility = if (state.message.isEmpty()) View.GONE else View.VISIBLE
+            errorTitle.text = state.errorTitle; errorMessage.text = state.errorMessage
+            retry.visibility = if (state.retry) View.VISIBLE else View.GONE
+            sources.visibility = if (state.sources) View.VISIBLE else View.GONE
+            nextTitle.text = state.nextTitle; nextDetail.text = state.nextDetail; notice.text = state.notice
+        }
     }
 
     companion object {

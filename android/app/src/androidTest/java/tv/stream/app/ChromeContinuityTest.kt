@@ -18,6 +18,7 @@ import java.util.ArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
 import org.junit.Test
+import tv.stream.app.ui.Tv
 import org.junit.runner.RunWith
 import tv.stream.app.addon.Title
 import tv.stream.app.ui.IntroView
@@ -42,21 +43,23 @@ class ChromeContinuityTest : AppHarness() {
         waitUntil("refreshed home", 10000) { visible("Generated Film") }
         tap("Generated Film", true); waitUntil("film", 10000) { visible("Play") }
         assertEquals(clock, clockBounds(R.id.clock))
-        browse!!.onActivity { activity ->
-            for (key in arrayOf("favourite", "watched")) {
-                val button = activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>(key)
-                assertNotNull(button)
-                assertEquals("Icon buttons have a circular footprint", button.height.toLong(), button.width.toLong())
-                assertEquals(dp(44).toLong(), button.width.toLong())
-                assertFalse("Icon buttons keep accessible action labels", button.contentDescription!!.toString().isEmpty())
+        for (key in arrayOf("favourite", "watched")) {
+            val button = Rect()
+            browse!!.onActivity { activity ->
+                // Accessibility expands small click targets to 48 dp; inspect the painted circular platter.
+                val region = tv.stream.app.ui.PageFocus.owner(activity.findViewById(R.id.page_rows), key)?.region(key)
+                val drawn = region?.bounds?.invoke(); assertNotNull(key, drawn); button.set(drawn!!)
             }
+            assertTrue("Icon buttons have a circular footprint", Math.abs(button.height() - button.width()) <= 1)
+            assertTrue("Icon buttons are 44 dp, with their focus growth: $button", button.width() >= dp(44) && button.width() <= dp(44) * Tv.LIFT_BUTTON + 2)
         }
+        assertTrue("Icon buttons keep accessible action labels", visible("Add favourite") && visible("Mark watched"))
         tap("Add favourite", true); waitUntil("favourite set", 5000) { visible("Remove favourite") }
-        browse!!.onActivity { activity -> assertTrue(activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("favourite").isActivated) }
+        assertTrue("The favourite control shows its state", selectedKey("favourite"))
         tap("Remove favourite", false); waitUntil("favourite cleared", 5000) { visible("Add favourite") }
         tap("Mark watched", false)
         waitUntil("watched", 5000) { visible("Mark unwatched") }
-        browse!!.onActivity { activity -> assertTrue(activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("watched").isActivated) }
+        assertTrue("The watched control shows its state", selectedKey("watched"))
         screenshot("chrome-circular-actions.png")
         tap("Back", true); waitUntil("home restored", 5000) { visible("Browse") }
         browse!!.onActivity { activity -> invoke(activity, "loading") }
@@ -101,17 +104,13 @@ class ChromeContinuityTest : AppHarness() {
         instrumentation.waitForIdleSync()
         browse!!.onActivity { activity ->
             val page = activity.findViewById<RecyclerView>(R.id.page_rows); page.scrollBy(0, 320)
-            val card = page.findViewWithTag<View>("row1:0"); assertNotNull(card)
-            var parent: View = card
-            while (parent !is RecyclerView) parent = parent.parent as View
-            val shelf = parent as RecyclerView
-            (shelf.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(6, 80)
+            assertNotNull(focusKey(activity, "row1:0"))
         }
-        instrumentation.waitForIdleSync()
-        browse!!.onActivity { activity -> activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("row1:7").requestFocus() }
+        for (i in 0 until 7) instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
+        waitUntil("later card focused", 5000) { focused("row1:7") }
         SystemClock.sleep(400)
         val before = Rect()
-        browse!!.onActivity { activity -> assertTrue(activity.currentFocus!!.getGlobalVisibleRect(before)) }
+        assertTrue(keyed(before) { it == "row1:7" })
         pointer(before.centerX().toFloat(), before.centerY().toFloat(), true)
         waitUntil("details", 10000) { visible("Play") }
         // A re-fetch would replace these injected shelves with fixture Home; Back must use the retained page.
@@ -120,10 +119,10 @@ class ChromeContinuityTest : AppHarness() {
         SystemClock.sleep(1500)
         browse!!.onActivity { activity ->
             val selected = activity.currentFocus; assertEquals("No background reload steals focus", "row1:7", selected!!.tag)
-            val after = Rect(); assertTrue(selected.getGlobalVisibleRect(after))
-            assertEquals("Same horizontal position", before.left.toFloat(), after.left.toFloat(), 2f)
-            assertEquals("Same vertical position", before.top.toFloat(), after.top.toFloat(), 2f)
         }
+        val after = Rect(); assertTrue(keyed(after) { it == "row1:7" })
+        assertEquals("Same horizontal position", before.left.toFloat(), after.left.toFloat(), 2f)
+        assertEquals("Same vertical position", before.top.toFloat(), after.top.toFloat(), 2f)
         screenshot("chrome-restored-card.png")
     }
 
@@ -141,8 +140,9 @@ class ChromeContinuityTest : AppHarness() {
         assertEquals("Fixed right inset", (context.resources.displayMetrics.widthPixels - dp(48)).toLong(), initial.right.toLong())
         assertEquals("Fixed top inset", dp(22).toLong(), initial.top.toLong())
         instrumentation.runOnMainSync {
-            val button = Rect(); activity!!.findViewById<View>(R.id.control_settings).getGlobalVisibleRect(button)
-            assertTrue("Player actions sit left of the clock", button.right < initial.left)
+            val button = activity!!.playerControlBounds(R.id.control_settings)
+            assertNotNull(button)
+            assertTrue("Player actions sit left of the clock", button!!.right < initial.left)
         }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MENU)
         waitUntil("player menu", 5000) { visible("Settings") }

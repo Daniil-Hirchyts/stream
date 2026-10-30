@@ -32,21 +32,25 @@ import tv.stream.app.ui.Tv
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @LooperMode(LooperMode.Mode.PAUSED)
 class ErrorQrPanelTest {
+    @get:org.junit.Rule val composition = androidx.compose.ui.test.junit4.createEmptyComposeRule()
     @Test @Throws(Exception::class) fun developerGateScannableTvLayoutAndPointerPagination() {
-        Robolectric.buildActivity(Activity::class.java).setup().use { controller: org.robolectric.android.controller.ActivityController<Activity> ->
+        Robolectric.buildActivity(androidx.activity.ComponentActivity::class.java).setup().visible().use { controller ->
             val activity = controller.get()
             activity.setTheme(R.style.TvTheme)
             activity.setContentView(R.layout.activity_watch)
-            val container: ViewGroup = activity.findViewById(R.id.error_diagnostics)
-            activity.findViewById<View>(R.id.error).setVisibility(View.VISIBLE)
-            activity.findViewById<TextView>(R.id.error_title).setText("Could not play this source")
-            activity.findViewById<TextView>(R.id.error_message).setText("The provider's certificate can't be verified.")
+            val layers = tv.stream.app.ui.ComposePlayerLayers(activity, true, {})
+            layers.install()
+            layers.render(tv.stream.playback.PlayerScreen.LayerState(errorTitle = "Could not play this source",
+                    errorMessage = "The provider's certificate can't be verified.", retry = true, sources = true))
+            activity.findViewById<View>(R.id.error).visibility = View.VISIBLE
             val report = DiagnosticReport.capture(activity, "Preparing video", "Could not play this source", "Certificate verification failed", "certificate",
                     javax.net.ssl.SSLHandshakeException("Trust anchor for certification path not found"), JSONObject().put("positionMs", 12000).put("peers", 0))
-            ErrorQrPanel.attach(container, false, report)
-            assertEquals(View.GONE, container.getVisibility()); assertEquals(0, container.getChildCount())
-            ErrorQrPanel.attach(container, true, report)
-            assertEquals(View.VISIBLE, container.getVisibility())
+            val gate = android.widget.FrameLayout(activity)
+            ErrorQrPanel.attach(gate, false, report)
+            assertEquals(View.GONE, gate.visibility); assertEquals(0, gate.childCount)
+            layers.diagnostics(report); composition.waitForIdle(); layout(activity); composition.waitForIdle()
+            val container: ViewGroup = activity.findViewById(R.id.error_diagnostics)
+            assertEquals(View.VISIBLE, container.visibility)
             var code = waitForCode(container, report.id)
             layout(activity)
             assertEquals(report.pages.get(0), decode(code))
@@ -65,7 +69,7 @@ class ErrorQrPanelTest {
                 code = waitForCode(container, report.id); layout(activity)
                 assertEquals(report.pages.get(0), decode(code))
             }
-            ErrorQrPanel.attach(container, false, report); layout(activity)
+            layers.diagnostics(null); composition.waitForIdle(); layout(activity)
             assertEquals(0, container.getChildCount()); assertEquals(View.GONE, container.getVisibility())
             save(activity.getWindow().getDecorView(), "developer-off.png")
         }

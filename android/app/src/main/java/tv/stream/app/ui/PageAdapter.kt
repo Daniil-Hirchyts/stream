@@ -39,7 +39,7 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
     private var restore = ""
     private var gutterStart = 0
     private var gutterEnd = 0
-    private var spotlight: Spotlight? = null
+    private val spotlightState = androidx.compose.runtime.mutableStateOf<TileBlocks.Featured?>(null)
     private var featured: Item.Tile? = null
     private var recycler: RecyclerView? = null
     private var generation = 0
@@ -87,29 +87,16 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
     fun gutter(start: Int, end: Int) { gutterStart = dp(start); gutterEnd = dp(end) }
     /** Shows `value`; true when only Search's results changed in place, so focus is already where it belongs. */
     fun set(value: List<Item>, restoreKey: String?): Boolean {
-        // A new search answer replaces only the results: rebinding would rebuild the keyboard and drop its focus.
-        if (value.size == 1 && items.size == 1 && value.get(0).kind == Item.Kind.KEYBOARD && items.get(0).kind == Item.Kind.KEYBOARD
-                && value.get(0).key.equals(items.get(0).key) && value.get(0).keyboardLanguages.equals(items.get(0).keyboardLanguages)
-                && searchResults != null && searchResults!!.isAttachedToWindow) {
-            val shown = items.get(0); val next = value.get(0)
-            val unchanged = snapshots.get(0).equals(snapshot(next))
-            shown.tiles = next.tiles; shown.loading = next.loading; shown.detail = next.detail; shown.meta = next.meta; shown.actions = next.actions
-            shown.value = next.value
-            if (searchPane != null) searchPane!!.query(next.value)
-            if (keyboardQuery != null && !keyboardQuery.toString().equals(next.value)) { keyboardQuery!!.setLength(0); keyboardQuery!!.append(next.value) }
-            restore = if (restoreKey == null) "" else restoreKey
-            if (!unchanged) results(searchResults!!, shown)
-            restoreSearchSelection()
-            snapshots = Collections.singletonList(snapshot(shown))
-            // A results card may have been replaced. Let the page restore it after the nested grid lays out;
-            // typing on the unchanged keyboard can keep its current focus immediately.
-            val focused: View? = searchResults!!.findFocus()
-            if (unchanged && focused != null && java.util.Objects.equals(restoreKey, focused.tag)) return true
-            val pageFocus: View? = if (searchPane == null) null else searchPane!!.findFocus()
-            return restoreKey == null || restoreKey.isEmpty() || restoreKey.startsWith(shown.key + ":") &&
-                    pageFocus != null && restoreKey.equals(pageFocus.tag)
+        // A provider answer replaces render values in the active composition. The keyboard and its focus survive.
+        val search = searchState
+        if (value.size == 1 && items.size == 1 && value[0].kind == Item.Kind.KEYBOARD && items[0].kind == Item.Kind.KEYBOARD
+                && value[0].key == items[0].key && search != null) {
+            restore = restoreKey ?: ""
+            items = ArrayList(value); snapshots = Collections.singletonList(snapshot(value[0]))
+            search.update(value[0])
+            return true
         }
-        if (value.size != 1 || value.get(0).kind != Item.Kind.KEYBOARD) { searchPane = null; searchResults = null; keyboardQuery = null }
+        if (value.size != 1 || value[0].kind != Item.Kind.KEYBOARD) searchState = null
         val previous = items
         val before = snapshots; val after: MutableList<List<Any?>> = ArrayList()
         for (item in value) after.add(snapshot(item))
@@ -121,6 +108,7 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
             }
             override fun areContentsTheSame(old: Int, next: Int): Boolean { return before.get(old).equals(after.get(next)) }
         }, false)
+        if (value.none { it.kind == Item.Kind.SPOTLIGHT }) { featured = null; spotlightState.value = null }
         items = ArrayList(value); snapshots = after
         restore = if (restoreKey == null) "" else restoreKey
         diff.dispatchUpdatesTo(this)
@@ -143,7 +131,7 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
     }
     private fun focused(key: String) {
         if (replacingFocus) return
-        if (key.equals(restore)) restore = ""
+        restore = "" // Any deliberate control focus supersedes a queued restore.
         listener.focused(key)
         if ((key.startsWith("next-page:") || key.startsWith("previous-page:")) && recycler != null) {
             val page: RecyclerView = recycler!!
@@ -155,21 +143,27 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
                 if (below > 0) page.smoothScrollBy(0, below)
             }
         }
-        val pane = searchPane
-        if (pane != null && pane.isAttachedToWindow) {
-            if (key.startsWith("keyboard:")) pane.lastKeyboard = key
-            else if (pane.item.tiles.stream().anyMatch { tile -> tile.key.equals(key) }) {
-                pane.lastResult = key
-                // Arrowing into results gives them the page. A tap, or focus restored on return, keeps the keyboard:
-                // a pointer has no other way to bring it back.
-                if (!pane.changing && arrowing) pane.keyboard(false, true, false)
-            }
-        }
+        searchState?.focused(key, arrowing)
     }
     /** Index of the block containing `key`, or -1. */
     fun position(key: String): Int {
         for (i in 0 until items.size) if (contains(items.get(i), key)) return i
         return -1
+    }
+    /** Lazy shelves may attach their previous card a frame later; a Left there must not enter the rail. */
+    fun leadingEdge(key: String): Boolean {
+        for (item in items) {
+            if (item.kind == Item.Kind.SHELF || item.kind == Item.Kind.GRID) {
+                val index = item.tiles.indexOfFirst { it.key == key }
+                if (index >= 0) return index == 0
+            }
+            if (item.kind == Item.Kind.EPISODES) {
+                val shelf = item.panes?.get(item.value)?.firstOrNull()
+                val index = shelf?.tiles?.indexOfFirst { it.key == key } ?: -1
+                if (index >= 0) return index == 0
+            }
+        }
+        return true
     }
     /** The first Home shelf belongs with the spotlight above it. */
     fun firstSpotlightShelf(key: String): Boolean {
@@ -237,8 +231,9 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
         Item.Kind.SPLIT, Item.Kind.LIST, Item.Kind.SOURCE, Item.Kind.FIELD, Item.Kind.SUBTITLE_PREVIEW,
         Item.Kind.DETAILS, Item.Kind.SERIES_HEADER, Item.Kind.INTRO, Item.Kind.TITLE,
         Item.Kind.CATALOGUE_HEADER, Item.Kind.HEADER, Item.Kind.PAGINATION,
-        Item.Kind.ACTIONS, Item.Kind.CHIPS, Item.Kind.MESSAGE, Item.Kind.NOTICE, Item.Kind.TEXT -> true
-        // Artwork shelves, the on-screen keyboard and player controls retain their existing custom parents.
+        Item.Kind.ACTIONS, Item.Kind.CHIPS, Item.Kind.MESSAGE, Item.Kind.NOTICE, Item.Kind.TEXT,
+        Item.Kind.SPOTLIGHT, Item.Kind.SHELF, Item.Kind.GRID, Item.Kind.EPISODES, Item.Kind.SKELETON, Item.Kind.LOADING, Item.Kind.KEYBOARD -> true
+        // The on-screen keyboard and subtitle renderer keep their platform integrations.
         else -> false
     }
 
@@ -272,7 +267,60 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
             Item.Kind.MESSAGE -> if (item.icon == 0 && item.actions.isEmpty()) {
                 val (title, detail) = item.title to item.detail
                 ({ TextBlocks.QuietMessage(title, detail, layout) })
-            } else null
+            } else {
+                val page = PageRows.Page(this::focused, restore)
+                ({ PageControls.Message(item, page, layout.start, layout.end) })
+            }
+            Item.Kind.NOTICE -> {
+                val page = PageRows.Page(this::focused, restore)
+                ({ PageControls.Notice(item, page, layout.start, layout.end) })
+            }
+            Item.Kind.ACTIONS -> {
+                val page = PageRows.Page(this::focused, restore)
+                ({ PageControls.Actions(item.actions, page, layout.start, layout.end, item.centered) })
+            }
+            Item.Kind.CHIPS -> {
+                val page = PageRows.Page(this::focused, restore)
+                ({ PageControls.Chips(item, page, layout) })
+            }
+            Item.Kind.PAGINATION -> {
+                val page = PageRows.Page(this::focused, restore)
+                ({ PageControls.Pagination(item, page, layout.start, layout.end) })
+            }
+            Item.Kind.DETAILS -> ({ TitleBlocks.Details(item, layout.start, layout.end, artwork) })
+            Item.Kind.SERIES_HEADER -> ({ TitleBlocks.SeriesHeader(item, layout.start, layout.end, artwork) })
+            Item.Kind.INTRO -> ({ TitleBlocks.Intro(item, layout.start, layout.end) })
+            Item.Kind.TITLE -> ({ TitleBlocks.PageTitle(item, layout.start, layout.end) })
+            Item.Kind.CATALOGUE_HEADER -> ({ TitleBlocks.CatalogueHeader(item, layout.start, layout.end) })
+            Item.Kind.SPOTLIGHT -> {
+                val first = featured ?: items.firstOrNull { it.tiles.isNotEmpty() }?.tiles?.firstOrNull()
+                if (first != null && spotlightState.value == null) feature(first)
+                ({ TileBlocks.Spotlight(spotlightState.value, SPOTLIGHT_HEIGHT.dp, layout.start, layout.end, artwork, this::focused) })
+            }
+            Item.Kind.SHELF -> {
+                val cards = TileBlocks.Cards(PageRows.Page(this::focused, restore), artwork, this::feature, scrollMemory)
+                ({ TileBlocks.Shelf(item, cards, layout) })
+            }
+            Item.Kind.GRID -> {
+                val cards = TileBlocks.Cards(PageRows.Page(this::focused, restore), artwork, this::feature, scrollMemory)
+                ({ TileBlocks.GridRow(item, cards, layout.start, layout.end) })
+            }
+            Item.Kind.EPISODES -> {
+                val cards = TileBlocks.Cards(PageRows.Page(this::focused, restore), artwork, this::feature, scrollMemory)
+                ({ TileBlocks.Episodes(item, cards, layout, this::focused, { replacingFocus || restore.startsWith("episode:") }) { current ->
+                    val index = position(current.key)
+                    if (index >= 0) snapshots[index] = snapshot(current)
+                } })
+            }
+            Item.Kind.KEYBOARD -> {
+                val state = searchState ?: SearchBlocks.State(item, (scrollMemory.load("keyboard-page") as? android.os.Bundle)?.getInt("page") ?: 0, listener::searchKeyboardChanged).also {
+                    searchState = it; listener.searchKeyboardChanged(it.visible)
+                }
+                val cards = TileBlocks.Cards(PageRows.Page(this::focused, restore), artwork, this::feature, scrollMemory)
+                ({ SearchBlocks.Content(state, cards, layout.start, layout.end) })
+            }
+            Item.Kind.SKELETON -> ({ SkeletonBlocks.Block(item.title, layout.start, layout.end) })
+            Item.Kind.LOADING -> ({ SkeletonBlocks.Loading() })
             else -> null
         }
     }
@@ -283,24 +331,7 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
 
     private fun build(item: Item): View {
         when (item.kind) {
-            Item.Kind.SPOTLIGHT -> return spotlight(item)
-            Item.Kind.DETAILS -> return details(item)
-            Item.Kind.SERIES_HEADER -> return seriesHeader(item)
-            Item.Kind.INTRO -> return intro(item)
-            Item.Kind.TITLE -> return pageTitle(item)
-            Item.Kind.CATALOGUE_HEADER -> return catalogueHeader(item)
-            Item.Kind.PAGINATION -> return pagination(item)
-            Item.Kind.HEADER -> return if (listFollows(item)) sectionHeader(item.title, item.detail) else header(item.title, item.detail, 20)
-            Item.Kind.SHELF -> return shelf(item)
-            Item.Kind.GRID -> return grid(item)
-            Item.Kind.ACTIONS -> return actions(item, if (item.centered) Gravity.CENTER_HORIZONTAL else Gravity.START)
-            Item.Kind.CHIPS -> return chips(item)
-            Item.Kind.EPISODES -> return episodes(item)
             Item.Kind.KEYBOARD -> return keyboard(item)
-            Item.Kind.SKELETON -> return skeleton(item)
-            Item.Kind.MESSAGE -> return message(item)
-            Item.Kind.NOTICE -> return notice(item)
-            Item.Kind.TEXT -> return text(item)
             Item.Kind.SUBTITLE_PREVIEW -> return subtitlePreview(item)
             Item.Kind.LOADING -> return loading()
             else -> return loading()
@@ -334,76 +365,11 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
     private fun dp(value: Int): Int { return Tv.dp(context, value.toFloat()) }
     private fun gone(view: View, gone: Boolean) { view.visibility = if (gone) View.GONE else View.VISIBLE }
 
-    // Spotlight: the focused Home card's title, artwork and description. Clicking opens that card.
-    private inner class Spotlight {
-        val root: LinearLayout = column()
-        val logo = ImageView(context)
-        val title: TextView = Tv.onArtwork(Tv.oneLine(Tv.type(context, "", Tv.Type.HERO, R.color.tv_text)))
-        val meta: TextView = Tv.onArtwork(Tv.oneLine(Tv.type(context, "", Tv.Type.META, R.color.tv_text_on_artwork)))
-        val description: TextView = Tv.onArtwork(Tv.lines(Tv.text(context, "", 15f, R.color.tv_text), 2))
-        var key = ""
-        var shownHeadline = ""
-        var open: Runnable? = null
-        var shown: Title? = null
-
-        init {
-            root.gravity = Gravity.BOTTOM; root.setPadding(gutterStart, dp(4), gutterEnd, dp(2))
-            // A touch shortcut to the focused card. Clickable views take focus by default; this one must not, or Up
-            // from the first shelf lands on it invisibly.
-            root.tag = "spotlight"; root.isClickable = true; root.isFocusable = false
-            root.setOnClickListener { if (open != null) { focused(key); open!!.run() } }
-            logo.adjustViewBounds = true; logo.scaleType = ImageView.ScaleType.FIT_START; logo.maxHeight = dp(72); logo.maxWidth = dp(360)
-            logo.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            // A fixed height keeps the shelves still while the spotlight follows focus.
-            root.layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(SPOTLIGHT_HEIGHT))
-            // Wrapped widths: a MATCH_PARENT text view would ignore its maximum width.
-            title.maxWidth = dp(600); meta.maxWidth = dp(600); description.maxWidth = dp(520)
-            root.addView(logo, wrap()); root.addView(title, wrap())
-            root.addView(meta, wrap()); root.addView(description, wrap())
-            (title.layoutParams as LinearLayout.LayoutParams).topMargin = dp(4)
-            (logo.layoutParams as LinearLayout.LayoutParams).topMargin = dp(6)
-            meta.setPadding(0, dp(10), 0, 0); description.setPadding(0, dp(8), 0, 0)
-        }
-        fun show(media: Title?, tileKey: String, action: Runnable?, headline: String) {
-            key = tileKey; open = action
-            if (media == null || media === shown && headline.equals(shownHeadline)) return
-            shown = media; shownHeadline = headline
-            root.contentDescription = if (headline.isEmpty()) media.name else media.name + ". " + headline
-            title.text = media.name; gone(title, false)
-            val facts = metaLine(media, false); val type = kind(media)
-            val lead = if (headline.isEmpty()) type else headline
-            val line = android.text.SpannableStringBuilder(if (lead.isEmpty()) facts else if (facts.isEmpty()) lead else lead + "  ·  " + facts)
-            // A headline (new episodes) reads first, in white semibold, ahead of the usual facts.
-            if (!headline.isEmpty()) {
-                line.setSpan(FontSpan(Tv.Font.SEMIBOLD.get(context)), 0, lead.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                line.setSpan(android.text.style.ForegroundColorSpan(context.getColor(R.color.tv_text)), 0, lead.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-            meta.text = line; gone(meta, line.length == 0)
-            description.text = media.description; gone(description, media.description.isEmpty())
-            logo.setImageDrawable(null); gone(logo, true)
-            val logoUrl = media.logo
-            if (logoUrl != null) {
-                val wanted: Title = media
-                artwork.fetch(logoUrl, Artwork.LOGO, true) { bitmap ->
-                    if (shown !== wanted) return@fetch
-                    logo.setImageBitmap(bitmap); gone(logo, false); gone(title, true)
-                }
-            }
-            listener.featured(media)
-        }
-    }
-    private fun spotlight(item: Item): View {
-        val created = Spotlight()
-        spotlight = created
-        var first: Item.Tile? = featured
-        if (first == null) for (i in items) if (!i.tiles.isEmpty()) { first = i.tiles.get(0); break }
-        if (first != null) created.show(first.media, first.key, first.action, first.headline)
-        else if (item.media != null) created.show(item.media, "", null, "")
-        return created.root
-    }
     private fun feature(tile: Item.Tile) {
-        if (spotlight == null || tile.media == null) return
-        featured = tile; spotlight!!.show(tile.media, tile.key, tile.action, tile.headline)
+        if (tile.media == null || items.none { it.kind == Item.Kind.SPOTLIGHT }) return
+        featured = tile
+        spotlightState.value = TileBlocks.Featured(tile.media, tile.key, tile.action, tile.headline)
+        listener.featured(tile.media)
     }
     /** A typeface for part of a line; `TypefaceSpan(Typeface)` needs API 28. */
     private class FontSpan(private val typeface: android.graphics.Typeface) : android.text.style.MetricAffectingSpan() {
@@ -411,88 +377,8 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
         override fun updateMeasureState(paint: android.text.TextPaint) { paint.typeface = typeface }
     }
 
-    // Details header: logo or title, facts and description over the title's backdrop.
-    private fun details(item: Item): View {
-        val media: Title = item.media!!
-        val root = column(); root.gravity = Gravity.BOTTOM; root.minimumHeight = dp(220)
-        root.setPadding(gutterStart, dp(4), gutterEnd, dp(14))
-        val overline = Tv.onArtwork(Tv.oneLine(Tv.type(context, kind(media), Tv.Type.EYEBROW, R.color.tv_text_on_artwork)))
-        overline.isAllCaps = true; root.addView(overline)
-        val logo = ImageView(context)
-        logo.adjustViewBounds = true; logo.scaleType = ImageView.ScaleType.FIT_START; logo.maxHeight = dp(92); logo.maxWidth = dp(400)
-        logo.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO; logo.visibility = View.GONE
-        val logoParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        logoParams.topMargin = dp(10)
-        root.addView(logo, logoParams)
-        val title = Tv.onArtwork(Tv.lines(Tv.type(context, media.name, Tv.Type.HERO, R.color.tv_text), 2)); title.maxWidth = dp(640); title.setPadding(0, dp(8), 0, 0)
-        root.addView(title, wrap())
-        // Reveal the finished header together: text must never flash before a cold logo download.
-        val logoUrl = media.logo
-        if (logoUrl != null) {
-            root.visibility = View.INVISIBLE
-            artwork.titleLogo(logoUrl, { bitmap ->
-                logo.setImageBitmap(bitmap); gone(logo, false); gone(title, true); root.visibility = View.VISIBLE
-            }, { root.visibility = View.VISIBLE })
-        } else if (item.loading) root.visibility = View.INVISIBLE
-        var facts = metaLine(media)
-        if (!media.directors.isEmpty()) facts += (if (facts.isEmpty()) "" else "  ·  ") + "Directed by " + media.directors.subList(0, Math.min(2, media.directors.size)).joinToString(", ")
-        if (!facts.isEmpty()) {
-            val meta = Tv.onArtwork(Tv.oneLine(Tv.type(context, facts, Tv.Type.META, R.color.tv_text_on_artwork))); meta.maxWidth = dp(640); meta.setPadding(0, dp(12), 0, 0)
-            root.addView(meta, wrap())
-        }
-        if (!media.description.isEmpty()) {
-            val about = Tv.onArtwork(Tv.lines(Tv.text(context, media.description, 15f, R.color.tv_text), 3)); about.maxWidth = dp(560); about.setPadding(0, dp(8), 0, 0)
-            root.addView(about, wrap())
-        }
-        if (!item.detail.isEmpty()) {
-            val note = Tv.onArtwork(Tv.oneLine(Tv.text(context, item.detail, 13.5f, R.color.tv_warning))); note.setPadding(0, dp(8), 0, 0); root.addView(note)
-        }
-        root.layoutParams = fill()
-        return root
-    }
-
-    private fun intro(item: Item): View {
-        val root = column(); root.gravity = Gravity.CENTER_HORIZONTAL; root.setPadding(gutterStart, dp(28), gutterEnd, dp(18))
-        if (!item.meta.isEmpty()) {
-            val overline = Tv.heading(context, item.meta, 13f, R.color.tv_text_secondary); overline.letterSpacing = 0.12f; overline.isAllCaps = true
-            overline.gravity = Gravity.CENTER; root.addView(overline)
-        }
-        val title = Tv.bold(context, item.title, 38f); title.gravity = Gravity.CENTER; title.setPadding(0, dp(10), 0, 0); root.addView(title)
-        val detail = Tv.text(context, item.detail, 16f, R.color.tv_text_secondary); detail.gravity = Gravity.CENTER
-        detail.setLineSpacing(0f, 1.22f); detail.maxWidth = dp(620); detail.setPadding(0, dp(12), 0, 0); root.addView(detail, wrap())
-        root.layoutParams = fill()
-        return root
-    }
-
-    private fun pageTitle(item: Item): View {
-        val title = Tv.onArtwork(Tv.oneLine(Tv.type(context, item.title, Tv.Type.TITLE, R.color.tv_text))); title.setPadding(gutterStart, dp(6), gutterEnd, dp(4))
-        title.tag = item.key
-        title.layoutParams = fill()
-        return title
-    }
-    private fun seriesHeader(item: Item): View {
-        val root = FrameLayout(context); root.tag = item.key
-        root.setPadding(gutterStart, dp(12), gutterEnd, dp(16))
-        root.contentDescription = item.media!!.name
-        val fallback = Tv.onArtwork(Tv.oneLine(Tv.type(context, item.media!!.name, Tv.Type.TITLE, R.color.tv_text)))
-        root.addView(fallback, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER_VERTICAL))
-        val logo = ImageView(context); logo.tag = "series-logo"
-        logo.adjustViewBounds = true; logo.maxWidth = dp(360); logo.maxHeight = dp(52)
-        logo.scaleType = ImageView.ScaleType.FIT_START; logo.visibility = View.GONE
-        logo.contentDescription = item.media!!.name
-        root.addView(logo, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER_VERTICAL))
-        val logoUrl = item.media!!.logo
-        if (logoUrl != null) artwork.fetch(logoUrl, Artwork.LOGO, true) { bitmap ->
-            logo.setImageBitmap(bitmap); logo.visibility = View.VISIBLE; fallback.visibility = View.GONE
-            logo.alpha = 0f; logo.animate().alpha(1f).setDuration(160).start()
-        }
-        root.layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(80))
-        return root
-    }
     /** A shelf or grid heading: white, above artwork. */
     private fun header(title: String, detail: String?, topDp: Int): View { return header(title, detail, topDp, 18f, R.color.tv_text) }
-    /** A list section heading, as in tvOS Settings: smaller and grey, so the rows below lead. */
-    private fun sectionHeader(title: String, detail: String?): View { return header(title, detail, 22, 14f, R.color.tv_text_secondary) }
     private fun header(title: String, detail: String?, topDp: Int, sp: Float, color: Int): View {
         val row = LinearLayout(context); row.orientation = LinearLayout.HORIZONTAL; row.gravity = Gravity.BOTTOM
         // List headings line up with the labels inside the rows below them, as in tvOS Settings.
@@ -938,132 +824,6 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
         if (tile.key.equals(restore)) restoreLater(frame, tile.key)
         return frame
     }
-    // Buttons, chips and rows.
-    private fun catalogueHeader(item: Item): View {
-        val root = LinearLayout(context); root.orientation = LinearLayout.VERTICAL
-        root.clipChildren = false; root.clipToPadding = false
-        root.setPadding(gutterStart, dp(8), gutterEnd, dp(14))
-        val line = LinearLayout(context); line.gravity = Gravity.CENTER_VERTICAL
-        line.clipChildren = false; line.clipToPadding = false
-        val titles = LinearLayout(context); titles.orientation = LinearLayout.VERTICAL
-        titles.setPadding(0, 0, dp(20), 0)
-        val title = Tv.lines(Tv.type(context, item.title, Tv.Type.TITLE, R.color.tv_text), 2); titles.addView(title, fill())
-        val kind = Tv.oneLine(Tv.text(context, item.detail, 13f, R.color.tv_text_secondary))
-        kind.setPadding(0, dp(4), 0, 0); titles.addView(kind, fill())
-        line.addView(titles, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        root.addView(line)
-        root.layoutParams = fill(); return root
-    }
-
-    /** One compact footer; no paging controls between filters and posters. */
-    private fun pagination(item: Item): View {
-        val root = LinearLayout(context); root.gravity = Gravity.CENTER
-        root.clipChildren = false; root.clipToPadding = false
-        root.setPadding(gutterStart, dp(18), gutterEnd, dp(20))
-        val capsule = LinearLayout(context); capsule.gravity = Gravity.CENTER_VERTICAL
-        capsule.setPadding(dp(4), dp(4), dp(4), dp(4))
-        capsule.setBackgroundResource(R.drawable.tv_pagination)
-        capsule.clipChildren = false; capsule.clipToPadding = false
-        var previous: Item.Action? = null; var next: Item.Action? = null
-        for (action in item.actions) {
-            if (action.key.startsWith("previous-page:")) previous = action else next = action
-        }
-        for (position in 0 until 3) {
-            if (position == 1) {
-                val status = Tv.heading(context, item.title, 14f, R.color.tv_text_secondary)
-                status.gravity = Gravity.CENTER
-                capsule.addView(status, LinearLayout.LayoutParams(dp(92), dp(40)))
-            } else {
-                capsule.addView(pageButton(if (position == 0) previous else next, position == 0), LinearLayout.LayoutParams(dp(40), dp(40)))
-            }
-        }
-        root.addView(capsule); restoreControls(root, item)
-        root.layoutParams = fill(); return root
-    }
-
-    /** A round page arrow: a chevron in a circle, dimmed and inert where there is no page to go to. */
-    private fun pageButton(action: Item.Action?, previous: Boolean): View {
-        val button = FrameLayout(context)
-        button.setBackgroundResource(R.drawable.tv_button_round)
-        val chevron = Tv.icon(context, R.drawable.ic_tv_chevron, 18, if (action == null) R.color.tv_text_tertiary else R.color.tv_on_glass)
-        chevron.isDuplicateParentStateEnabled = true
-        if (previous) chevron.rotation = 180f
-        button.addView(chevron, FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
-        if (action == null) { button.alpha = 0.5f; button.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO; return button }
-        button.contentDescription = action.label; button.tooltipText = action.label
-        Tv.control(button, action.key, action.action, this::focused, Tv.LIFT_ICON, false)
-        return button
-    }
-
-    private fun restoreControls(root: ViewGroup, item: Item) {
-        for (action in item.actions) if (action.key.equals(restore)) {
-            val control: View? = root.findViewWithTag(action.key)
-            if (control != null) restoreLater(control, action.key)
-        }
-    }
-
-    private fun actions(item: Item, gravity: Int): View {
-        val scroll = HorizontalScrollView(context)
-        scroll.isHorizontalScrollBarEnabled = false; scroll.clipChildren = false; scroll.clipToPadding = false
-        scroll.isFillViewport = gravity == Gravity.CENTER_HORIZONTAL
-        val row = LinearLayout(context); row.orientation = LinearLayout.HORIZONTAL; row.gravity = gravity or Gravity.CENTER_VERTICAL
-        row.clipChildren = false; row.clipToPadding = false
-        row.setPadding(gutterStart, dp(10), gutterEnd, dp(10))
-        var icons = false
-        for (action in item.actions) icons = icons or (action.style == Item.Action.Style.ICON)
-        // tvOS names an icon-only button beneath it while it has focus.
-        val caption: FocusCaption? = if (icons) FocusCaption(context) else null
-        for (i in 0 until item.actions.size) {
-            val action = item.actions.get(i)
-            val button = Tv.button(context, action, this::focused)
-            if (i > 0) (button.layoutParams as LinearLayout.LayoutParams).leftMargin = dp(12)
-            row.addView(button)
-            bindCaption(button, action, caption, scroll)
-            if (action.key.equals(restore)) restoreLater(button, action.key)
-        }
-        val binding = Binding { next ->
-            if (next.kind != item.kind || !next.key.equals(item.key) || next.centered != item.centered || next.actions.size != item.actions.size) return@Binding false
-            for (i in 0 until next.actions.size)
-                if (!next.actions.get(i).key.equals(item.actions.get(i).key) || next.actions.get(i).style != item.actions.get(i).style) return@Binding false
-            for (i in 0 until next.actions.size) {
-                val action = next.actions.get(i)
-                val button = row.getChildAt(i) as FrameLayout
-                Tv.bindButton(button, action, this::focused); bindCaption(button, action, caption, scroll)
-                if (caption != null && button.hasFocus() && action.style == Item.Action.Style.ICON) caption.show(action.label, button, scroll)
-            }
-            true
-        }
-        scroll.addView(row, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        if (caption == null) { scroll.setTag(R.id.page_binding, binding); scroll.layoutParams = fill(); return scroll }
-        val column = LinearLayout(context); column.orientation = LinearLayout.VERTICAL
-        column.clipChildren = false; column.clipToPadding = false
-        column.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        column.addView(caption)
-        column.layoutParams = fill()
-        column.setTag(R.id.page_binding, binding)
-        return column
-    }
-    private fun bindCaption(button: View, action: Item.Action, caption: FocusCaption?, scroll: HorizontalScrollView) {
-        if (caption == null) return
-        val focus = button.onFocusChangeListener
-        button.setOnFocusChangeListener { v, has ->
-            focus.onFocusChange(v, has)
-            if (has && action.style == Item.Action.Style.ICON) caption.show(action.label, v, scroll)
-            else caption.hide(action.label)
-        }
-    }
-    private fun chips(item: Item): View {
-        val root = LinearLayout(context); root.orientation = LinearLayout.VERTICAL
-        root.clipChildren = false; root.clipToPadding = false
-        // Chips are buttons, not rows: their heading lines up with the page edge, like a shelf's.
-        if (!item.title.isEmpty()) root.addView(header(item.title, "", 14))
-        val buttons = actions(item, Gravity.START); root.addView(buttons)
-        root.setTag(R.id.page_binding, Binding { next -> next.title.equals(item.title) &&
-                (buttons.getTag(R.id.page_binding) as Binding).update(next) })
-        root.layoutParams = fill()
-        return root
-    }
-
     /** Focus changes just the episode shelf; the season strip stays attached and keeps its focus. */
     private fun episodes(item: Item): View {
         val root = LinearLayout(context); root.orientation = LinearLayout.VERTICAL
@@ -1146,82 +906,18 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
         return box
     }
 
-    // States.
-    private fun message(item: Item): View {
-        val quiet = item.icon == 0 && item.actions.isEmpty()
-        val root = column(); root.gravity = Gravity.CENTER_HORIZONTAL
-        root.setPadding(gutterStart, dp(if (quiet) 100 else 52), gutterEnd, dp(12))
-        if (item.icon != 0) {
-            val disc = FrameLayout(context); disc.setBackgroundResource(R.drawable.tv_icon_disc)
-            val icon = Tv.icon(context, item.icon, 26, R.color.tv_text)
-            disc.addView(icon, FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER))
-            root.addView(disc, LinearLayout.LayoutParams(dp(64), dp(64)))
-        }
-        val title = if (quiet) Tv.text(context, item.title, 20f, R.color.tv_text_secondary)
-                else Tv.heading(context, item.title, 22f, R.color.tv_text)
-        title.gravity = Gravity.CENTER; title.setPadding(0, if (quiet) 0 else dp(18), 0, 0)
-        root.addView(title, wrap())
-        if (!item.detail.isEmpty()) {
-            val detail = Tv.text(context, item.detail, if (quiet) 14f else 15f, if (quiet) R.color.tv_text_tertiary else R.color.tv_text_secondary); detail.gravity = Gravity.CENTER
-            detail.setLineSpacing(0f, 1.22f); detail.maxWidth = dp(if (quiet) 400 else 520); detail.setPadding(0, dp(8), 0, dp(8)); root.addView(detail, wrap())
-        }
-        if (!item.actions.isEmpty()) root.addView(actions(item, Gravity.CENTER_HORIZONTAL))
-        root.layoutParams = fill()
-        return root
-    }
-    private fun notice(item: Item): View {
-        val box = LinearLayout(context); box.orientation = LinearLayout.HORIZONTAL; box.gravity = Gravity.CENTER_VERTICAL
-        box.clipChildren = false; box.clipToPadding = false
-        box.setPadding(dp(18), dp(12), dp(8), dp(12))
-        box.addView(Tv.icon(context, if (item.icon == 0) R.drawable.ic_tv_info else item.icon, 22, R.color.tv_text))
-        val text = LinearLayout(context); text.orientation = LinearLayout.VERTICAL; text.setPadding(dp(14), 0, dp(12), 0)
-        text.addView(Tv.heading(context, item.title, 15.5f, R.color.tv_text))
-        if (!item.detail.isEmpty()) { val detail = Tv.lines(Tv.text(context, item.detail, 13.5f, R.color.tv_text_secondary), 3); detail.setPadding(0, dp(4), 0, 0); text.addView(detail) }
-        box.addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        if (!item.actions.isEmpty()) {
-            val inline = Item.actions(item.key + ":actions", item.actions)
-            val buttons = actions(inline, Gravity.END)
-            buttons.setPadding(0, 0, 0, 0)
-            ((buttons as ViewGroup).getChildAt(0) as ViewGroup).setPadding(0, dp(4), dp(8), dp(4))
-            box.addView(buttons, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        }
-        // The notice is glass; its buttons lift outside it, so they sit on the same blur rather than inside its clip.
-        val glass = GlassView.surface(context); glass.setBackgroundResource(R.drawable.tv_notice)
-        val wrap = FrameLayout(context); wrap.clipChildren = false; wrap.clipToPadding = false
-        wrap.setPadding(gutterStart, dp(14), gutterEnd, dp(6))
-        wrap.addView(glass, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        wrap.addView(box, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        wrap.layoutParams = fill()
-        return wrap
-    }
-    private fun text(item: Item): View {
-        val root = column(); root.setPadding(gutterStart + (if (inList(item)) dp(ROW_INSET) else 0), dp(14), gutterEnd, dp(2))
-        if (!item.title.isEmpty()) {
-            val title = Tv.onArtwork(Tv.heading(context, item.title, 12f, R.color.tv_text_tertiary)); title.letterSpacing = 0.1f; title.isAllCaps = true
-            root.addView(title)
-        }
-        val detail = Tv.onArtwork(Tv.text(context, item.detail, 15f, R.color.tv_text_secondary)); detail.setLineSpacing(0f, 1.22f); detail.setPadding(0, dp(5), 0, 0)
-        detail.setTextIsSelectable(false); root.addView(detail)
-        root.layoutParams = fill()
-        return root
-    }
+    internal var searchState: SearchBlocks.State? = null
+        private set
     private var searchPane: SearchPane? = null
     /** Left from the grid's leading column brings the editing column back. */
     private var arrowing = false
     /** Set while the activity dispatches a remote arrow key, so only a remote move into results hides the keyboard. */
     fun arrowing(value: Boolean) { arrowing = value }
     fun searchKey(code: Int): Boolean {
-        return searchPane != null && searchPane!!.isAttachedToWindow && searchPane!!.key(code)
+        return searchState?.key(code) == true
     }
     /** A transition's neutral focus holder represents the key/film it will hand focus to when layout settles. */
-    fun persistentFocus(key: String): String {
-        val pane = searchPane
-        if (pane != null && key.equals("search-results")) {
-            if (pane.visible) return pane.lastKeyboard
-            if (pane.grid != null && !pane.lastResult.isEmpty()) return pane.lastResult
-        }
-        return key
-    }
+    fun persistentFocus(key: String): String = searchState?.persistent(key) ?: key
     private fun restoreSearchSelection() {
         val pane = searchPane
         if (pane == null || pane.grid == null) return
@@ -1239,7 +935,7 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
         }
     }
     fun toggleSearchKeyboard() {
-        if (searchPane != null && searchPane!!.isAttachedToWindow) searchPane!!.keyboard(!searchPane!!.visible, true, true)
+        searchState?.toggle()
     }
     private fun keyboard(item: Item): View {
         val root = SearchPane(item); searchPane = root
@@ -1985,7 +1681,7 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
         fun metaLine(title: Title): String {
             return metaLine(title, true)
         }
-        private fun metaLine(title: Title, year: Boolean): String {
+        fun metaLine(title: Title, year: Boolean): String {
             val parts: MutableList<String> = ArrayList()
             if (year && !title.releaseInfo.isEmpty()) parts.add(title.releaseInfo)
             if (!title.genres.isEmpty()) parts.add(title.genres.subList(0, Math.min(3, title.genres.size)).joinToString(", "))

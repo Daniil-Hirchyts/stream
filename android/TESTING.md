@@ -34,7 +34,7 @@ Screen-state and Compose migration checks (JVM, no public providers):
   --tests tv.stream.app.BrowseViewModelTest --tests tv.stream.app.NavigationViewModelTest \
   --tests tv.stream.app.PlaybackViewModelTest --tests tv.stream.app.KotlinModelSnapshotsTest \
   --tests tv.stream.app.PlaybackPreparationTest --tests tv.stream.app.PageSnapshotTest \
-  --tests tv.stream.app.ui.ComposePageBlockTest --tests tv.stream.app.ui.ComposePlayerControlsTest \
+  --tests tv.stream.app.ui.PageControlsTest --tests tv.stream.app.ui.ComposePlayerControlsTest \
   --tests tv.stream.app.ui.PageRowsTest --tests tv.stream.app.SubtitleOffersTest)
 ```
 

@@ -191,11 +191,10 @@ class UiSnapshotTest {
     }
 
     /**
-     * The player overlay (Stream's override of the shared player's layers) over a real film still: playing with the
-     * controls up, then the error alert and the options menu. Inflated directly with the same views WatchActivity uses.
+     * The declarative player overlay over a real film still: playing with controls up, then the error alert and options menu.
      */
     @Test @Throws(Exception::class) fun playerOverlay() {
-        val host: android.app.Activity = Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+        val host: android.app.Activity = Robolectric.buildActivity(androidx.activity.ComponentActivity::class.java).setup().visible().get()
         host.setTheme(R.style.TvTheme)
         val root = android.widget.FrameLayout(host)
         root.setBackgroundColor(0xFF000000.toInt())
@@ -210,27 +209,17 @@ class UiSnapshotTest {
         android.view.LayoutInflater.from(host).inflate(R.layout.playback_layers, root, true)
         host.setContentView(root)
         root.findViewById<View>(R.id.controls).setVisibility(View.VISIBLE)
-        root.findViewById<android.widget.TextView>(R.id.controls_title).setText("Night of the Living Dead")
-        val details: android.widget.TextView = root.findViewById(R.id.controls_details)
-        details.setText("English  ·  Subtitles: English"); details.setVisibility(View.VISIBLE)
-        val centre: android.widget.ImageView = root.findViewById(R.id.center_icon)
-        centre.setImageResource(tv.stream.playback.R.drawable.ic_pause); centre.setVisibility(View.VISIBLE)
-        val progress: android.widget.SeekBar = root.findViewById(R.id.progress)
-        progress.setProgress(428); progress.setSecondaryProgress(520)
-        root.findViewById<android.widget.TextView>(R.id.elapsed).setText("41:02")
-        root.findViewById<android.widget.TextView>(R.id.remaining).setText("−55:21")
-        for (id in intArrayOf(R.id.control_options, R.id.control_stop, R.id.center_icon)) {
-            val control = root.findViewById<View>(id); control.setFocusable(true); control.setClickable(true)
-        }
+        val controls = tv.stream.app.ui.ComposePlayerControls.install(root.findViewById(R.id.controls),
+                kotlinx.coroutines.flow.MutableStateFlow(PlayerControlsState("Night of the Living Dead")), {})
+        controls.render(tv.stream.playback.ControlsOverlay.State(progress = 428, buffered = 520, elapsed = "41:02", remaining = "−55:21", playing = true))
+        val layers = tv.stream.app.ui.ComposePlayerLayers(host, false, {}); layers.install()
         settle(1500)
         snap("15-player", host.getWindow())
         root.findViewById<View>(R.id.controls).setVisibility(View.GONE)
         root.findViewById<View>(R.id.error).setVisibility(View.VISIBLE)
-        root.findViewById<android.widget.TextView>(R.id.error_title).setText("This source didn't open")
-        root.findViewById<android.widget.TextView>(R.id.error_message).setText("The provider didn't answer in time. Try again, or choose another source.")
-        root.findViewById<View>(R.id.error_sources).setVisibility(View.VISIBLE)
-        for (id in intArrayOf(R.id.error_retry, R.id.error_sources, R.id.error_close)) root.findViewById<View>(id).setFocusable(true)
-        root.findViewById<View>(R.id.error_retry).requestFocusFromTouch()
+        layers.render(tv.stream.playback.PlayerScreen.LayerState(errorTitle = "This source didn't open",
+            errorMessage = "The provider didn't answer in time. Try again, or choose another source.", retry = true, sources = true))
+        layers.request(R.id.error_retry)
         settle(800)
         snap("15b-player-error", host.getWindow())
         // The options menu, built with the same row layout the player's menu inflates; opening it hides the controls.

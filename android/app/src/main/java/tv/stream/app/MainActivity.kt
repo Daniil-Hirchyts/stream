@@ -168,6 +168,9 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         })
         // Parents finish recording their focused descendant after this callback returns.
         list.viewTreeObserver.addOnGlobalFocusChangeListener { old, now ->
+            // A deliberate toolbar/rail choice while a provider is loading cancels automatic content focus.
+            if (waitingForContentFocus && now != null && (now === pageBack || topBar.hasFocus() || pageTools.hasFocus()))
+                finishContentFocusWait()
             // The initial focus is assigned before contentReady. Capture it when it leaves the page as well,
             // so the rail and toolbar return to that control rather than the first filter or row.
             if (contentReady && !stack.isEmpty() && shownRoute === route() && insidePage(old) && old!!.tag is String)
@@ -662,8 +665,10 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         val mine = generation
         afterPageLayout {
             if (mine != generation || stopped) return@afterPageLayout
+            val viewerMoved = !waitingForContentFocus && (pageBack.hasFocus() || topBar.hasFocus() || pageTools.hasFocus()
+                    || list.hasFocus() && route.focus.isNotEmpty() && route.focus != target)
             finishContentFocusWait()
-            if (preserveNavigation) { contentReady = true; return@afterPageLayout }
+            if (preserveNavigation || viewerMoved) { contentReady = true; return@afterPageLayout }
             val found: View? = if (target.isEmpty()) null else pageTools.findViewWithTag(target)
             if (found != null) found.requestFocus()
             else if (PageFocus.request(list, target)) Unit
@@ -1040,7 +1045,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         val beforeKey = before?.tag
         val stayed = { currentFocus === before && currentFocus?.tag == beforeKey }
         if (move && event.keyCode == KeyEvent.KEYCODE_DPAD_UP && before != null
-                && before.tag.toString().startsWith("season:") && returnToSeriesOverview()) return true
+                && before.tag?.toString()?.startsWith("season:") == true && returnToSeriesOverview()) return true
         if (move && event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && (before === list || before == null) && services != null && !hiddenNavigation()) {
             focusNavigation()
             if (waitingForContentFocus) finishContentFocusWait()
@@ -1064,6 +1069,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
 
     /** Do not steal a shelf's asynchronous scroll to a previous off-screen card. */
     private fun leftContentEdge(focused: View?): Boolean {
+        if (!adapter.leadingEdge(focused?.tag as? String ?: "")) return false
         var child: View? = focused
         while (child != null && child !== list) {
             if (child.parent is PageAdapter.GridRow
