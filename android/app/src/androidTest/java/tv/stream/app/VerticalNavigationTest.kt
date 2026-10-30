@@ -90,7 +90,7 @@ class VerticalNavigationTest : AppHarness() {
         browse!!.onActivity { a -> assertTrue(a.findViewById<View>(R.id.top_bar).findViewWithTag<View>("nav:Library").getGlobalVisibleRect(library)) }
         hover(library.centerX().toFloat(), library.centerY().toFloat())
         AppHarness.waitUntil("the row under the pointer grows like a focused round control", 2000) {
-            hovered("nav:Library") && Math.abs(rowScale("nav:Library") - Tv.LIFT_ICON) < .01f }
+            hovered("nav:Library") && Math.abs(rowScale("nav:Library") - NavigationRail.LIFT_WRAPPED) < .01f }
         shot("60-rail-hover")
         browse!!.onActivity { a -> assertEquals("Hover never moves focus", focus.get(), if (a.currentFocus == null) null else a.currentFocus!!.tag) }
         assertEquals("Hover never unwraps the rail", NavigationRail.State.WRAPPED, railState())
@@ -100,12 +100,12 @@ class VerticalNavigationTest : AppHarness() {
         hover(dp(700).toFloat(), dp(300).toFloat())
         AppHarness.waitUntil("the rail settles when the pointer leaves", 2000) { !hovered("nav:Browse") && Math.abs(rowScale("nav:Browse") - 1f) < .01f }
         key(KeyEvent.KEYCODE_DPAD_LEFT); wrappedFocus("nav:Home", "61-rail-focus-wrapped")
-        AppHarness.waitUntil("focus grows the wrapped circle", 2000) { Math.abs(rowScale("nav:Home") - Tv.LIFT_ICON) < .01f }
+        AppHarness.waitUntil("focus grows the wrapped circle", 2000) { Math.abs(rowScale("nav:Home") - NavigationRail.LIFT_WRAPPED) < .01f }
         key(KeyEvent.KEYCODE_DPAD_DOWN)
-        AppHarness.waitUntil("focus travels: the next row grows, the last settles", 2000) { Math.abs(rowScale("nav:Browse") - Tv.LIFT_ICON) < .01f
+        AppHarness.waitUntil("focus travels: the next row grows, the last settles", 2000) { Math.abs(rowScale("nav:Browse") - NavigationRail.LIFT_WRAPPED) < .01f
                 && Math.abs(rowScale("nav:Home") - 1f) < .01f }
         key(KeyEvent.KEYCODE_DPAD_LEFT); expanded("nav:Browse", "62-rail-focus-expanded")
-        AppHarness.waitUntil("labelled rows grow like buttons, inside the popup", 2000) { Math.abs(rowScale("nav:Browse") - Tv.LIFT_BUTTON) < .01f }
+        AppHarness.waitUntil("labelled rows stay at the popup's even inset", 2000) { Math.abs(rowScale("nav:Browse") - 1f) < .01f }
         browse!!.onActivity { a ->
             val row = Rect(); val popup = Rect()
             val focused = a.findViewById<View>(R.id.top_bar).findViewWithTag<View>("nav:Browse")

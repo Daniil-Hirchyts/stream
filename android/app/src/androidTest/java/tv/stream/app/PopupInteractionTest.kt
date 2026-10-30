@@ -44,7 +44,14 @@ class PopupInteractionTest : AppHarness() {
         instrumentation.runOnMainSync {
             assertEquals(0, dialog.window!!.attributes.flags and (WindowManager.LayoutParams.FLAG_DIM_BEHIND or WindowManager.LayoutParams.FLAG_BLUR_BEHIND))
             val root = dialog.window!!.decorView.findViewWithTag<ViewGroup>("popup-root")
-            assertEquals("No page screenshot or tint layer", 1, root.childCount.toLong())
+            // Only the panel and, over the real opener, the small copy of it the menu grows from and tucks back behind.
+            val screen = dialog.window!!.decorView
+            for (i in 0 until root.childCount) {
+                val child = root.getChildAt(i)
+                if (child.tag == "popup-panel") continue
+                assertEquals("No page screenshot or tint layer", "popup-origin", child.tag)
+                assertTrue("The opener's copy is not a page screenshot", child.width * child.height < screen.width * screen.height / 8)
+            }
             val rows: ViewGroup = popup.get().buttons
             assertEquals("Only the two actions", 2, rows.childCount.toLong())
             assertTrue("Action rows include meaningful icons", (rows.getChildAt(1) as ViewGroup).getChildAt(0) is ImageView)
@@ -84,8 +91,9 @@ class PopupInteractionTest : AppHarness() {
                 val menu = Tv.choices(activity, "Episode options", arrayOf("Play", "Choose source", "Mark watched"), Consumer { i -> }, null)
                 popup.set(menu); menu.show()
                 val panel = menu.dialog.window!!.decorView.findViewWithTag<View>("popup-panel")
-                panel.viewTreeObserver.addOnPreDrawListener(ViewTreeObserver.OnPreDrawListener {
-                    val rect = Rect(); if (panel.isShown && panel.getGlobalVisibleRect(rect)) frames.add(rect); true
+                // Painted frames only: the dialog's first pre-draw pass sets the opening bounds and is never drawn.
+                panel.viewTreeObserver.addOnDrawListener(ViewTreeObserver.OnDrawListener {
+                    val rect = Rect(); if (panel.isShown && panel.getGlobalVisibleRect(rect)) frames.add(rect)
                 })
             }, Consumer { key -> }, 1f, false)
         }

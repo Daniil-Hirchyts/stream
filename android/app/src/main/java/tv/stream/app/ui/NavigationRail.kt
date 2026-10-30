@@ -39,7 +39,7 @@ class NavigationRail(context: Context, attrs: AttributeSet?) : FrameLayout(conte
     }
     fun state(): State { return state }
     /** Wrapped icons grow slightly; expanded rows stay inside the popup's even inset. */
-    fun lift(): Double { return (if (state == State.EXPANDED) 1f else 1.08f).toDouble() }
+    fun lift(): Double { return (if (state == State.EXPANDED) 1f else LIFT_WRAPPED).toDouble() }
     fun expandedWidth(): Int { return expandedWidth }
     /** The 44 dp row exactly matches its width when wrapped; text never participates in icon geometry. */
     fun decorate(row: FrameLayout, icon: Int, label: String) {
@@ -130,6 +130,7 @@ class NavigationRail(context: Context, attrs: AttributeSet?) : FrameLayout(conte
     }
 
     companion object {
+        const val LIFT_WRAPPED = 1.08f
         const val COLLAPSED = 56
         const val EXPANDED = 144
         const val CONTENT_START = 104
