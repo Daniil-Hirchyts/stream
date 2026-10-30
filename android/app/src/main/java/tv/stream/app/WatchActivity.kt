@@ -122,7 +122,6 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
     private var discoveryVersion = -1
 
     companion object {
-        private const val MAX_OFFERS = 40
         /** Public torrents: trackers answer within seconds, a cold DHT lookup can take most of a minute. */
         private const val METADATA_MS: Long = 60_000
         /** The player's buttons, which grow while focused or under the pointer, like the app's own controls. */
@@ -136,21 +135,6 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
                     .putExtra("type", title.type).putExtra("name", title.name).putExtra("logo", title.logo).putExtra("video", video).putExtra("source", sourceKey)
         }
         private fun headerIndex(id: Int): Int { for (i in 0 until HEADER.size) if (HEADER[i] == id) return i; return -1 }
-        private fun sameLanguage(one: String?, two: String?): Boolean {
-            if (one == null || two == null || two.isEmpty()) return false
-            try { return java.util.Locale(one).getISO3Language().equals(java.util.Locale(two).getISO3Language()) } catch (e: Exception) { return one.equals(two, ignoreCase = true) }
-        }
-        private fun numbered(name: String, seen: MutableMap<String, Int>): String {
-            val count = if (seen.containsKey(name)) seen[name]!! + 1 else 1; seen[name] = count
-            return if (count > 1) name + " " + count else name
-        }
-        private fun languageName(code: String): String {
-            val name = SetupScreens.languageName(code)
-            if (!name.equals(code)) return name
-            try { val display = java.util.Locale.forLanguageTag(code).getDisplayLanguage(java.util.Locale.ENGLISH); if (!display.isEmpty()) return display } catch (ignored: Exception) { /* provider's own code */ }
-            return code
-        }
-        private fun mime(url: String): String { var lower = Uri.parse(url).path; lower = if (lower == null) "" else lower.lowercase(java.util.Locale.ROOT); return if (lower.endsWith(".srt")) "application/x-subrip" else if (lower.endsWith(".ass") || lower.endsWith(".ssa")) "text/x-ssa" else "text/vtt" }
         /** A source's own name, on one line, under the title while it opens. */
         private fun sourceLabel(source: MediaSource?): String { return if (source == null) "Import" else source.name.replace('\n', ' ').trim { it <= ' ' } }
     }
@@ -291,7 +275,7 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
             override fun sources(page: Tv.Alert) { populateSources(page, true) }
             override fun offers(): List<PlayerMenus.SubtitleOffer> {
                 val result: MutableList<PlayerMenus.SubtitleOffer> = ArrayList()
-                for (offer in unloadedOffers()) result.add(PlayerMenus.SubtitleOffer(languageName(offer.language), Runnable { attachSubtitles(offer, true) }))
+                for (offer in unloadedOffers()) result.add(PlayerMenus.SubtitleOffer(SubtitleOffers.languageName(offer.language), Runnable { attachSubtitles(offer, true) }))
                 return result
             }
             override fun saveStyle(setting: SubtitleStyle.Setting, value: String) {
@@ -521,7 +505,7 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
                         val later = subtitleOffers(source, wanted, request)
                         main.post { if (current(mine) && !later.isEmpty()) {
                             subtitleOffers = later; screen!!.refreshMenu()
-                            if (!subtitlesOff) for (offer in later) if (sameLanguage(offer.language, wanted)) { attachSubtitles(offer, false); break }
+                            if (!subtitlesOff) for (offer in later) if (SubtitleOffers.sameLanguage(offer.language, wanted)) { attachSubtitles(offer, false); break }
                         } }
                     }
                 }
@@ -558,19 +542,12 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         if (source.videoHash != null) hints["videoHash"] = source.videoHash!!
         if (source.videoSize > 0) hints["videoSize"] = java.lang.Long.toString(source.videoSize)
         try { advertised.addAll(services!!.addons.subtitles(title!!.type, video!!, hints, request).items) } catch (ignored: Exception) { /* optional subtitles never stop video */ }
-        Collections.sort(advertised, java.util.Comparator.comparingInt<SubtitleSource> { s -> if (sameLanguage(s.language, wanted)) 0 else 1 })
-        val unique: MutableList<SubtitleSource> = ArrayList(); val urls: MutableSet<String> = java.util.HashSet()
-        for (s in advertised) if (unique.size < MAX_OFFERS && urls.add(s.url)) unique.add(s)
-        return Collections.unmodifiableList(unique)
+        return SubtitleOffers.rank(advertised, wanted)
     }
     /** Offers not already loaded as tracks of the current media. */
     private fun unloadedOffers(): List<SubtitleSource> {
-        if (playing == null) return Collections.emptyList()
-        val loaded: MutableSet<String> = java.util.HashSet()
-        for (s in playing!!.subtitles) loaded.add(s.url)
-        val result: MutableList<SubtitleSource> = ArrayList()
-        for (s in subtitleOffers) if (!loaded.contains(s.url) && !attachedSubtitles.contains(s.url) && !session!!.hasExternalSubtitle(s.url)) result.add(s)
-        return result
+        val media = playing ?: return Collections.emptyList()
+        return SubtitleOffers.unloaded(subtitleOffers, media.subtitles.map { it.url }, attachedSubtitles) { session!!.hasExternalSubtitle(it) }
     }
     /**
      * The add-ons' subtitles not loaded yet, listed on the player's Subtitles page after the loaded tracks, so every
@@ -579,21 +556,17 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
     override fun subtitleItems(): List<MenuPanel.Item> {
         val items: MutableList<MenuPanel.Item> = ArrayList()
         if (session == null || !session!!.isLoaded()) return items
-        // Numbered after the tracks already loaded, as they will be named once added.
-        val seen: MutableMap<String, Int> = java.util.HashMap()
-        if (playing != null) for (s in playing!!.subtitles) numbered(languageName(s.language), seen)
-        for (offer in unloadedOffers()) {
-            val name = languageName(offer.language)
-            items.add(MenuPanel.Item.choice(numbered(name, seen), "Download", false, Runnable { addSubtitles(offer, name) }))
-        }
+        val offers = unloadedOffers()
+        val names = SubtitleOffers.names(playing?.subtitles.orEmpty().map { it.language }, offers)
+        for ((i, offer) in offers.withIndex())
+            items.add(MenuPanel.Item.choice(names[i], "Download", false, Runnable { attachSubtitles(offer, true) }))
         return items
     }
     private val attachedSubtitles: MutableSet<String> = java.util.HashSet()
-    private fun addSubtitles(chosen: SubtitleSource, name: String) { attachSubtitles(chosen, true) }
     private fun attachSubtitles(chosen: SubtitleSource, manual: Boolean) {
         if (playing == null || session == null || !visible || releasing || !attachedSubtitles.add(chosen.url)) return
-        session!!.attachExternalSubtitles(Collections.singletonList(SubtitleDownloader.Source(chosen.url, mime(chosen.url), chosen.language,
-                languageName(chosen.language))), Collections.emptyMap(), manual || session!!.subtitleSelectionRevision() == preferredSubtitleRevision,
+        session!!.attachExternalSubtitles(Collections.singletonList(SubtitleDownloader.Source(chosen.url, SubtitleOffers.mime(chosen.url), chosen.language,
+                SubtitleOffers.languageName(chosen.language))), Collections.emptyMap(), manual || session!!.subtitleSelectionRevision() == preferredSubtitleRevision,
                 java.util.function.Consumer<Boolean> { loaded -> attachedSubtitles.remove(chosen.url) })
         if (manual) { if (playerMenus != null) playerMenus!!.close() else screen!!.menu().close() }
     }
