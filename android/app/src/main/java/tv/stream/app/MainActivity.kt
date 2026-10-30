@@ -109,9 +109,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
     private var introHome = false
     private var introArtwork = false
     /** Where the next page enters from: 1 after opening a screen, -1 after Back, 0 for a tab (it rises instead). */
-    private var enterDirection = 0
-    private var pageEntering = false
-    private var pageEntrance: ViewTreeObserver.OnPreDrawListener? = null
+    private lateinit var entrance: tv.stream.app.ui.PageEntrance
 
     public override fun onCreate(saved: Bundle?) {
         super.onCreate(saved)
@@ -137,6 +135,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         artwork = Artwork(java.io.File(cacheDir, "artwork"))
         backdrop = Backdrop(artwork, findViewById(R.id.backdrop), findViewById(R.id.backdrop_back), findViewById(R.id.backdrop_soft), findViewById(R.id.backdrop_scrim))
         list = findViewById(R.id.page_rows)
+        entrance = tv.stream.app.ui.PageEntrance(list)
         pageLayout = PageAdapter.Layout(this, RecyclerView.VERTICAL, 40)
         list.layoutManager = pageLayout
         list.itemAnimator = null
@@ -376,7 +375,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         if (screen == "Search") return if (isPrimaryTab(searchReturnTab)) searchReturnTab else "Home"
         return if (isPrimaryTab(screen)) screen else "Home"
     }
-    override fun push(next: Route) { Sounds.play(Sounds.Sound.OPEN); rememberFocus(); routes.push(next); enterDirection = 1; render() }
+    override fun push(next: Route) { Sounds.play(Sounds.Sound.OPEN); rememberFocus(); routes.push(next); entrance.direction = 1; render() }
     override fun back() { onBackPressed() }
     override fun refresh() { rememberFocus(); render(false, true) }
     override fun changed() { resetLoadingContent = true; render() }
@@ -386,7 +385,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
     private fun render(restoreOnly: Boolean) { render(restoreOnly, false) }
     private fun render(restoreOnly: Boolean, refreshData: Boolean) {
         seriesTransition++
-        if (!pageEntering || shownRoute !== route()) {
+        if (!entrance.entering || shownRoute !== route()) {
             list.animate().cancel(); list.alpha = 1f; list.translationX = 0f; list.translationY = 0f
         }
         if (searchDebounce != null) { main.removeCallbacks(searchDebounce!!); searchDebounce = null }
@@ -415,7 +414,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         val kept: MutableSet<Route> = java.util.HashSet(stack); kept.addAll(tabRoots.values)
         retainedPages.keys.retainAll(kept); dirtyPages.retainAll(kept)
         // Restoring data/focus on a tab or Back is still navigation and needs the same visible entrance.
-        if (shownRoute !== route) preparePageEntrance(route)
+        if (shownRoute !== route) entrance.prepare { !stopped && route() === route }
         val retained = retainedPages[route]
         val dirty = dirtyPages.contains(route)
         if (shownRoute !== route && retained != null) show(retained)
@@ -442,44 +441,6 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
     private fun updateClock() {
         tv.stream.app.ui.Clock.apply(clock, clockFormat,
                 intro == null && (browseClockReady || !pageLoading) && !stack.isEmpty() && route().screen != "Starting")
-    }
-    /** Start with the new page's first laid-out frame, not while its worker is still fetching/building it. */
-    private fun preparePageEntrance(expected: Route) {
-        cancelPageEntrance()
-        val direction = enterDirection; enterDirection = 0
-        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) return
-        pageEntering = true; list.alpha = 0f
-        pageEntrance = ViewTreeObserver.OnPreDrawListener {
-            if (stopped || route() !== expected) { cancelPageEntrance(); return@OnPreDrawListener true }
-            if (adapter.itemCount == 0 || !hasVisiblePageBlock() || list.hasPendingAdapterUpdates()) return@OnPreDrawListener true
-            val current = pageEntrance
-            if (current != null) list.viewTreeObserver.removeOnPreDrawListener(current)
-            pageEntrance = null
-            enter(direction); true
-        }
-        list.viewTreeObserver.addOnPreDrawListener(pageEntrance!!)
-    }
-    private fun hasVisiblePageBlock(): Boolean {
-        for (i in 0 until list.childCount) {
-            val block = list.getChildAt(i) as ViewGroup
-            if (block.childCount > 0 && block.getChildAt(0).visibility == View.VISIBLE && block.height > 0) return true
-        }
-        return false
-    }
-    private fun cancelPageEntrance() {
-        if (pageEntrance != null) { list.viewTreeObserver.removeOnPreDrawListener(pageEntrance!!); pageEntrance = null }
-        pageEntering = false
-        list.animate().cancel(); list.alpha = 1f; list.translationX = 0f; list.translationY = 0f
-    }
-    /** A new page slides a little way in from the direction of travel and fades up. */
-    private fun enter(direction: Int) {
-        list.animate().cancel()
-        list.alpha = 0f
-        list.translationX = (direction * Tv.dp(this, 36f)).toFloat()
-        list.translationY = (if (direction == 0) Tv.dp(this, 16f) else 0).toFloat()
-        list.animate().alpha(1f).translationX(0f).translationY(0f).setDuration(280)
-                .setInterpolator(android.view.animation.DecelerateInterpolator(1.8f))
-                .withEndAction { pageEntering = false }.start()
     }
     @Throws(Exception::class)
     private fun build(route: Route, request: Cancellation, progress: Consumer<Page>, refreshData: Boolean, restoring: Boolean): Page {
@@ -886,7 +847,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         return true
     }
     private fun transitionSeriesLayout(change: Runnable, entering: Boolean) {
-        cancelPageEntrance()
+        entrance.cancel()
         val mine = ++seriesTransition; val current = route()
         list.animate().cancel()
         list.animate().alpha(0f).translationY(Tv.dp(this, if (entering) -8f else 8f).toFloat()).setDuration(100).withEndAction {
@@ -1044,7 +1005,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         if (intro != null) { finish(); return }
         if (topBar.hasFocus()) { Sounds.play(Sounds.Sound.BACK); dismissNavigation(); return }
         if (returnToSeriesOverview()) { Sounds.play(Sounds.Sound.BACK); return }
-        if (stack.size > 1) { Sounds.play(Sounds.Sound.BACK); cancelWork(); routes.pop(); enterDirection = -1; render(true); return }
+        if (stack.size > 1) { Sounds.play(Sounds.Sound.BACK); cancelWork(); routes.pop(); entrance.direction = -1; render(true); return }
         if (searchExpanded && !stack.isEmpty() && stack[0].screen == "Search") { Sounds.play(Sounds.Sound.BACK); closeSearch(); return }
         if (services != null && route().screen != "Home") { Sounds.play(Sounds.Sound.BACK); root("Home"); return }
         finish()
@@ -1130,7 +1091,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         return false
     }
 
-    override fun onStop() { rememberFocus(); super.onStop(); stopped = true; cancelPageEntrance(); cancelWork(); artwork.cancel(); if (services != null) services!!.preparation.leave() }
+    override fun onStop() { rememberFocus(); super.onStop(); stopped = true; entrance.cancel(); cancelWork(); artwork.cancel(); if (services != null) services!!.preparation.leave() }
     override fun onStart() {
         super.onStart()
         Sounds.get(this).refresh(this)
@@ -1138,7 +1099,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         if (returning) { if (services == null) initialize() else { render(true); checkNewEpisodes() } }
     }
     override fun onDestroy() {
-        cancelPageEntrance()
+        entrance.cancel()
         cancelWork()
         prompts.close()
         routes.detach()
