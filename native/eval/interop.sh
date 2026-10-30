@@ -1,6 +1,6 @@
 #!/bin/sh
 # Loopback interoperability between Stream's engine and independent implementations. Everything runs on 127.0.0.1
-# with generated content: no trackers, DHT, local discovery, port mapping, LAN peers or internet.
+# with generated content: no public trackers, DHT, local discovery, port mapping, LAN peers or internet.
 #
 #   native/eval/interop.sh            builds what it needs, prints one line per check and a summary
 #
@@ -9,26 +9,44 @@
 # seeds: Node's http/https (webseed.mjs). HTTPS uses a CA generated here and given to the engine as an explicit trust
 # root (STREAM_CA_FILE); verification is never disabled. Needs cargo, node, openssl, python3 and shasum.
 # CARGO_OFFLINE=1 builds the rqbit client from the local Cargo cache only.
+#
+# Optional independent clients, run only when found (./setup-tools.sh downloads them outside the repository and
+# STREAM_INTEROP_TOOLS names that directory; otherwise the PATH is searched), each with DHT, local discovery, peer
+# exchange, port mapping and public trackers off. Their rows are skipped, and say so, when they are absent:
+#   libtorrent 2.x (lt_peer.py): BEP 52, MSE/PE and its own uTP, in both directions; the independent check for pure v2.
+#   aria2: its own MSE/PE, v1 over TCP. Transmission: its own MSE/PE and libutp, v1. WebTorrent: v1 over TCP.
+#   http-server (npm): a web seed not written for these checks.
 set -eu
+# Select a subset when following up one client; avoid repeating an already checked matrix.
+clients=${STREAM_INTEROP_CLIENTS:-rqbit webseed libtorrent aria2 transmission webtorrent http-server}
+wants() { case " $clients " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 native="$here/.."
 work=$(mktemp -d "${TMPDIR:-/tmp}/stream-interop.XXXXXX")
 pids=""
+mkdir -p "$work/logs"
 cleanup() {
   for p in $pids; do kill "$p" 2>/dev/null || true; done
   wait 2>/dev/null || true
+  if [ -n "${STREAM_INTEROP_EVIDENCE:-}" ]; then
+    mkdir -p "$STREAM_INTEROP_EVIDENCE"
+    cp -R "$work/logs/." "$STREAM_INTEROP_EVIDENCE/"
+    echo "Interop logs retained in $STREAM_INTEROP_EVIDENCE"
+  fi
   rm -rf "$work"
 }
 trap cleanup EXIT INT TERM
 
+cargo=${CARGO:-$(command -v cargo || echo "$HOME/.cargo/bin/cargo")}
+[ -x "$cargo" ] || { echo "cargo is required" >&2; exit 1; }
 offline=
 [ "${CARGO_OFFLINE:-0}" = 1 ] && offline=--offline
 echo "Building stream-fixture and the fetch example..."
-(cd "$native/core" && cargo build --locked --release --bin stream-fixture --example fetch >/dev/null 2>&1)
+(cd "$native/core" && "$cargo" build --locked --release --bin stream-fixture --example fetch >"$work/logs/build-stream" 2>&1)
 fixture="$native/core/target/release/stream-fixture"
 fetch="$native/core/target/release/examples/fetch"
 rqbit=
-if (cd "$here/rqbit" && cargo build --locked --release $offline --bin interop >/dev/null 2>&1); then
+if wants rqbit && (cd "$here/rqbit" && "$cargo" build --locked --release $offline --bin interop >"$work/logs/build-rqbit" 2>&1); then
   rqbit="$here/rqbit/target/release/interop"
 else
   echo "librqbit client did not build; its rows are skipped."
@@ -42,9 +60,10 @@ row() { # row <PASS|FAIL|EXPECTED-FAIL|SKIP> <name> <detail>
     EXPECTED-FAIL) expected=$((expected + 1)) ;;
     SKIP) skipped=$((skipped + 1)) ;;
   esac
+  last_row=$1
   printf '%-14s %-58s %s\n' "$1" "$2" "$3"
 }
-sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+sha() { shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1; }
 # wait_line <file> <pattern>: the background process's ready line, within 30 s; fails if it exits first.
 wait_line() {
   i=0
@@ -74,7 +93,7 @@ check() {
     row PASS "$name" "$(head -n1 "$log" | cut -d' ' -f2-)"
   else
     row FAIL "$name" "$(cat "$log" "$log.err" | grep -v '^log:' | tail -n1 | cut -c1-160)"
-    [ -n "${STREAM_INTEROP_VERBOSE:-}" ] && tail -n 20 "$log.err" >&2
+    if [ -n "${STREAM_INTEROP_VERBOSE:-}" ]; then tail -n 20 "$log.err" >&2; fi
   fi
 }
 # check_refused <name> <reason> <log> <command...>: a download that must not succeed.
@@ -111,7 +130,8 @@ b_index() { json "$work/t/series-$1.json" '[f["index"] for f in d["files"] if f[
 # ---- Stream's seeder -> independent leecher ----
 "$fixture" seed --listen 127.0.0.1:0 \
   "$work/t/film-v1.torrent" "$work/media" "$work/t/film-v2.torrent" "$work/media" \
-  "$work/t/film-hybrid.torrent" "$work/media" "$work/t/series-hybrid.torrent" "$work/media" >"$work/logs/seeder.txt" 2>&1 &
+  "$work/t/film-hybrid.torrent" "$work/media" "$work/t/series-hybrid.torrent" "$work/media" \
+  "$work/t/series-v2.torrent" "$work/media" >"$work/logs/seeder.txt" 2>&1 &
 pids="$pids $!"
 wait_line "$work/logs/seeder.txt" "listening on port"
 ours="127.0.0.1:$(sed -n 's/^listening on port //p' "$work/logs/seeder.txt")"
@@ -174,6 +194,7 @@ else
 fi
 
 # ---- Independent web seeds (Node) -> Stream's leecher ----
+if wants webseed; then
 L="$work/logs"
 node "$here/webseed.mjs" "$work/media" >"$L/http" 2>&1 &
 pids="$pids $!"
@@ -212,6 +233,339 @@ if openssl req -x509 -newkey rsa:2048 -nodes -keyout "$work/tls/ca.key" -out "$w
     env STREAM_STALL_SECONDS=8 "$fetch" "$work/t/film-https.torrent" -
 else
   row SKIP "Node HTTPS web seed" "openssl could not make the test certificates"
+fi
+
+fi
+
+# ---- Optional independent clients ----
+tools=${STREAM_INTEROP_TOOLS:-}
+L="$work/logs"
+ours_port=${ours##*:}
+# seen <pattern> <log>: the other side recorded the feature, so the row can't pass over something else.
+seen() { grep -q "$1" "$2" 2>/dev/null; }
+stop() {
+  kill "$1" 2>/dev/null || true
+  wait "$1" 2>/dev/null || true
+  kept=
+  for pid in $pids; do [ "$pid" = "$1" ] || kept="$kept $pid"; done
+  pids=$kept
+}
+# confirm <name> <pattern> <log>: replaces the last row's PASS when the pattern (unless "any") is missing.
+confirm() {
+  [ "$last_row" = PASS ] && [ "$2" != any ] || return 0
+  seen "$2" "$3" || { row FAIL "$1" "the transfer worked but '$2' was not observed"; pass=$((pass - 1)); }
+}
+free_port() { python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'; }
+# Start in this shell, not in tracker_url's command substitution, so cleanup owns the process.
+node "$here/tracker.mjs" >"$L/tracker" 2>&1 &
+tracker_pid=$!
+pids="$pids $tracker_pid"
+wait_line "$L/tracker" "listening on"
+tracker_url() { echo "http://127.0.0.1:$(sed -n 's/^listening on //p' "$L/tracker")/peer/$1/announce"; }
+
+# ---- libtorrent ----
+lt_python=${STREAM_INTEROP_PYTHON:-}
+[ -z "$lt_python" ] && [ -x "$tools/lt-venv/bin/python" ] && lt_python="$tools/lt-venv/bin/python"
+[ -z "$lt_python" ] && lt_python=python3
+if wants libtorrent && lt_version=$("$lt_python" -I -c 'import libtorrent as l; print(l.__version__)' 2>/dev/null); then
+  echo "libtorrent $lt_version"
+  lt() { "$lt_python" -I -W ignore "$here/lt_peer.py" "$@"; }
+  n=0
+  # lt_fetch <name> <sha> <observed> <source> [lt_peer options]: Stream's seeder -> libtorrent.
+  lt_fetch() {
+    name=$1 want=$2 observed=$3 source=$4
+    shift 4
+    n=$((n + 1))
+    check "Stream seed -> libtorrent: $name" "$want" "$L/lf$n" lt fetch "$source" "$ours" "$work/lf$n" "$@"
+    confirm "Stream seed -> libtorrent: $name" "$observed" "$L/lf$n"
+  }
+  lt_fetch "v1, TCP, plaintext" "$film_sha" "TCP/plaintext" "$work/t/film-v1.torrent" --transport tcp --encryption disabled
+  lt_fetch "v1, TCP, MSE forced" "$film_sha" "TCP/RC4" "$work/t/film-v1.torrent" --transport tcp --encryption forced
+  lt_fetch "v1, uTP only" "$film_sha" "uTP/" "$work/t/film-v1.torrent" --transport utp --encryption disabled
+  lt_fetch "v1, uTP only, MSE forced" "$film_sha" "uTP/RC4" "$work/t/film-v1.torrent" --transport utp --encryption forced
+  lt_fetch "v1 magnet (BEP 9)" "$film_sha" any "magnet:?xt=urn:btih:$v1_hash"
+  lt_fetch "pure v2, TCP" "$film_sha" "TCP/" "$work/t/film-v2.torrent" --transport tcp
+  lt_fetch "pure v2, TCP, MSE forced" "$film_sha" "TCP/RC4" "$work/t/film-v2.torrent" --transport tcp --encryption forced
+  lt_fetch "pure v2, uTP only, MSE forced" "$film_sha" "uTP/RC4" "$work/t/film-v2.torrent" --transport utp --encryption forced
+  lt_fetch "pure v2 magnet (BEP 9, BEP 52 hash requests)" "$film_sha" any "magnet:?xt=urn:btmh:1220$v2_hash"
+  lt_fetch "hybrid, TCP" "$film_sha" "TCP/" "$work/t/film-hybrid.torrent" --transport tcp
+  lt_fetch "hybrid magnet btih+btmh" "$film_sha" any "magnet:?xt=urn:btih:$hy_v1&xt=urn:btmh:1220$hy_v2"
+  lt_fetch "multi-file pure v2, middle file" "$b_sha" any "$work/t/series-v2.torrent" --name b.bin
+  lt_fetch "multi-file hybrid, middle file" "$b_sha" any "$work/t/series-hybrid.torrent" --name b.bin
+
+  # lt_seed_row <name> <sha> <observed in the seed's log> <torrent> <seed options> -- <fetch env...> -- <source> [file]
+  lt_seed_row() {
+    name=$1 want=$2 observed=$3 torrent=$4
+    shift 4
+    seed_options=
+    while [ "$1" != -- ]; do seed_options="$seed_options $1"; shift; done
+    shift
+    fetch_env=
+    while [ "$1" != -- ]; do fetch_env="$fetch_env $1"; shift; done
+    shift
+    n=$((n + 1))
+    # shellcheck disable=SC2086 # Words, on purpose.
+    "$lt_python" -I -W ignore "$here/lt_peer.py" seed "$torrent" "$work/media" $seed_options >"$L/ls$n" 2>&1 &
+    seed_pid=$!
+    pids="$pids $seed_pid"
+    if ! wait_line "$L/ls$n" "seeding on"; then
+      row FAIL "libtorrent seed -> Stream: $name" "$(tail -n1 "$L/ls$n")"
+      stop "$seed_pid"
+      return
+    fi
+    address=$(sed -n 's/^seeding on //p' "$L/ls$n")
+    source=$1
+    file=${2:-0}
+    if [ "$observed" = refused ]; then
+      # shellcheck disable=SC2086
+      check_refused "libtorrent seed -> Stream: $name" "both sides insist: nothing may be transferred" "$L/lt$n" \
+        env STREAM_STALL_SECONDS=8 $fetch_env "$fetch" "$source" "$address" "$file"
+    else
+      # shellcheck disable=SC2086
+      check "libtorrent seed -> Stream: $name" "$want" "$L/lt$n" env $fetch_env "$fetch" "$source" "$address" "$file"
+      sleep 0.2
+      confirm "libtorrent seed -> Stream: $name" "$observed" "$L/ls$n"
+    fi
+    stop "$seed_pid"
+  }
+  T="$work/t"
+  lt_seed_row "v1, TCP, plaintext" "$film_sha" "TCP/plaintext" "$T/film-v1.torrent" --encryption disabled -- STREAM_ENCRYPTION=disabled -- "$T/film-v1.torrent"
+  lt_seed_row "v1, MSE offered, either accepted" "$film_sha" "TCP/" "$T/film-v1.torrent" -- -- "$T/film-v1.torrent"
+  lt_seed_row "v1, MSE forced both ways" "$film_sha" "TCP/RC4" "$T/film-v1.torrent" --encryption forced -- STREAM_ENCRYPTION=forced -- "$T/film-v1.torrent"
+  lt_seed_row "Stream forces MSE, seed refuses it" "" refused "$T/film-v1.torrent" --encryption disabled -- STREAM_ENCRYPTION=forced -- "$T/film-v1.torrent"
+  lt_seed_row "Stream refuses MSE, seed forces it" "" refused "$T/film-v1.torrent" --encryption forced -- STREAM_ENCRYPTION=disabled -- "$T/film-v1.torrent"
+  lt_seed_row "v1, uTP only" "$film_sha" "uTP/" "$T/film-v1.torrent" --transport utp --encryption disabled -- STREAM_TCP=0 STREAM_ENCRYPTION=disabled -- "$T/film-v1.torrent"
+  lt_seed_row "v1, uTP only, MSE forced" "$film_sha" "uTP/RC4" "$T/film-v1.torrent" --transport utp --encryption forced -- STREAM_TCP=0 STREAM_ENCRYPTION=forced -- "$T/film-v1.torrent"
+  lt_seed_row "v1 magnet (BEP 9)" "$film_sha" any "$T/film-v1.torrent" -- -- "magnet:?xt=urn:btih:$v1_hash"
+  lt_seed_row "pure v2, TCP, plaintext" "$film_sha" "TCP/plaintext" "$T/film-v2.torrent" --encryption disabled -- STREAM_ENCRYPTION=disabled -- "$T/film-v2.torrent"
+  lt_seed_row "pure v2, MSE forced" "$film_sha" "TCP/RC4" "$T/film-v2.torrent" --encryption forced -- STREAM_ENCRYPTION=forced -- "$T/film-v2.torrent"
+  lt_seed_row "pure v2, uTP only, MSE forced" "$film_sha" "uTP/RC4" "$T/film-v2.torrent" --transport utp --encryption forced -- STREAM_TCP=0 STREAM_ENCRYPTION=forced -- "$T/film-v2.torrent"
+  lt_seed_row "pure v2 magnet (BEP 9, BEP 52 hash requests)" "$film_sha" any "$T/film-v2.torrent" -- -- "magnet:?xt=urn:btmh:1220$v2_hash"
+  lt_seed_row "hybrid torrent" "$film_sha" any "$T/film-hybrid.torrent" -- -- "$T/film-hybrid.torrent"
+  lt_seed_row "hybrid magnet btih+btmh" "$film_sha" any "$T/film-hybrid.torrent" -- -- "magnet:?xt=urn:btih:$hy_v1&xt=urn:btmh:1220$hy_v2"
+  lt_seed_row "multi-file pure v2, middle file" "$b_sha" any "$T/series-v2.torrent" -- -- "$T/series-v2.torrent" "$(b_index v2)"
+  lt_seed_row "multi-file hybrid, middle file" "$b_sha" any "$T/series-hybrid.torrent" -- -- "$T/series-hybrid.torrent" "$(b_index hybrid)"
+else
+  row SKIP "libtorrent" "unavailable or not selected (setup-tools.sh, STREAM_INTEROP_PYTHON, STREAM_INTEROP_CLIENTS)"
+fi
+
+# ---- aria2 (shares no code with Stream or the others) ----
+aria2=
+[ -x "$tools/conda-env/bin/aria2c" ] && aria2="$tools/conda-env/bin/aria2c"
+[ -z "$aria2" ] && aria2=$(command -v aria2c || true)
+if wants aria2 && [ -n "$aria2" ]; then
+  echo "$("$aria2" --version | head -n1)"
+  aria_common="--no-conf=true --enable-dht=false --enable-dht6=false --enable-peer-exchange=false --bt-enable-lpd=false --disable-ipv6=true --file-allocation=none --console-log-level=warn --summary-interval=0 --bt-stop-timeout=45"
+  # aria_fetch <name> <sha> <torrent> <output file> [options]: Stream's seeder -> aria2, found through the loopback tracker.
+  aria_fetch() {
+    name=$1 want=$2 torrent=$3 out=$4
+    shift 4
+    n=$((n + 1))
+    d="$work/af$n"
+    mkdir -p "$d"
+    # shellcheck disable=SC2086
+    if "$aria2" $aria_common --seed-time=0 --listen-port="$(free_port)" --dir="$d" --bt-tracker="$(tracker_url "$ours_port")" "$@" "$torrent" >"$L/af$n" 2>&1 &&
+       [ "$(sha "$d/$out")" = "$want" ]; then
+      row PASS "Stream seed -> aria2: $name" "$(stat -f%z "$d/$out") bytes"
+    else
+      row FAIL "Stream seed -> aria2: $name" "$(tail -n1 "$L/af$n" | cut -c1-160)"
+    fi
+  }
+  n=0
+  aria_fetch "v1, TCP" "$film_sha" "$work/t/film-v1.torrent" film.bin
+  aria_fetch "v1, MSE forced" "$film_sha" "$work/t/film-v1.torrent" film.bin --bt-force-encryption=true
+  aria_fetch "hybrid (as v1)" "$film_sha" "$work/t/film-hybrid.torrent" film.bin
+  aria_fetch "hybrid (as v1), MSE forced" "$film_sha" "$work/t/film-hybrid.torrent" film.bin --bt-force-encryption=true
+
+  # aria_seed <torrent> [options]: seeds from the media directory; sets aria_address and aria_pid.
+  aria_seed() {
+    torrent=$1
+    shift
+    port=$(free_port)
+    n=$((n + 1))
+    # shellcheck disable=SC2086
+    "$aria2" $aria_common --seed-ratio=0.0 --seed-time=600 --check-integrity=true --bt-seed-unverified=false --listen-port="$port" --dir="$work/media" "$@" "$torrent" >"$L/as$n" 2>&1 &
+    aria_pid=$!
+    pids="$pids $aria_pid"
+    aria_address="127.0.0.1:$port"
+    sleep 1
+  }
+  aria_seed "$work/t/film-v1.torrent"
+  check "aria2 seed -> Stream: v1, TCP (MSE tried first)" "$film_sha" "$L/s1a" "$fetch" "$work/t/film-v1.torrent" "$aria_address"
+  check "aria2 seed -> Stream: v1, MSE disabled" "$film_sha" "$L/s1b" env STREAM_ENCRYPTION=disabled "$fetch" "$work/t/film-v1.torrent" "$aria_address"
+  check "aria2 seed -> Stream: v1 magnet (BEP 9)" "$film_sha" "$L/s1c" "$fetch" "magnet:?xt=urn:btih:$v1_hash" "$aria_address"
+  stop "$aria_pid"
+  aria_seed "$work/t/film-v1.torrent" --bt-force-encryption=true
+  check "aria2 seed -> Stream: v1, MSE forced both ways" "$film_sha" "$L/s2" env STREAM_ENCRYPTION=forced "$fetch" "$work/t/film-v1.torrent" "$aria_address"
+  check_refused "aria2 seed -> Stream: seed forces MSE, Stream refuses it" "both sides insist: nothing may be transferred" "$L/s3" \
+    env STREAM_ENCRYPTION=disabled STREAM_STALL_SECONDS=8 "$fetch" "$work/t/film-v1.torrent" "$aria_address"
+  stop "$aria_pid"
+  aria_seed "$work/t/film-hybrid.torrent"
+  check "aria2 seed -> Stream: hybrid torrent (as v1)" "$film_sha" "$L/s4" "$fetch" "$work/t/film-hybrid.torrent" "$aria_address"
+  stop "$aria_pid"
+  row SKIP "aria2: pure v2" "aria2 1.37 has no BEP 52"
+  row SKIP "aria2: uTP" "aria2 1.37 has no uTP"
+else
+  row SKIP "aria2" "not found or not selected (setup-tools.sh, STREAM_INTEROP_CLIENTS)"
+fi
+
+# ---- Transmission ----
+tr_daemon= tr_remote= tr_libs=
+if [ -d "$tools/tr/x/transmission-cli" ]; then
+  tr_daemon=$(find "$tools/tr/x/transmission-cli" -type f -name transmission-daemon | head -n1)
+  tr_remote=$(find "$tools/tr/x/transmission-cli" -type f -name transmission-remote | head -n1)
+  tr_libs=$(find "$tools/tr/x" -type d -name lib | tr '\n' ':')
+elif command -v transmission-daemon >/dev/null 2>&1 && command -v transmission-remote >/dev/null 2>&1; then
+  tr_daemon=$(command -v transmission-daemon)
+  tr_remote=$(command -v transmission-remote)
+fi
+if wants transmission && [ -n "$tr_daemon" ]; then
+  echo "$(env DYLD_FALLBACK_LIBRARY_PATH="$tr_libs" "$tr_daemon" --version 2>&1 | head -n1)"
+  # tr_start <directory> <options...>: a daemon on loopback; sets tr_rpc, tr_port and tr_pid.
+  n=0
+  tr_start() {
+    d=$1
+    shift
+    n=$((n + 1))
+    mkdir -p "$d" "$work/trc$n"
+    tr_rpc=$(free_port)
+    tr_port=$(free_port)
+    cat >"$work/trc$n/settings.json" <<EOF2
+{"pex-enabled": false, "dht-enabled": false, "lpd-enabled": false, "port-forwarding-enabled": false,
+ "blocklist-enabled": false, "rpc-bind-address": "127.0.0.1", "rpc-whitelist-enabled": true,
+ "rpc-whitelist": "127.0.0.1", "rpc-authentication-required": false, "rpc-host-whitelist-enabled": false,
+ "bind-address-ipv4": "127.0.0.1", "bind-address-ipv6": "::1", "default-trackers": "", "watch-dir-enabled": false,
+ "incomplete-dir-enabled": false, "speed-limit-up-enabled": false, "speed-limit-down-enabled": false,
+ "ratio-limit-enabled": false, "idle-seeding-limit-enabled": false, "message-level": 2}
+EOF2
+    # shellcheck disable=SC2086
+    env DYLD_FALLBACK_LIBRARY_PATH="$tr_libs" "$tr_daemon" -f -g "$work/trc$n" -p "$tr_rpc" -P "$tr_port" -w "$d" -O -Y -M -B -T "$@" >"$L/tr$n" 2>&1 &
+    tr_pid=$!
+    pids="$pids $tr_pid"
+    i=0
+    while ! tr_cmd -l >/dev/null 2>&1; do
+      i=$((i + 1))
+      [ $i -gt 100 ] && return 1
+      sleep 0.1
+    done
+  }
+  tr_cmd() { env DYLD_FALLBACK_LIBRARY_PATH="$tr_libs" "$tr_remote" "127.0.0.1:$tr_rpc" "$@"; }
+  # tr_wait <percent pattern> <seconds>: until the first torrent's "Percent Done" matches.
+  tr_wait() {
+    i=0
+    while ! tr_cmd -t 1 -i 2>/dev/null | grep -q "Percent Done: $1"; do
+      i=$((i + 1))
+      [ $i -gt $(($2 * 5)) ] && return 1
+      sleep 0.2
+    done
+  }
+  # tr_seed <torrent> <options...>: the daemon verifies the existing file, then seeds it.
+  tr_seed() {
+    torrent=$1
+    shift
+    tr_start "$work/media" "$@" || return 1
+    tr_cmd -a "$torrent" >/dev/null || return 1
+    tr_wait 100% 30 || return 1
+    tr_cmd -t 1 -s >/dev/null || true
+    sleep 0.5
+    tr_address="127.0.0.1:$tr_port"
+  }
+  # tr_fetch <name> <sha> <torrent> <daemon options...>: Stream's seeder dials the daemon, because Transmission 4.1.4
+  # was never seen to connect to a loopback peer its tracker named (it reports the peer and makes no attempt).
+  tr_fetch() {
+    name=$1 want=$2 torrent=$3
+    shift 3
+    d="$work/trf$n"
+    if tr_start "$d" "$@" && tr_cmd -a "$torrent" >/dev/null; then
+      "$fixture" seed --listen 127.0.0.1:0 --peer "127.0.0.1:$tr_port" "$torrent" "$work/media" >"$L/trs$n" 2>&1 &
+      seed_pid=$!
+      pids="$pids $seed_pid"
+      if tr_wait 100% 45 && [ "$(sha "$d/film.bin")" = "$want" ]; then
+        row PASS "Stream seed -> Transmission: $name" "$(tr_cmd -t 1 -i | grep -E 'Percent Done' | tr -s ' ')"
+      else
+        row FAIL "Stream seed -> Transmission: $name" "$(tr_cmd -t 1 -i 2>/dev/null | grep -E 'Percent Done|Error' | tr -s ' ' | tr '\n' ';' | cut -c1-160)"
+      fi
+      stop "$seed_pid"
+    else
+      row FAIL "Stream seed -> Transmission: $name" "the daemon did not start"
+    fi
+    stop "$tr_pid"
+  }
+  tr_fetch "v1, plaintext tolerated" "$film_sha" "$work/t/film-v1.torrent" -et
+  tr_fetch "v1, encryption required" "$film_sha" "$work/t/film-v1.torrent" -er
+  tr_fetch "hybrid (as v1)" "$film_sha" "$work/t/film-hybrid.torrent" -et
+  if tr_seed "$work/t/film-v1.torrent" -et; then
+    check "Transmission seed -> Stream: v1, TCP (MSE tried first)" "$film_sha" "$L/s5" "$fetch" "$work/t/film-v1.torrent" "$tr_address"
+    check "Transmission seed -> Stream: v1, MSE disabled" "$film_sha" "$L/s6" env STREAM_ENCRYPTION=disabled "$fetch" "$work/t/film-v1.torrent" "$tr_address"
+    check "Transmission seed -> Stream: v1, uTP only (libutp)" "$film_sha" "$L/s7" env STREAM_TCP=0 "$fetch" "$work/t/film-v1.torrent" "$tr_address"
+    check "Transmission seed -> Stream: v1 magnet (BEP 9)" "$film_sha" "$L/s8" "$fetch" "magnet:?xt=urn:btih:$v1_hash" "$tr_address"
+  else
+    row FAIL "Transmission seed -> Stream" "the daemon did not start seeding: $(tail -n1 "$L/tr$n" | cut -c1-120)"
+  fi
+  stop "$tr_pid"
+  if tr_seed "$work/t/film-v1.torrent" -er; then
+    check "Transmission seed -> Stream: v1, MSE forced both ways" "$film_sha" "$L/s9" env STREAM_ENCRYPTION=forced "$fetch" "$work/t/film-v1.torrent" "$tr_address"
+    check "Transmission seed -> Stream: v1, uTP only, MSE forced" "$film_sha" "$L/s10" env STREAM_TCP=0 STREAM_ENCRYPTION=forced "$fetch" "$work/t/film-v1.torrent" "$tr_address"
+    check_refused "Transmission seed -> Stream: seed requires MSE, Stream refuses it" "both sides insist: nothing may be transferred" "$L/s11" \
+      env STREAM_ENCRYPTION=disabled STREAM_STALL_SECONDS=8 "$fetch" "$work/t/film-v1.torrent" "$tr_address"
+  else
+    row FAIL "Transmission seed -> Stream: encryption required" "the daemon did not start seeding"
+  fi
+  stop "$tr_pid"
+  if tr_seed "$work/t/film-hybrid.torrent" -et; then
+    check "Transmission seed -> Stream: hybrid torrent (as v1)" "$film_sha" "$L/s12" "$fetch" "$work/t/film-hybrid.torrent" "$tr_address"
+  else
+    row FAIL "Transmission seed -> Stream: hybrid" "the daemon did not start seeding"
+  fi
+  stop "$tr_pid"
+  row SKIP "Transmission: pure v2" "Transmission 4.1 has no BEP 52 downloads"
+else
+  row SKIP "Transmission" "not found or not selected (setup-tools.sh, STREAM_INTEROP_CLIENTS)"
+fi
+
+# ---- WebTorrent and an independent web server ----
+modules=
+[ -d "$tools/npm/node_modules" ] && modules="$tools/npm/node_modules"
+if wants webtorrent && [ -n "$modules" ] && [ -d "$modules/webtorrent" ] &&
+   node "$here/webtorrent_peer.mjs" "$modules" probe >"$L/webtorrent-probe" 2>&1; then
+  echo "webtorrent $(node -p "require('$modules/webtorrent/package.json').version")"
+  wt() { node "$here/webtorrent_peer.mjs" "$modules" "$@"; }
+  check "Stream seed -> WebTorrent: v1, TCP" "$film_sha" "$L/w1" wt fetch "$work/t/film-v1.torrent" "$ours" "$work/w1"
+  check "Stream seed -> WebTorrent: hybrid (as v1), TCP" "$film_sha" "$L/w2" wt fetch "$work/t/film-hybrid.torrent" "$ours" "$work/w2"
+  mkdir -p "$work/ws"
+  cp "$work/media/film.bin" "$work/ws/"
+  node "$here/webtorrent_peer.mjs" "$modules" seed "$work/t/film-v1.torrent" "$work/ws" >"$L/w3s" 2>&1 &
+  wt_pid=$!
+  pids="$pids $wt_pid"
+  if wait_line "$L/w3s" "seeding on"; then
+    address=$(sed -n 's/^seeding on //p' "$L/w3s")
+    check "WebTorrent seed -> Stream: v1, TCP (MSE tried first)" "$film_sha" "$L/w3" "$fetch" "$work/t/film-v1.torrent" "$address"
+    check "WebTorrent seed -> Stream: v1 magnet (BEP 9)" "$film_sha" "$L/w4" "$fetch" "magnet:?xt=urn:btih:$v1_hash" "$address"
+    check "WebTorrent seed -> Stream: MSE forced" "$film_sha" "$L/w5" \
+      env STREAM_ENCRYPTION=forced "$fetch" "$work/t/film-v1.torrent" "$address"
+  else
+    row FAIL "WebTorrent seed -> Stream" "$(tail -n1 "$L/w3s" | cut -c1-120)"
+  fi
+  stop "$wt_pid"
+else
+  row SKIP "WebTorrent" "unavailable (missing package or runtime dependency; see webtorrent-probe log)"
+fi
+if wants http-server && [ -n "$modules" ] && [ -f "$modules/http-server/bin/http-server" ]; then
+  port=$(free_port)
+  node "$modules/http-server/bin/http-server" "$work/media" -a 127.0.0.1 -p "$port" -s -c-1 >"$L/hs" 2>&1 &
+  hs_pid=$!
+  pids="$pids $hs_pid"
+  sleep 1
+  for v in v1 v2 hybrid; do
+    with_webseed "$work/t/film-$v.torrent" "$work/t/film-$v-hs.torrent" "http://127.0.0.1:$port/film.bin"
+    check "http-server web seed -> Stream: $v single file" "$film_sha" "$L/hs-$v" "$fetch" "$work/t/film-$v-hs.torrent" -
+    with_webseed "$work/t/series-$v.torrent" "$work/t/series-$v-hs.torrent" "http://127.0.0.1:$port/"
+    check "http-server web seed -> Stream: $v multi-file, middle file" "$b_sha" "$L/hsm-$v" \
+      "$fetch" "$work/t/series-$v-hs.torrent" - "$(b_index $v)"
+  done
+  stop "$hs_pid"
+else
+  row SKIP "http-server web seed" "not found or not selected (setup-tools.sh, STREAM_INTEROP_CLIENTS)"
 fi
 
 echo

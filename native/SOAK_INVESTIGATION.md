@@ -116,18 +116,23 @@ seeks, not a proven cause of the timeout.
 4. **Emulator or host load.** The soak followed internet-facing stages on the same emulator; nothing retained shows
    contention, and nothing rules it out.
 
-## Remaining risk in the Rust engine
+## Subsequent hardening
 
-- A request is re-asked of another peer after 2 s only for urgent pieces and only when another peer has the piece;
-  otherwise it expires after `REQUEST_TIMEOUT` (30 s, `bt/torrent.rs`), the same length as the soak's limit. With the
-  simulator's single seeder, a request lost without a reject would stall that block for 30 s. Not observed in any host
-  or emulator run.
-- Requests for pieces that left the window are not cancelled; at 4 MiB/s with the 250-request cap they can delay a
-  seek's pieces by up to about a second.
+The modernization work cancels peer requests for pieces that leave the active
+window, retries an urgent request to the same peer after at least five seconds
+(with allowance for its measured queue drain time), and resets expired metadata
+and piece-layer request allowances. Scripted loopback peers cover dropped
+requests, corrupt metadata, false metadata sizes, refused duplicate connections,
+and peers that never read their replies. Unsolicited metadata data/rejects
+cannot clear another peer's requests, and duplicate replies do not reset the
+metadata stall timer. Web-seed data is hashed before it can
+write to the cache, including a late corrupt answer after a peer verified the
+piece; stale completion reports cannot verify a piece the torrent no longer
+has. These are separate defects/risks addressed by regressions. None establishes
+the cause of the historical seek-159 timeout.
 
-## To close this out
-
-- Make `simulator.sh soak` pull `validation-soak.json`, `validation-failure.png` and logcat whether or not the test
-  passed (outside `native/`; not changed here).
-- Run the emulator soak several more times on the Rust engine with that evidence kept.
-- On a failure, pull the files before re-installing the app (re-installing clears `files/`).
+The retained pre-fix thirty-minute emulator pass above is insufficient to
+validate the reader fix. A single final post-fix thirty-minute emulator soak is
+required after the integrated APK is built. Its runner must report `OK (1 test)`;
+retain its progress, final JSON and failure/logcat artifacts even if it fails.
+Do not repeat this endurance check during development.

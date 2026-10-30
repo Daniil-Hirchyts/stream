@@ -16,7 +16,7 @@ computer.
 | `core/tests/` | Integration tests against real seeders on loopback |
 | `core/examples/fetch.rs` | Streams a file from given peers and prints its SHA-256, for checks against other BitTorrent implementations |
 | `core/notices.py` | Writes the app's notice for the crates linked into `libstream.so` |
-| `eval/interop.sh` | Loopback interoperability checks against independent implementations (librqbit, Node's HTTP/HTTPS) |
+| `eval/interop.sh` | Loopback interoperability checks against independent implementations (librqbit, optional libtorrent/aria2/Transmission/WebTorrent, HTTP/HTTPS) |
 | `eval/rqbit/` | Evaluation of librqbit against the fixtures, and `src/bin/interop.rs`, the librqbit peer `interop.sh` uses; never shipped (see its README) |
 | `SOAK_INVESTIGATION.md` | What is and isn't known about the emulator soak's `Timed out: soak seek 159` |
 
@@ -57,7 +57,9 @@ sdkmanager --install "ndk;29.0.14206865"
   available), the fast extension (BEP 6), the extension protocol (BEP 10), peer
   exchange (BEP 11) and lt_donthave (BEP 54). A hybrid's peers may upgrade to v2
   in the handshake. Peers that send data failing its hash are banned. At most
-  1 MiB of piece data waits per peer; further requests are rejected.
+  1 MiB of piece data waits per peer; further requests are rejected. Control
+  replies are bounded separately; peers that ask without reading are disconnected,
+  including when their writer is blocked.
 - **Web seeds**: HTTP and HTTPS (BEP 19 `url-list`, and `ws=` in magnets). A
   seed downloads whole pieces no peer is fetching, by ranged GETs of the files
   that make them up, and its data is hash-checked like any peer's; a seed whose
@@ -92,31 +94,47 @@ only, generated content, results from October 2026):
 | Node HTTP web seed -> Stream | v1, v2 and hybrid, single file and the middle file of multi-file torrents, no peers at all | |
 | Node HTTPS web seed -> Stream | hybrid, with a locally generated CA given as the trust root | the same seed without that root is never used |
 
+The expanded matrix also checks libtorrent 2.1.1.0, aria2 1.37.0 and
+Transmission 4.1.4. libtorrent supplies an independent BEP 52 and MSE check:
+pure-v2 and hybrid torrents, magnets with piece layers, single/multi-file
+transfers, TCP/uTP and forced MSE are checked in both directions. aria2 and
+Transmission cover v1/hybrid-as-v1 downloads in both directions, magnets and
+MSE; Transmission also supplies an independent libutp seeder. Transmission's
+leecher is reached by dialing its loopback listening port, because it did not
+dial the loopback peer supplied by its tracker. Its outgoing connection path
+has therefore not been validated by those leecher rows.
+
 Caveats: librqbit's uTP is `librqbit-utp` 0.7.0, the same library the engine
-uses, so the uTP rows are not independent at that layer. Only librqbit was
-available locally; Transmission, qBittorrent/libtorrent, aria2 and WebTorrent
-were not tested. With librqbit, a hybrid only ever runs as v1 (it never upgrades
-to the v2 handshake).
+uses. aria2 does not supply uTP or BEP 52, Transmission does not supply BEP 52,
+and librqbit does not supply MSE or BEP 52. WebTorrent 3.0.21 passes v1 and
+hybrid-as-v1 leecher checks, v1 seeding and magnet metadata, including Stream
+forcing MSE; its pure-v2 path is not covered. Its native Node runtime dependency
+must load before those optional rows run. The separately packaged npm
+`http-server` supplies an additional HTTP range-server check in every torrent
+version. Real public swarms are deliberately never used by these checks.
 
 **Checked only against this repository's own code** (tests in `core/tests/`):
-pure v2 transfers and v2 piece-layer exchange, the BEP 52 handshake upgrade of
-hybrids, MSE/PE in every negotiation (including forced encryption), lt_donthave
-and eviction behaviour, uTP alone with MSE, trackers, and the seeder side of web
-seeds. Real public swarms are deliberately never used by the tests.
+lt_donthave and eviction behaviour, hostile peers and dropped requests,
+metadata recovery after corrupt or missing answers, bounded peer/control
+queues, trackers, and concurrent cache/reader lifecycle behaviour.
 
 **Known limitations besides the list above**:
 
-- A request is asked of a second peer after 2 s only for urgent pieces, and only
-  when another peer has the piece; otherwise it waits for the 30 s request
-  timeout. With a single slow or misbehaving peer that is a 30 s stall.
-- Requests for pieces that leave the read-ahead window are not cancelled; they
-  are answered and their pieces finish at the lowest priority.
+- An urgent request can be duplicated to another peer after 2 s. With a lone
+  peer it is resent after at least 5 s, allowing three times the queue's estimated
+  drain time for slow peers; the original 30 s expiry remains. This reduces
+  dropped-request stalls without guaranteeing a deadline against a silent peer.
+- Requests that drop from the active window to low/no priority are cancelled;
+  partial pieces still finish later at the lowest priority when nothing more
+  urgent is wanted. Cancellation cannot retract bytes already in flight.
 - Endgame duplicates only for urgent pieces; there is no general endgame mode,
   super-seeding, or choking algorithm beyond rate-ordered unchoking of eight.
 - Streaming torrents never report themselves complete and never seed whole
   files; uploads are only of pieces currently in the cache.
 - The engine has been soaked on the Android TV emulator once (thirty minutes,
-  passed); it has not been validated on a physical TV or across platforms.
+  passed, before the subsequent reader fix); the final post-fix emulator run is
+  documented in `SOAK_INVESTIGATION.md`. It has not been validated on a physical TV
+  or across platforms.
 
 **Port mapping** (UPnP IGD and NAT-PMP/PCP) is off by default in the engine
 (`Config::default()`, tested) and in the app (`TorrentEngine.Config`), and is not
@@ -179,6 +197,10 @@ a test runs its own loopback tracker), with no internet or LAN:
   from magnets); HTTP web seeds for single- and multi-file torrents, a corrupt
   web seed failing its hashes while peers finish the file, and an HTTPS web
   seed refused until its certificate is trusted;
+- hostile peers: a dropped urgent request retried, abandoned window requests
+  cancelled, corrupt/stalled metadata retried with another peer, unsolicited
+  metadata unable to cancel requests or refresh progress, bounded queues, and
+  torrent removal while a writer is blocked;
 - cache units: slots, reservation, pads, waits and cancellation, 64-bit offsets;
 - eviction: v1, v2 and hybrid seeds re-download evicted pieces; a finished
   torrent stays finished until it wants a piece; a peer learns by lt_donthave,
@@ -199,9 +221,18 @@ Interoperability with independent implementations is checked by
 `eval/interop.sh` (see above; not part of `build-host.sh`): it builds
 `stream-fixture`, `core/examples/fetch.rs` and the librqbit peer in `eval/rqbit`
 (`CARGO_OFFLINE=1` uses only the local Cargo cache), then runs each direction on
-127.0.0.1. Before libtorrent was removed, `fetch` was also checked by hand
-against a libtorrent seeder over uTP only and with MSE forced; libtorrent is no
-longer in the repository, so that is not repeatable here.
+127.0.0.1. `eval/setup-tools.sh <directory-outside-repository>` optionally
+installs the independent clients; `STREAM_INTEROP_TOOLS=<directory>` enables
+them. They are evaluation tools and are never linked into the app. Unavailable
+optional clients are reported as skipped. `STREAM_INTEROP_EVIDENCE=<directory>`
+retains per-row and build logs, including on failure; this can point into the
+ignored `simulator/.cache/evidence/` tree. `STREAM_INTEROP_CLIENTS` selects
+space-separated groups (`rqbit webseed libtorrent aria2 transmission webtorrent
+http-server`) for focused follow-ups. Every selected transfer still checks the
+complete file's SHA-256; forced transport/encryption rows also check the peer's
+recorded connection mode where that client exposes it. The libtorrent helper
+waits for its disk-cache flush before reading back the file: progress counters
+alone can become complete before the asynchronous writes reach disk.
 
 On the emulator, `./simulator.sh test` runs the same engine through JNI and
 Media3 against the host's `stream-fixture` seeder. The seeder is limited to

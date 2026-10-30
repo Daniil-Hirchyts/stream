@@ -10,7 +10,7 @@ use super::session::SessionShared;
 use super::storage::Storage;
 use super::wire::{self, Bitfield, BlockRef, ExtHandshake, HashRequest, Message, MetadataMessage, Reserved};
 use crate::cache::PieceCache;
-use crate::swarm::{EvictDone, Event, Metadata, TorrentStatus, DONT_DOWNLOAD};
+use crate::swarm::{EvictDone, Event, Metadata, TorrentStatus, DONT_DOWNLOAD, LOW_PRIORITY};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -22,10 +22,21 @@ pub type PeerKey = u64;
 
 /// To a peer's writer.
 pub enum Out {
-    Msg(Message),
+    /// A message, and what it counts for in [`PeerLink::control`] until it is written.
+    Msg(Message, usize),
     /// Piece data and its size, sent through the session's upload limit; the size leaves the peer's queue once sent.
     Upload(Message, usize),
-    Close(String),
+}
+
+/// What a connection's reader, its writer and the torrent share.
+#[derive(Default)]
+pub struct PeerLink {
+    /// Piece data read for the peer and not yet sent.
+    pub upload: AtomicUsize,
+    /// Everything else queued for the peer and not yet written.
+    pub control: AtomicUsize,
+    /// Ends the connection at once, even with the writer stuck on a peer that stopped reading.
+    pub closed: Notify,
 }
 
 const MAX_REQUESTS: usize = 250;
@@ -33,10 +44,17 @@ const MIN_REQUESTS: usize = 8;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// An urgent block another peer was asked for this long ago may be asked of a second peer.
 const URGENT_DUPLICATE: Duration = Duration::from_secs(2);
+/// An urgent block unanswered for this long, and well past what the peer's queue explains, is asked of the same peer
+/// again: a request lost without a reject must not stall a lone seed's stream until [REQUEST_TIMEOUT].
+const URGENT_RETRY: Duration = Duration::from_secs(5);
 const MAX_UNCHOKED: usize = 8;
 const RECONNECT: Duration = Duration::from_secs(5);
 const MAX_CANDIDATES: usize = 1000;
 const LAYER_CHUNK: usize = 512;
+/// A metadata fetch with no new piece for this long gives up on the peers it was asking.
+const METADATA_STALL: Duration = Duration::from_secs(10);
+/// `have` messages kept from a peer before the metadata is known; further ones are ignored.
+const MAX_EARLY_HAVES: usize = 1 << 16;
 /// The key web seeds download under; real peers' keys start at 1.
 pub const WEB_SEED: PeerKey = 0;
 /// A web seed whose data fails this many hash checks is no longer used.
@@ -46,6 +64,9 @@ const WEB_SEED_FAILURES: u32 = 3;
 /// slow or rate-limited peer without ever dropping a request silently.
 const MAX_QUEUED_UPLOAD: usize = 1 << 20;
 const MAX_WAITING_REQUESTS: usize = 500;
+/// Rejects, metadata and hash answers wait in a peer's queue like any message. A peer that keeps asking while this
+/// much is unwritten isn't reading what it asked for, and is disconnected.
+const MAX_QUEUED_CONTROL: usize = 4 << 20;
 
 /// Rolling transfer rate over the last five seconds.
 #[derive(Default)]
@@ -77,7 +98,7 @@ impl Rate {
 pub struct Peer {
     pub addr: SocketAddr,
     tx: mpsc::UnboundedSender<Out>,
-    queued_upload: Arc<AtomicUsize>,
+    link: Arc<PeerLink>,
     waiting: VecDeque<BlockRef>,
     pub reserved: Reserved,
     /// The connection uses the v2 info hash, so v2 hash messages are allowed (BEP 52).
@@ -93,8 +114,10 @@ pub struct Peer {
     pub peer_interested: bool,
     pub am_choking: bool,
     pub am_interested: bool,
-    requests: Vec<(BlockRef, Instant)>,
+    requests: Vec<Request>,
     metadata_requests: usize,
+    /// How many metadata fetches this peer contributed to that failed, or that it left without data.
+    metadata_failures: u32,
     layer_requests: usize,
     pub down: Rate,
     pub up: Rate,
@@ -104,12 +127,35 @@ pub struct Peer {
     hash_failures: u32,
 }
 
+/// A block asked of a peer.
+#[derive(Clone, Copy)]
+struct Request {
+    block: BlockRef,
+    /// When it was first asked; it times out from here.
+    at: Instant,
+    /// When it was last sent.
+    sent: Instant,
+}
+
+/// Roughly what a queued message occupies; the small fixed part also bounds a flood of tiny messages.
+fn queue_cost(m: &Message) -> usize {
+    64 + match m {
+        Message::Bitfield(b) => b.len(),
+        Message::Extended { payload, .. } => payload.len(),
+        Message::Hashes { hashes, .. } => hashes.len() * 32,
+        _ => 0,
+    }
+}
+
 impl Peer {
     fn send(&self, m: Message) {
-        let _ = self.tx.send(Out::Msg(m));
+        let cost = queue_cost(&m);
+        self.link.control.fetch_add(cost, Ordering::SeqCst);
+        let _ = self.tx.send(Out::Msg(m, cost));
     }
-    fn close(&self, reason: &str) {
-        let _ = self.tx.send(Out::Close(reason.into()));
+    /// Ends the connection without waiting for what is queued: its writer may be stuck on a peer that stopped reading.
+    fn close(&self) {
+        self.link.closed.notify_one();
     }
     pub fn is_seed(&self) -> bool {
         (!self.have.is_empty() && self.have.all()) || self.early_have_all
@@ -140,6 +186,11 @@ struct MetadataFetch {
     data: Vec<u8>,
     received: Vec<bool>,
     requested: Vec<Option<(PeerKey, Instant)>>,
+    /// Who sent each piece, to know whom to doubt if the result fails its hash.
+    senders: HashSet<PeerKey>,
+    /// After a failed fetch only one peer is asked at a time, so a bad one can't spoil the next attempt as well.
+    only: Option<PeerKey>,
+    progress: Instant,
 }
 
 struct LayerFetch {
@@ -180,6 +231,8 @@ pub struct State {
     pub peers: HashMap<PeerKey, Peer>,
     candidates: HashMap<SocketAddr, Candidate>,
     metadata_fetch: Option<MetadataFetch>,
+    /// A metadata fetch has failed since the torrent was added.
+    metadata_failed: bool,
     layer_fetch: Vec<LayerFetch>,
     /// Peers that sent data failing its hash: by address when several peers may share an IP (tests), else by IP.
     banned: HashSet<IpAddr>,
@@ -249,6 +302,7 @@ impl Torrent {
                 peers: HashMap::new(),
                 candidates: HashMap::new(),
                 metadata_fetch: None,
+                metadata_failed: false,
                 layer_fetch: Vec::new(),
                 banned: HashSet::new(),
                 banned_addrs: HashSet::new(),
@@ -398,8 +452,8 @@ impl Torrent {
         if st.priorities.len() != priorities.len() {
             return;
         }
+        cancel_departed(&mut st, priorities);
         st.priorities.copy_from_slice(priorities);
-        // Partial pieces nobody wants anymore keep their blocks; requests for them go away with the peers' queues.
         recompute(&mut st);
         drop(st);
         self.refill_all();
@@ -443,7 +497,7 @@ impl Torrent {
                             peer.send(Message::Extended { id, payload: (p as u32).to_be_bytes().to_vec() });
                         }
                     } else if peer.peer_interested && !peer.is_seed() {
-                        peer.close("evicted pieces it may want");
+                        peer.close();
                     }
                 }
                 recompute(&mut st);
@@ -481,7 +535,7 @@ impl Torrent {
         let mut st = self.lock();
         st.paused = true;
         for p in st.peers.values() {
-            p.close("paused");
+            p.close();
         }
     }
 
@@ -490,7 +544,7 @@ impl Torrent {
         st.removed = true;
         st.paused = true;
         for p in st.peers.values() {
-            p.close("removed");
+            p.close();
         }
         st.storage = None;
         st.cache_dir = None;
@@ -543,6 +597,15 @@ impl Torrent {
         out
     }
 
+    /// The connection worked but the torrent didn't take it, as when another came first on the same address.
+    pub fn dial_refused(&self, addr: SocketAddr) {
+        let mut st = self.lock();
+        if let Some(c) = st.candidates.get_mut(&addr) {
+            c.connecting = false;
+            c.next_try = Instant::now() + RECONNECT;
+        }
+    }
+
     pub fn dial_failed(&self, addr: SocketAddr) {
         let mut st = self.lock();
         if let Some(c) = st.candidates.get_mut(&addr) {
@@ -562,7 +625,7 @@ impl Torrent {
         v2: bool,
         incoming: bool,
         tx: mpsc::UnboundedSender<Out>,
-        queued_upload: Arc<AtomicUsize>,
+        link: Arc<PeerLink>,
         limits: (usize, bool),
     ) -> Option<PeerKey> {
         let mut st = self.lock();
@@ -578,7 +641,7 @@ impl Torrent {
         let peer = Peer {
             addr,
             tx,
-            queued_upload,
+            link,
             waiting: VecDeque::new(),
             reserved,
             v2,
@@ -594,6 +657,7 @@ impl Torrent {
             am_interested: false,
             requests: Vec::new(),
             metadata_requests: 0,
+            metadata_failures: 0,
             layer_requests: 0,
             down: Rate::default(),
             up: Rate::default(),
@@ -626,15 +690,17 @@ impl Torrent {
             peer.send(Message::HaveNone);
         }
         st.peers.insert(key, peer);
-        let c = st.candidates.entry(addr).or_insert(Candidate {
-            next_try: Instant::now(),
-            failures: 0,
-            connected: false,
-            connecting: false,
-        });
-        c.connected = true;
-        c.connecting = false;
-        c.failures = 0;
+        if st.candidates.len() < MAX_CANDIDATES || st.candidates.contains_key(&addr) {
+            let c = st.candidates.entry(addr).or_insert(Candidate {
+                next_try: Instant::now(),
+                failures: 0,
+                connected: false,
+                connecting: false,
+            });
+            c.connected = true;
+            c.connecting = false;
+            c.failures = 0;
+        }
         Some(key)
     }
 
@@ -642,8 +708,8 @@ impl Torrent {
         let mut st = self.lock();
         let Some(peer) = st.peers.remove(&key) else { return };
         // Its requests go back to the pool.
-        for (b, _) in &peer.requests {
-            unrequest(&mut st, key, b);
+        for r in &peer.requests {
+            unrequest(&mut st, key, &r.block);
         }
         for f in st.metadata_fetch.iter_mut() {
             for r in f.requested.iter_mut() {
@@ -708,14 +774,17 @@ impl Torrent {
         let picked = pick(st, key, target);
         let peer = st.peers.get_mut(&key).unwrap();
         let now = Instant::now();
-        for b in picked {
-            peer.requests.push((b, now));
-            peer.send(Message::Request(b));
+        for block in picked {
+            peer.requests.push(Request { block, at: now, sent: now });
+            peer.send(Message::Request(block));
         }
     }
 
     /// Handles one message from a peer. An error disconnects it.
     pub fn on_message(self: &Arc<Self>, key: PeerKey, msg: Message) -> Result<(), String> {
+        if self.lock().peers.get(&key).is_some_and(|p| p.link.control.load(Ordering::SeqCst) > MAX_QUEUED_CONTROL) {
+            return Err("it isn't reading what it asks for".into());
+        }
         match msg {
             Message::KeepAlive | Message::Port(_) | Message::Suggest(_) | Message::AllowedFast(_) => {}
             Message::Choke => {
@@ -725,8 +794,8 @@ impl Torrent {
                 // Without the fast extension a choke discards every pending request.
                 if !peer.reserved.fast() {
                     let requests = std::mem::take(&mut peer.requests);
-                    for (b, _) in requests {
-                        unrequest(&mut st, key, &b);
+                    for r in requests {
+                        unrequest(&mut st, key, &r.block);
                     }
                 }
             }
@@ -749,7 +818,9 @@ impl Torrent {
                     let n = st.have.len();
                     let peer = st.peers.get_mut(&key).ok_or("gone")?;
                     if !has_info {
-                        peer.early_haves.push(p);
+                        if peer.early_haves.len() < MAX_EARLY_HAVES {
+                            peer.early_haves.push(p);
+                        }
                     } else if (p as usize) < n {
                         peer.have.set(p as usize, true);
                     } else {
@@ -796,7 +867,7 @@ impl Torrent {
             Message::Reject(b) => {
                 let mut st = self.lock();
                 let peer = st.peers.get_mut(&key).ok_or("gone")?;
-                if let Some(i) = peer.requests.iter().position(|(r, _)| *r == b) {
+                if let Some(i) = peer.requests.iter().position(|r| r.block == b) {
                     peer.requests.swap_remove(i);
                     unrequest(&mut st, key, &b);
                 }
@@ -838,7 +909,7 @@ impl Torrent {
                 && st.have.get(b.piece as usize)
                 && st.info.as_ref().is_some_and(|i| b.offset as u64 + b.length as u64 <= i.piece_size(b.piece as i32) as u64);
             let Some(peer) = st.peers.get_mut(&key) else { return };
-            let full = peer.queued_upload.load(Ordering::SeqCst) + b.length as usize > MAX_QUEUED_UPLOAD;
+            let full = peer.link.upload.load(Ordering::SeqCst) + b.length as usize > MAX_QUEUED_UPLOAD;
             if ok && !peer.am_choking && full && peer.waiting.len() < MAX_WAITING_REQUESTS {
                 peer.waiting.push_back(b);
                 return;
@@ -876,7 +947,7 @@ impl Torrent {
         match read {
             Ok(()) => {
                 peer.up.add(data.len());
-                peer.queued_upload.fetch_add(data.len(), Ordering::SeqCst);
+                peer.link.upload.fetch_add(data.len(), Ordering::SeqCst);
                 let _ = peer.tx.send(Out::Upload(Message::Piece { piece: b.piece, offset: b.offset, data }, b.length as usize));
                 st.up.add(b.length as usize);
                 st.total_up += i64::from(b.length);
@@ -896,7 +967,7 @@ impl Torrent {
             let next = {
                 let mut st = self.lock();
                 let Some(peer) = st.peers.get_mut(&key) else { return };
-                if peer.queued_upload.load(Ordering::SeqCst) + wire::BLOCK as usize > MAX_QUEUED_UPLOAD {
+                if peer.link.upload.load(Ordering::SeqCst) + wire::BLOCK as usize > MAX_QUEUED_UPLOAD {
                     return;
                 }
                 match peer.waiting.pop_front() {
@@ -912,7 +983,7 @@ impl Torrent {
         let b = BlockRef { piece, offset, length: data.len() as u32 };
         let mut st = self.lock();
         let peer = st.peers.get_mut(&key).ok_or("gone")?;
-        let Some(i) = peer.requests.iter().position(|(r, _)| *r == b) else {
+        let Some(i) = peer.requests.iter().position(|r| r.block == b) else {
             // Unrequested or already cancelled: ignore it.
             return Ok(());
         };
@@ -931,7 +1002,7 @@ impl Torrent {
         if let Some(Block::Requested { first, second, .. }) = st.progress.get(&p).map(|pr| pr.blocks[index]) {
             for other in [Some(first), second].into_iter().flatten().filter(|&k| k != key) {
                 if let Some(o) = st.peers.get_mut(&other) {
-                    if let Some(j) = o.requests.iter().position(|(r, _)| *r == b) {
+                    if let Some(j) = o.requests.iter().position(|r| r.block == b) {
                         o.requests.swap_remove(j);
                         o.send(Message::Cancel(b));
                     }
@@ -1003,20 +1074,13 @@ impl Torrent {
             }
             // A sole contributor is banned at once; others after repeated failures.
             if let Some(progress) = progress {
-                if progress.contributors.contains(&WEB_SEED) {
-                    st.web_seed_hash_failures += 1;
-                    if st.web_seed_hash_failures >= WEB_SEED_FAILURES && !st.web_seeds.is_empty() {
-                        st.web_seeds.clear();
-                        self.log("web seeds sent data that failed the hash check; they are no longer used".into());
-                    }
-                }
                 let sole = progress.contributors.len() == 1;
                 for k in progress.contributors {
                     if let Some(peer) = st.peers.get_mut(&k) {
                         peer.hash_failures += 1;
                         if sole || peer.hash_failures >= 3 {
                             let addr = peer.addr;
-                            peer.close("sent data that failed the hash check");
+                            peer.close();
                             if self.session.upgrade().is_some_and(|s| s.multiple_per_ip) {
                                 st.banned_addrs.insert(addr);
                             } else {
@@ -1039,31 +1103,23 @@ impl Torrent {
             0 => {
                 let ext = ExtHandshake::decode(payload).ok_or("invalid extension handshake")?;
                 let mut st = self.lock();
-                if let Some(size) = ext.metadata_size {
-                    if st.info.is_none() && st.metadata_fetch.is_none() && size > 0 && size <= MAX_METADATA {
-                        let pieces = size.div_ceil(wire::METADATA_PIECE);
-                        st.metadata_fetch = Some(MetadataFetch {
-                            size,
-                            data: vec![0; size],
-                            received: vec![false; pieces],
-                            requested: vec![None; pieces],
-                        });
-                    }
-                }
                 if let (Some(port), Some(peer)) = (ext.listen_port, st.peers.get(&key)) {
                     if peer.incoming {
                         let a = SocketAddr::new(peer.addr.ip(), port);
-                        st.candidates.entry(a).or_insert(Candidate {
-                            next_try: Instant::now() + Duration::from_secs(3600),
-                            failures: 0,
-                            connected: true,
-                            connecting: false,
-                        });
+                        if st.candidates.len() < MAX_CANDIDATES {
+                            st.candidates.entry(a).or_insert(Candidate {
+                                next_try: Instant::now() + Duration::from_secs(3600),
+                                failures: 0,
+                                connected: true,
+                                connecting: false,
+                            });
+                        }
                     }
                 }
                 let peer = st.peers.get_mut(&key).ok_or("gone")?;
                 peer.ext = ext;
                 peer.ext_received = true;
+                start_metadata_fetch(&mut st);
                 request_metadata(&mut st);
                 drop(st);
                 self.refill(key);
@@ -1111,20 +1167,23 @@ impl Torrent {
                 }
             }
             MetadataMessage::Reject(piece) => {
+                let Some(f) = st.metadata_fetch.as_mut() else { return };
+                let Some(r) = f.requested.get_mut(piece as usize) else { return };
+                // An unsolicited reject must not cancel another peer's request or free an allowance.
+                if !r.is_some_and(|(owner, _)| owner == key) {
+                    return;
+                }
+                *r = None;
                 if let Some(peer) = st.peers.get_mut(&key) {
                     peer.metadata_requests = peer.metadata_requests.saturating_sub(1);
-                }
-                if let Some(f) = st.metadata_fetch.as_mut() {
-                    if let Some(r) = f.requested.get_mut(piece as usize) {
-                        *r = None;
-                    }
                 }
             }
             MetadataMessage::Data { piece, total_size, data } => {
-                if let Some(peer) = st.peers.get_mut(&key) {
-                    peer.metadata_requests = peer.metadata_requests.saturating_sub(1);
-                }
                 let Some(f) = st.metadata_fetch.as_mut() else { return };
+                if !f.requested.get(piece as usize).is_some_and(|r| r.is_some_and(|(owner, _)| owner == key)) {
+                    // Replays cannot keep a stalled fetch alive, overwrite a received piece, or consume allowances.
+                    return;
+                }
                 let i = piece as usize;
                 let start = i * wire::METADATA_PIECE;
                 let expected = f.size.saturating_sub(start).min(wire::METADATA_PIECE);
@@ -1134,8 +1193,15 @@ impl Torrent {
                 f.data[start..start + data.len()].copy_from_slice(&data);
                 f.received[i] = true;
                 f.requested[i] = None;
+                f.senders.insert(key);
+                f.progress = Instant::now();
+                if let Some(peer) = st.peers.get_mut(&key) {
+                    peer.metadata_requests = peer.metadata_requests.saturating_sub(1);
+                }
+                let f = st.metadata_fetch.as_mut().unwrap();
                 if f.received.iter().all(|&r| r) {
                     let raw = std::mem::take(&mut f.data);
+                    let senders = std::mem::take(&mut f.senders);
                     let hashes = st.hashes;
                     match Info::parse(&raw, Some(&hashes)) {
                         Ok(info) => {
@@ -1148,6 +1214,17 @@ impl Torrent {
                         }
                         Err(e) => {
                             st.metadata_fetch = None;
+                            st.metadata_failed = true;
+                            for peer in st.peers.values_mut() {
+                                peer.metadata_requests = 0;
+                            }
+                            for k in senders {
+                                if let Some(peer) = st.peers.get_mut(&k) {
+                                    peer.metadata_failures += 1;
+                                }
+                            }
+                            start_metadata_fetch(&mut st);
+                            request_metadata(&mut st);
                             drop(st);
                             self.log(format!("metadata from peers was invalid: {e}"));
                             return;
@@ -1203,13 +1280,14 @@ impl Torrent {
         for (k, peer) in st.peers.iter_mut() {
             peer.down.tick();
             peer.up.tick();
-            peer.requests.retain(|(b, at)| {
-                let keep = now.duration_since(*at) < REQUEST_TIMEOUT;
+            peer.requests.retain(|r| {
+                let keep = now.duration_since(r.at) < REQUEST_TIMEOUT;
                 if !keep {
-                    expired.push((*k, *b));
+                    expired.push((*k, r.block));
                 }
                 keep
             });
+            retry_urgent(peer, &st.deadlines, now);
             if tick % 30 == 0 {
                 peer.send(Message::KeepAlive);
             }
@@ -1217,18 +1295,46 @@ impl Torrent {
         for (k, b) in expired {
             unrequest(st, k, &b);
         }
+        // A request that timed out stops counting against its peer, or a peer ignoring two would never be asked again.
         for f in st.metadata_fetch.iter_mut() {
             for r in f.requested.iter_mut() {
-                if r.is_some_and(|(_, at)| now.duration_since(at) > Duration::from_secs(10)) {
-                    *r = None;
+                if let Some((k, at)) = *r {
+                    if now.duration_since(at) > Duration::from_secs(10) {
+                        *r = None;
+                        if let Some(p) = st.peers.get_mut(&k) {
+                            p.metadata_requests = p.metadata_requests.saturating_sub(1);
+                        }
+                    }
                 }
             }
         }
         for f in st.layer_fetch.iter_mut() {
             for r in f.requested.iter_mut() {
-                if r.is_some_and(|(_, at)| now.duration_since(at) > Duration::from_secs(10)) {
-                    *r = None;
+                if let Some((k, at)) = *r {
+                    if now.duration_since(at) > Duration::from_secs(10) {
+                        *r = None;
+                        if let Some(p) = st.peers.get_mut(&k) {
+                            p.layer_requests = p.layer_requests.saturating_sub(1);
+                        }
+                    }
                 }
+            }
+        }
+        // Nobody is delivering this fetch: its size may be a lie, or its only peer gone. Try another's word.
+        if let Some(f) = &st.metadata_fetch {
+            let gone = f.only.is_some_and(|only| !st.peers.contains_key(&only));
+            if gone || now.duration_since(f.progress) > METADATA_STALL {
+                let size = f.size;
+                let only = f.only;
+                for (k, peer) in st.peers.iter_mut() {
+                    if peer.ext.metadata_size == Some(size) && only.is_none_or(|o| o == *k) {
+                        peer.metadata_failures += 1;
+                    }
+                    peer.metadata_requests = 0;
+                }
+                st.metadata_fetch = None;
+                st.metadata_failed = true;
+                start_metadata_fetch(st);
             }
         }
         request_metadata(st);
@@ -1309,9 +1415,13 @@ impl Torrent {
 
     /// A web seed's piece arrived (or didn't): write it and check its hash, or give its blocks back.
     pub fn web_piece_done(self: &Arc<Self>, p: i32, data: Option<Vec<u8>>) {
-        let storage = self.lock().storage.clone();
+        let (storage, wanted) = {
+            let st = self.lock();
+            // A peer may have finished the piece meanwhile, or it may have been evicted: then this copy isn't needed.
+            (st.storage.clone(), !st.have.get(p as usize) && !st.hashing.contains(&p) && st.progress.contains_key(&p))
+        };
         let written = match (data, storage) {
-            (Some(data), Some(storage)) => {
+            (Some(data), Some(storage)) if wanted => {
                 let ok = data
                     .chunks(wire::BLOCK as usize)
                     .enumerate()
@@ -1333,12 +1443,43 @@ impl Torrent {
             }
         }
         if written {
-            pr.contributors.insert(WEB_SEED);
-            if pr.blocks.iter().all(|b| *b == Block::Received) {
+            if pr.blocks.iter().all(|b| *b == Block::Received) && !st.have.get(p as usize) && !st.hashing.contains(&p) {
                 self.start_hash(&mut st, p);
             }
         }
         drop(st);
+        self.refill_all();
+    }
+
+    /// Whether a web seed's copy of a piece hashes as it should. Checked before any of it is written: the cache only
+    /// ever receives good bytes from web seeds, however late they arrive and whatever happened to the piece meanwhile.
+    pub fn web_piece_good(&self, p: i32, data: &[u8]) -> bool {
+        let (info, layers) = {
+            let st = self.lock();
+            (st.info.clone(), st.layers.clone())
+        };
+        let Some(info) = info else { return false };
+        expected_hash(&info, &layers, p).is_some_and(|e| matches_hash(&info, data, &e))
+    }
+
+    /// A web seed's copy of a piece failed its hash: its blocks go back, and a seed that keeps doing this is dropped.
+    pub fn web_piece_bad(self: &Arc<Self>, p: i32) {
+        let mut st = self.lock();
+        st.web_seed_hash_failures += 1;
+        if st.web_seed_hash_failures >= WEB_SEED_FAILURES && !st.web_seeds.is_empty() {
+            st.web_seeds.clear();
+            self.log("web seeds sent data that failed the hash check; they are no longer used".into());
+        }
+        if let Some(pr) = st.progress.get_mut(&p) {
+            for b in pr.blocks.iter_mut() {
+                if matches!(b, Block::Requested { first: WEB_SEED, .. }) {
+                    *b = Block::Missing;
+                }
+            }
+        }
+        drop(st);
+        self.log(format!("piece {p} failed its hash check"));
+        self.emit(Event::HashFailed { tag: self.tag });
         self.refill_all();
     }
 
@@ -1370,6 +1511,54 @@ impl Torrent {
 
     pub fn trackers(&self) -> Vec<String> {
         self.lock().trackers.clone()
+    }
+}
+
+/// Requests for pieces that just dropped to the lowest priority or out of the wanted list are cancelled, so a seek's
+/// pieces don't wait behind them. Whatever a partial piece still needs is asked again once nothing better is wanted.
+fn cancel_departed(st: &mut State, priorities: &[u8]) {
+    let departed = |p: u32, old: &[u8]| {
+        let at = |list: &[u8]| list.get(p as usize).copied().unwrap_or(DONT_DOWNLOAD);
+        at(old) > LOW_PRIORITY && at(priorities) <= LOW_PRIORITY
+    };
+    let mut cancelled = Vec::new();
+    for (k, peer) in st.peers.iter_mut() {
+        let mut i = 0;
+        while i < peer.requests.len() {
+            let b = peer.requests[i].block;
+            if departed(b.piece, &st.priorities) {
+                peer.requests.swap_remove(i);
+                peer.send(Message::Cancel(b));
+                cancelled.push((*k, b));
+            } else {
+                i += 1;
+            }
+        }
+    }
+    for (k, b) in cancelled {
+        unrequest(st, k, &b);
+    }
+}
+
+/// Asks a peer again for urgent blocks it should have sent by now. The duplicate costs at most one block if the first
+/// request wasn't lost after all: the second copy finds no request and is ignored.
+fn retry_urgent(peer: &mut Peer, deadlines: &HashMap<i32, Instant>, now: Instant) {
+    if peer.peer_choking || deadlines.is_empty() {
+        return;
+    }
+    // Three times what this peer's queue explains at its current rate, for a peer that is merely slow.
+    let rate = peer.down.per_second().max(1) as u128;
+    let queue_time = Duration::from_millis((peer.requests.len() as u128 * u128::from(wire::BLOCK) * 3000 / rate).min(60_000) as u64);
+    let patience = URGENT_RETRY.max(queue_time);
+    let mut again = Vec::new();
+    for r in peer.requests.iter_mut() {
+        if deadlines.contains_key(&(r.block.piece as i32)) && now.duration_since(r.sent) >= patience {
+            r.sent = now;
+            again.push(r.block);
+        }
+    }
+    for b in again {
+        peer.send(Message::Request(b));
     }
 }
 
@@ -1502,11 +1691,40 @@ fn choke_round(st: &mut State, rotate: bool) {
     }
 }
 
+/// Starts fetching metadata when it's wanted and a peer offers it, trusting the peer with the fewest failures for its
+/// size. After a failure only that peer is asked.
+fn start_metadata_fetch(st: &mut State) {
+    if st.info.is_some() || st.metadata_fetch.is_some() {
+        return;
+    }
+    let best = st
+        .peers
+        .iter()
+        .filter(|(_, p)| p.ext.metadata.is_some())
+        .filter_map(|(k, p)| Some((p.metadata_failures, *k, p.ext.metadata_size.filter(|s| *s > 0 && *s <= MAX_METADATA)?)))
+        .min();
+    let Some((_, key, size)) = best else { return };
+    let pieces = size.div_ceil(wire::METADATA_PIECE);
+    st.metadata_fetch = Some(MetadataFetch {
+        size,
+        data: vec![0; size],
+        received: vec![false; pieces],
+        requested: vec![None; pieces],
+        senders: HashSet::new(),
+        only: st.metadata_failed.then_some(key),
+        progress: Instant::now(),
+    });
+}
+
 fn request_metadata(st: &mut State) {
     let Some(f) = st.metadata_fetch.as_mut() else { return };
     let now = Instant::now();
     for (k, peer) in st.peers.iter_mut() {
         let Some(id) = peer.ext.metadata else { continue };
+        // Only those agreeing on the size can contribute.
+        if peer.ext.metadata_size != Some(f.size) || f.only.is_some_and(|only| only != *k) {
+            continue;
+        }
         while peer.metadata_requests < 2 {
             let Some(i) = (0..f.received.len()).find(|&i| !f.received[i] && f.requested[i].is_none()) else { return };
             f.requested[i] = Some((*k, now));
@@ -1597,8 +1815,12 @@ pub fn verify_piece(storage: &Storage, info: &Info, p: i32, expected: &Expected)
     if storage.read(p, 0, &mut data).is_err() {
         return false;
     }
+    matches_hash(info, &data, expected)
+}
+
+fn matches_hash(info: &Info, data: &[u8], expected: &Expected) -> bool {
     match expected {
-        Expected::Sha1(h) => metainfo::sha1(&data) == *h,
+        Expected::Sha1(h) => metainfo::sha1(data) == *h,
         Expected::Merkle { data: len, hash, whole_file } => {
             let file_data = &data[..*len];
             let got = if *whole_file {
@@ -1609,5 +1831,75 @@ pub fn verify_piece(storage: &Storage, info: &Info, p: i32, expected: &Expected)
             got == *hash
         }
         Expected::Nothing => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+
+    fn peer(t: &Torrent, port: u16) -> (PeerKey, mpsc::UnboundedReceiver<Out>) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port);
+        let key = t.attach(addr, Reserved::ours(false, false), false, true, tx, Arc::default(), (usize::MAX, true)).unwrap();
+        (key, rx)
+    }
+
+    fn torrent() -> Arc<Torrent> {
+        Torrent::new(1, Weak::new(), InfoHashes { v1: Some([7; 20]), v2: None }, None, Layers::new(), Vec::new())
+    }
+
+    #[test]
+    fn unsolicited_metadata_cannot_cancel_requests_or_refresh_the_stall_timer() {
+        let t = torrent();
+        let (owner, _owner_rx) = peer(&t, 1000);
+        let (other, _other_rx) = peer(&t, 1001);
+        let size = wire::METADATA_PIECE + 1;
+        let ext = ExtHandshake { metadata: Some(9), metadata_size: Some(size), ..ExtHandshake::default() };
+        t.on_message(owner, Message::Extended { id: 0, payload: ext.encode() }).unwrap();
+        let started = t.lock().metadata_fetch.as_ref().unwrap().progress;
+        t.on_metadata_message(other, MetadataMessage::Reject(0));
+        let reply = MetadataMessage::Data { piece: 0, total_size: size, data: vec![0; wire::METADATA_PIECE] };
+        t.on_metadata_message(other, reply.clone());
+        {
+            let st = t.lock();
+            let f = st.metadata_fetch.as_ref().unwrap();
+            assert_eq!(f.requested[0].unwrap().0, owner);
+            assert_eq!(f.progress, started);
+            assert!(!f.received[0]);
+            assert_eq!(st.peers[&owner].metadata_requests, 2);
+        }
+        t.on_metadata_message(owner, reply.clone());
+        let progressed = t.lock().metadata_fetch.as_ref().unwrap().progress;
+        t.on_metadata_message(owner, reply);
+        let st = t.lock();
+        let f = st.metadata_fetch.as_ref().unwrap();
+        assert!(f.received[0]);
+        assert_eq!(f.progress, progressed);
+        assert_eq!(st.peers[&owner].metadata_requests, 1);
+    }
+
+    #[test]
+    fn haves_before_the_metadata_are_bounded() {
+        let t = torrent();
+        let (key, _rx) = peer(&t, 1000);
+        for p in 0..MAX_EARLY_HAVES as u32 + 1000 {
+            t.on_message(key, Message::Have(p)).unwrap();
+        }
+        assert_eq!(t.lock().peers[&key].early_haves.len(), MAX_EARLY_HAVES);
+    }
+
+    #[test]
+    fn peer_addresses_from_connections_and_handshakes_are_bounded() {
+        let t = torrent();
+        let mut keep = Vec::new();
+        for port in 1..=2000u16 {
+            let (key, rx) = peer(&t, port);
+            keep.push(rx);
+            let ext = ExtHandshake { listen_port: Some(port + 10_000), ..ExtHandshake::default() };
+            t.on_message(key, Message::Extended { id: 0, payload: ext.encode() }).unwrap();
+        }
+        assert!(t.lock().candidates.len() <= MAX_CANDIDATES);
     }
 }

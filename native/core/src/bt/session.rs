@@ -505,7 +505,23 @@ async fn web_seed(session: Arc<SessionShared>, t: Arc<Torrent>, base: String) {
         match error {
             None => {
                 failures = 0;
-                t.web_piece_done(p, Some(data));
+                // Hashed before anything is written, on a blocking thread like every other hash.
+                let checker = t.clone();
+                let Ok((good, data)) = session
+                    .runtime
+                    .spawn_blocking(move || {
+                        let good = checker.web_piece_good(p, &data);
+                        (good, data)
+                    })
+                    .await
+                else {
+                    return;
+                };
+                if good {
+                    t.web_piece_done(p, Some(data));
+                } else {
+                    t.web_piece_bad(p);
+                }
             }
             Some(e) => {
                 t.web_piece_done(p, None);

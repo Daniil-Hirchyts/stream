@@ -127,7 +127,7 @@ fn decode_path(path: &str) -> String {
     String::from_utf8(out).unwrap()
 }
 
-fn respond(mut s: impl Read + Write, root: &Path, corrupt: bool) {
+fn respond(mut s: impl Read + Write, root: &Path, corrupt: bool, delay: Duration) {
     let mut request = Vec::new();
     let mut byte = [0u8; 1];
     while !request.ends_with(b"\r\n\r\n") {
@@ -156,6 +156,7 @@ fn respond(mut s: impl Read + Write, root: &Path, corrupt: bool) {
     if corrupt {
         body[0] ^= 0x5a;
     }
+    std::thread::sleep(delay);
     let head = format!("HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {a}-{}/{}\r\n\r\n", body.len(), b - 1, data.len());
     let _ = s.write_all(head.as_bytes());
     let _ = s.write_all(&body);
@@ -163,6 +164,11 @@ fn respond(mut s: impl Read + Write, root: &Path, corrupt: bool) {
 
 impl WebSeed {
     fn http(root: PathBuf, corrupt: bool) -> WebSeed {
+        WebSeed::delayed(root, corrupt, Duration::ZERO)
+    }
+
+    /// Every response waits `delay` before it is sent.
+    fn delayed(root: PathBuf, corrupt: bool, delay: Duration) -> WebSeed {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let requests = Arc::new(AtomicUsize::new(0));
@@ -171,7 +177,7 @@ impl WebSeed {
             for stream in listener.incoming().flatten() {
                 count.fetch_add(1, Ordering::SeqCst);
                 let root = root.clone();
-                std::thread::spawn(move || respond(stream, &root, corrupt));
+                std::thread::spawn(move || respond(stream, &root, corrupt, delay));
             }
         });
         WebSeed { port, requests }
@@ -200,7 +206,7 @@ impl WebSeed {
                 let (root, config) = (root.clone(), config.clone());
                 std::thread::spawn(move || {
                     let conn = rustls::ServerConnection::new(config).unwrap();
-                    respond(rustls::StreamOwned::new(conn, stream), &root, false);
+                    respond(rustls::StreamOwned::new(conn, stream), &root, false, Duration::ZERO);
                 });
             }
         });
@@ -269,6 +275,46 @@ fn corrupt_web_seeds_fail_the_hash_and_peers_complete_the_file() {
     }
     e.add_peers(t, &[good.address()]).unwrap();
     read_all(&e, t, 58, 3 << 20);
+}
+
+#[test]
+fn a_late_corrupt_web_seed_response_cannot_change_a_verified_piece() {
+    let dir = TempDir::new("stream-webseed-late");
+    let torrent = film(&dir, Version::V1, 61);
+    // The web seed claims the first piece at once and answers it, wrongly, long after a peer has delivered it.
+    let bad = WebSeed::delayed(dir.path().to_path_buf(), true, Duration::from_secs(4));
+    let good = Seeder::single(&torrent, dir.path(), &SeederOptions::default());
+    let e = Engine::new(config(&dir.file("cache"))).unwrap();
+    let t = e
+        .add(&Source { metainfo: with_web_seeds(&torrent, &[format!("http://127.0.0.1:{}/film.bin", bad.port)]), ..Source::default() })
+        .unwrap();
+    e.wait_metadata(t, Duration::from_secs(5), None).unwrap();
+    e.select_file(t, 0).unwrap();
+    let r = e.open_reader(t, 0).unwrap();
+    let mut piece = vec![0u8; 64 << 10];
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while bad.requests.load(Ordering::SeqCst) == 0 {
+        assert_eq!(e.read(r, 0, &mut piece, Duration::from_millis(50)).unwrap(), WOULD_BLOCK, "only the web seed is known");
+        assert!(Instant::now() < deadline, "the web seed should have been asked");
+    }
+    let asked = Instant::now();
+    e.add_peers(t, &[good.address()]).unwrap();
+    // The urgent piece is asked of the peer too after two seconds, and passes its hash.
+    let mut n = WOULD_BLOCK;
+    while n == WOULD_BLOCK {
+        n = e.read(r, 0, &mut piece, Duration::from_millis(200)).unwrap();
+        assert!(asked.elapsed() < Duration::from_secs(20));
+    }
+    assert!(first_mismatch(61, 0, &piece[..n as usize]).is_none());
+    assert!(asked.elapsed() < Duration::from_secs(4), "the peer should have delivered before the web seed answered");
+    // After the web seed's answer the reader, still at the same place, must see the same verified bytes.
+    std::thread::sleep(Duration::from_secs(5).saturating_sub(asked.elapsed()));
+    let mut n = WOULD_BLOCK;
+    while n == WOULD_BLOCK {
+        n = e.read(r, 0, &mut piece, Duration::from_millis(200)).unwrap();
+        assert!(asked.elapsed() < Duration::from_secs(30));
+    }
+    assert!(first_mismatch(61, 0, &piece[..n as usize]).is_none(), "unverified bytes reached a reader");
 }
 
 #[test]

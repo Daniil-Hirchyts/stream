@@ -4,15 +4,15 @@
 use super::metainfo::{Id20, InfoHashes};
 use super::mse::{self, Policy as Encryption};
 use super::session::SessionShared;
-use super::torrent::{Out, Torrent};
+use super::torrent::{Out, PeerLink, Torrent};
 use super::wire::{self, Handshake, Reserved, PROTOCOL};
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, WriteHalf};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -195,11 +195,16 @@ async fn run(
 ) {
     let (tx, rx) = mpsc::unbounded_channel();
     let limits = (session.connections_limit, session.multiple_per_ip);
-    let queued = Arc::new(AtomicUsize::new(0));
-    let Some(key) = torrent.attach(addr, reserved, v2, incoming, tx, queued.clone(), limits) else { return };
+    let link = Arc::new(PeerLink::default());
+    let Some(key) = torrent.attach(addr, reserved, v2, incoming, tx, link.clone(), limits) else {
+        // Refused for now, such as for another connection on this address; it may be tried again later.
+        if !incoming {
+            torrent.dial_refused(addr);
+        }
+        return;
+    };
     let (mut reader, writer) = tokio::io::split(conn);
-    let closed = Arc::new(Notify::new());
-    let writer_task = tokio::spawn(write_loop(session.clone(), torrent.clone(), key, writer, rx, queued, closed.clone()));
+    let writer_task = tokio::spawn(write_loop(session.clone(), torrent.clone(), key, writer, rx, link.clone()));
     let mut buf = Vec::new();
     let reason = loop {
         tokio::select! {
@@ -212,7 +217,7 @@ async fn run(
                     }
                 }
             },
-            _ = closed.notified() => break String::new(),
+            _ = link.closed.notified() => break String::new(),
         }
     };
     torrent.detach(key, &reason);
@@ -225,15 +230,17 @@ async fn write_loop(
     key: super::torrent::PeerKey,
     mut w: WriteHalf<BoxConn>,
     mut rx: mpsc::UnboundedReceiver<Out>,
-    queued: Arc<AtomicUsize>,
-    closed: Arc<Notify>,
+    link: Arc<PeerLink>,
 ) {
     let mut out = Vec::with_capacity(64 * 1024);
     'outer: while let Some(first) = rx.recv().await {
         let mut next = Some(first);
         while let Some(item) = next.take() {
             match item {
-                Out::Msg(m) => m.encode(&mut out),
+                Out::Msg(m, queued) => {
+                    m.encode(&mut out);
+                    link.control.fetch_sub(queued, Ordering::SeqCst);
+                }
                 Out::Upload(m, bytes) => {
                     if !out.is_empty() && w.write_all(&out).await.is_err() {
                         break 'outer;
@@ -246,12 +253,8 @@ async fn write_loop(
                         break 'outer;
                     }
                     out.clear();
-                    queued.fetch_sub(bytes, Ordering::SeqCst);
+                    link.upload.fetch_sub(bytes, Ordering::SeqCst);
                     torrent.upload_sent(key);
-                }
-                Out::Close(_) => {
-                    let _ = w.write_all(&out).await;
-                    break 'outer;
                 }
             }
             if out.len() < 64 * 1024 {
@@ -264,7 +267,7 @@ async fn write_loop(
         out.clear();
     }
     let _ = w.shutdown().await;
-    closed.notify_one();
+    link.closed.notify_one();
 }
 
 /// Session-wide upload limit, a token bucket. Zero means unlimited.

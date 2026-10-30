@@ -3,10 +3,11 @@
 //!   stream-fixture content <path> <bytes> <seed>
 //!   stream-fixture create <out.torrent> <file-or-dir> <piece-bytes> [v1|v2|hybrid]
 //!   stream-fixture info <file.torrent>
-//!   stream-fixture seed [--listen 127.0.0.1:58134] [--rate bytes/s] <file.torrent> <save-path> [...]
+//!   stream-fixture seed [--listen 127.0.0.1:58134] [--rate bytes/s] [--peer address:port] <file.torrent> <save-path> [...]
 //!
 //! `seed` runs a real BitTorrent seeder with DHT, local discovery, port mapping and trackers off, until SIGINT or
-//! SIGTERM; peers reach it only at the address given.
+//! SIGTERM; peers reach it only at the address given, or it dials the `--peer` given (for a client that can't be told
+//! about a peer on loopback).
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -15,7 +16,7 @@ use stream_core::fixtures::{self, Seeder, SeederOptions};
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage:\n  stream-fixture content <path> <bytes> <seed>\n  stream-fixture create <out.torrent> <file-or-dir> <piece-bytes> [v1|v2|hybrid]\n  stream-fixture info <file.torrent>\n  stream-fixture seed [--listen 127.0.0.1:58134] [--rate bytes/s] <file.torrent> <save-path> [...]"
+        "usage:\n  stream-fixture content <path> <bytes> <seed>\n  stream-fixture create <out.torrent> <file-or-dir> <piece-bytes> [v1|v2|hybrid]\n  stream-fixture info <file.torrent>\n  stream-fixture seed [--listen 127.0.0.1:58134] [--rate bytes/s] [--peer address:port] <file.torrent> <save-path> [...]"
     );
     ExitCode::from(2)
 }
@@ -29,6 +30,7 @@ fn info(path: &Path) -> Result<(), String> {
 fn seed(args: &[String]) -> Result<(), String> {
     let mut options = SeederOptions { listen: "127.0.0.1:58134".into(), ..SeederOptions::default() };
     let mut torrents = Vec::new();
+    let mut peers = Vec::new();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -38,6 +40,10 @@ fn seed(args: &[String]) -> Result<(), String> {
             }
             "--rate" if i + 1 < args.len() => {
                 options.upload_rate = args[i + 1].parse().map_err(|_| "invalid rate")?;
+                i += 2;
+            }
+            "--peer" if i + 1 < args.len() => {
+                peers.push(stream_core::swarm::parse_peer(&args[i + 1]).map_err(|e| e.message)?);
                 i += 2;
             }
             _ if i + 1 < args.len() => {
@@ -56,6 +62,7 @@ fn seed(args: &[String]) -> Result<(), String> {
         let hashes = t.lock().hashes;
         let hash = hashes.v1.map(|h| metainfo::hex(&h)).or(hashes.v2.map(|h| metainfo::hex(&h))).unwrap_or_default();
         println!("seeding {hash} from {}", save.display());
+        t.add_candidates(peers.iter().copied());
     }
     println!("listening on port {}", seeder.port());
     // Runs until SIGINT or SIGTERM.

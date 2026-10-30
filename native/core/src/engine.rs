@@ -1040,7 +1040,8 @@ impl Shared {
                         t.changed.notify_all();
                         st.cache.clone()
                     };
-                    if let Some(cache) = cache {
+                    // A report queued before an eviction must not bless the blocks of a new copy still unhashed.
+                    if let Some(cache) = cache.filter(|_| t.torrent.have_piece(piece)) {
                         cache.set_verified(piece);
                     }
                 }
@@ -1281,6 +1282,8 @@ mod tests {
         wake: Arc<Wake>,
         dir: std::path::PathBuf,
         slots: i32,
+        /// The torrent doesn't have the pieces it reports finished, like a report older than an eviction.
+        stale_reports: Arc<AtomicBool>,
     }
 
     struct FakeTorrent {
@@ -1291,6 +1294,7 @@ mod tests {
         retries: Retries,
         events: Queue,
         wake: Arc<Wake>,
+        stale_reports: Arc<AtomicBool>,
     }
 
     fn byte(p: i64, i: i64) -> u8 {
@@ -1329,7 +1333,7 @@ mod tests {
         fn clear_piece_deadlines(&self) {}
         fn set_piece_deadline(&self, _piece: i32, _milliseconds: i32) {}
         fn have_piece(&self, piece: i32) -> bool {
-            self.storage().is_some_and(|c| c.complete(piece))
+            !self.stale_reports.load(Ordering::SeqCst) && self.storage().is_some_and(|c| c.complete(piece))
         }
         fn evict_pieces(&self, pieces: Vec<i32>, done: EvictDone) {
             if let Some(cache) = self.storage() {
@@ -1374,6 +1378,7 @@ mod tests {
                 retries: self.retries.clone(),
                 events: self.events.clone(),
                 wake: self.wake.clone(),
+                stale_reports: self.stale_reports.clone(),
             }))
         }
         fn poll(&self, out: &mut Vec<Event>) {
@@ -1398,12 +1403,16 @@ mod tests {
     }
 
     fn engine_with(name: &str, cache_bytes: i64) -> Engine {
+        engine_reporting(name, cache_bytes, Arc::default())
+    }
+
+    fn engine_reporting(name: &str, cache_bytes: i64, stale_reports: Arc<AtomicBool>) -> Engine {
         let dir = temp_dir(name);
         let config = Config { cache_dir: dir.to_string_lossy().into(), cache_bytes, reserve_bytes: 0, ..Config::default() };
         let cache_dir = temp_dir(&format!("{name}-storage"));
         Engine::with_swarm(config, move |config, wake| {
             let slots = cache_slots(config.cache_bytes, PIECE);
-            Ok(Box::new(FakeSwarm { events: Arc::default(), retries: Arc::default(), wake, dir: cache_dir, slots }) as Box<dyn Swarm>)
+            Ok(Box::new(FakeSwarm { events: Arc::default(), retries: Arc::default(), wake, dir: cache_dir, slots, stale_reports }) as Box<dyn Swarm>)
         })
         .unwrap()
     }
@@ -1456,6 +1465,23 @@ mod tests {
         engine.close_reader(reader);
         engine.remove(t).unwrap();
         assert_eq!(engine.stats(t).unwrap_err().kind, ErrorKind::InvalidHandle);
+    }
+
+    #[test]
+    fn a_finished_report_for_a_piece_the_torrent_doesnt_have_verifies_nothing() {
+        // The piece's blocks are all written but its hash hasn't passed: a queued report from before an eviction must
+        // not let a reader see them.
+        let stale = Arc::new(AtomicBool::new(true));
+        let engine = engine_reporting("stale-report", 10 * i64::from(PIECE) + STORAGE_OVERHEAD, stale.clone());
+        let t = engine.add(&hash_source("66")).unwrap();
+        engine.wait_metadata(t, Duration::from_secs(1), None).unwrap();
+        engine.select_file(t, 0).unwrap();
+        let reader = engine.open_reader(t, 0).unwrap();
+        let mut buf = [0u8; 16];
+        assert_eq!(engine.read(reader, 0, &mut buf, Duration::from_millis(300)).unwrap(), WOULD_BLOCK);
+        stale.store(false, Ordering::SeqCst);
+        assert_eq!(engine.read(reader, 0, &mut buf, Duration::from_secs(5)).unwrap(), 16);
+        assert_eq!(buf.to_vec(), expected(0, 16));
     }
 
     #[test]
