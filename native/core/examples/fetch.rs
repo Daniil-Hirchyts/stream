@@ -1,9 +1,12 @@
 //! Streams a whole file from given peers through the engine and prints its SHA-256: an interoperability check
 //! against other BitTorrent implementations on loopback.
 //!
-//!   cargo run --example fetch -- <file.torrent | magnet> <peer> [file-index]
+//!   cargo run --example fetch -- <file.torrent | magnet> <peer | -> [file-index]
 //!
 //! STREAM_TCP=0 connects over uTP only; STREAM_ENCRYPTION=forced|disabled sets MSE (default: tried first).
+//! STREAM_CA_FILE trusts a PEM file's roots for HTTPS (trackers and web seeds) instead of the bundled ones; certificates
+//! are always verified. STREAM_STALL_SECONDS (default 30) is how long metadata or data may take to arrive. `-` as the
+//! peer contacts no peer, for web-seed-only checks.
 
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
@@ -17,6 +20,8 @@ fn main() {
         false => (std::fs::read(&args[0]).expect("torrent"), String::new()),
     };
     let file: i32 = args.get(2).and_then(|f| f.parse().ok()).unwrap_or(0);
+    let stall = Duration::from_secs(std::env::var("STREAM_STALL_SECONDS").ok().and_then(|s| s.parse().ok()).unwrap_or(30));
+    let peers = if args[1] == "-" { Vec::new() } else { vec![args[1].clone()] };
     let dir = std::env::temp_dir().join(format!("stream-fetch-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let config = Config {
@@ -35,12 +40,19 @@ fn main() {
             Ok("disabled") => stream_core::bt::mse::Policy::Disabled,
             _ => stream_core::bt::mse::Policy::Enabled,
         },
+        ca_file: std::env::var("STREAM_CA_FILE").unwrap_or_default(),
         ..Config::default()
     };
     let engine = Engine::new(config).expect("engine");
     let started = Instant::now();
-    let t = engine.add(&Source { metainfo, magnet, peers: vec![args[1].clone()], ..Source::default() }).expect("add");
-    let files = engine.wait_metadata(t, Duration::from_secs(30), None).expect("metadata");
+    let t = engine.add(&Source { metainfo, magnet, peers, ..Source::default() }).expect("add");
+    let files = match engine.wait_metadata(t, stall, None) {
+        Ok(files) => files,
+        Err(e) => {
+            eprintln!("no metadata: {e}");
+            std::process::exit(1);
+        }
+    };
     let size = files.iter().find(|f| f.index == file).expect("file").size;
     engine.select_file(t, file).unwrap();
     engine.set_bitrate(t, 20 << 20).unwrap();
@@ -52,8 +64,8 @@ fn main() {
     while pos < size {
         let n = engine.read(r, pos, &mut buf, Duration::from_secs(5)).expect("read");
         if n == WOULD_BLOCK {
-            // As the app does: wait again, giving up only when nothing arrives for 30 s.
-            if progress.elapsed() > Duration::from_secs(30) {
+            // As the app does: wait again, giving up only when nothing arrives for a while.
+            if progress.elapsed() > stall {
                 eprintln!("stalled at {pos}: {}", engine.stats(t).unwrap().to_json());
                 std::process::exit(1);
             }

@@ -7,7 +7,7 @@ bytes with the seeder's source file. It is never part of the app.
 
 ```sh
 ./simulator.sh services
-(cd native/eval/rqbit && cargo run --release -- ../../../simulator/.cache)
+(cd native/eval/rqbit && cargo run --release --bin stream-eval-rqbit -- ../../../simulator/.cache)
 ```
 
 ## Result with librqbit 9.1.0 (October 2026)
@@ -23,3 +23,11 @@ librqbit did not meet the engine's requirements. Stream replaced libtorrent with
 its own BitTorrent implementation instead (`native/core/src/bt`), which handles v2
 and eviction. This crate stays as an independent client for interoperability: it
 downloads the v1 and hybrid fixtures intact from `stream-fixture seed`.
+
+## Loopback peer for `../interop.sh`
+
+`src/bin/interop.rs` runs librqbit as an independent leecher (`interop fetch`)
+or seeder (`interop seed`) with DHT, trackers, local discovery and port mapping
+off, for `native/eval/interop.sh`. The default binary is still the evaluation
+above (`default-run`). librqbit 9.1.0 has no MSE/PE and no BitTorrent v2, and
+its uTP comes from `librqbit-utp`, the library the engine also uses.

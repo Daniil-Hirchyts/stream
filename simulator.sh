@@ -280,8 +280,11 @@ case "${1:-up}" in
     ;;
   release-test) start_services && "$SIM_DIR/release-probe.sh" ;;
   soak)
-    run_data_tests tv.stream.app.SoakTest || exit $?
-    device exec-out run-as tv.stream.app cat files/validation-soak.json >"$SIM_DIR/.cache/evidence/soak.json"
+    run_data_tests tv.stream.app.SoakTest; status=$?
+    # Keep the progress record and the emulator log even when a cycle times out: they show where a soak stopped.
+    device exec-out run-as tv.stream.app cat files/validation-soak.json >"$SIM_DIR/.cache/evidence/soak.json" || status=1
+    [ "$status" -eq 0 ] || device logcat -d -t 4000 >"$SIM_DIR/.cache/evidence/soak-failure-logcat.txt"
+    exit "$status"
     ;;
   profile) profile_app ;;
   status) show_status ;;

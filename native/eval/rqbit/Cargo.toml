@@ -3,6 +3,8 @@ name = "stream-eval-rqbit"
 version = "0.1.0"
 edition = "2021"
 publish = false
+# src/bin/interop.rs is the loopback peer for ../interop.sh.
+default-run = "stream-eval-rqbit"
 description = "Evaluates librqbit as a replacement for libtorrent against Stream's loopback fixtures. Never shipped."
 
 [dependencies]

@@ -65,7 +65,14 @@ def rustTasks = abis.collect { abi ->
         environment "CC_$envTarget", clang
         environment "AR_$envTarget", new File(toolchain, 'llvm-ar').absolutePath
         environment "CARGO_TARGET_${envTarget.toUpperCase()}_LINKER", clang
-        environment "CARGO_TARGET_${envTarget.toUpperCase()}_RUSTFLAGS", '-C link-arg=-Wl,-z,max-page-size=16384'
+        // Panic locations and C assertions name source files; keep the builder's home and checkout paths out of the
+        // library (rustc for Rust, -ffile-prefix-map for C dependencies such as ring).
+        def home = System.getProperty('user.home')
+        def checkout = rootProject.projectDir.parentFile.absolutePath
+        def prefixes = ["$home/.cargo": '/cargo', "$home/.rustup": '/rustup', (checkout): '/stream']
+        environment "CARGO_TARGET_${envTarget.toUpperCase()}_RUSTFLAGS", (['-C link-arg=-Wl,-z,max-page-size=16384']
+                + prefixes.collect { from, to -> "--remap-path-prefix=$from=$to" }).join(' ')
+        environment "CFLAGS_$envTarget", prefixes.collect { from, to -> "-ffile-prefix-map=$from=$to" }.join(' ')
         commandLine cargoBin.exists() ? cargoBin.absolutePath : 'cargo', 'build', '--release', '--locked', '--lib', '--target', target
     }
     tasks.register("rustLib-$abi", Copy) {

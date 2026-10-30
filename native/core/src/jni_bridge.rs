@@ -112,7 +112,9 @@ pub extern "system" fn Java_tv_stream_torrent_TorrentEngine_nativeCreate(
 
 #[no_mangle]
 pub extern "system" fn Java_tv_stream_torrent_TorrentEngine_nativeDestroy(_env: JNIEnv, _: JClass, id: jlong) {
-    destroy(id as u64);
+    // Like every other entry point, a panic must not unwind into the JVM, which aborts the process; the engine is
+    // already out of the registry by then, so nothing else can reach it.
+    let _ = catch_unwind(AssertUnwindSafe(|| destroy(id as u64)));
 }
 
 #[no_mangle]

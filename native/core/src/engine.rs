@@ -332,6 +332,8 @@ struct Reader {
     torrent: Weak<Stream>,
     file: i32,
     cancelled: AtomicBool,
+    /// [`UNPOSITIONED`] until the first read or seek: a reader opened for a seek must not pull the window back to
+    /// the start of the file before it reads where it was opened for.
     position: AtomicI64,
     waiting: AtomicI32,
     last_read: AtomicI64,
@@ -360,6 +362,9 @@ pub struct Engine {
 
 /// A read found nothing within its wait; call again.
 pub const WOULD_BLOCK: i32 = -1;
+
+/// A reader's position before its first read or seek.
+const UNPOSITIONED: i64 = -1;
 
 impl Engine {
     /// An engine over Stream's own BitTorrent session.
@@ -828,7 +833,7 @@ impl Shared {
             torrent: Arc::downgrade(&t),
             file,
             cancelled: AtomicBool::new(false),
-            position: AtomicI64::new(0),
+            position: AtomicI64::new(UNPOSITIONED),
             waiting: AtomicI32::new(-1),
             last_read: AtomicI64::new(now_ms()),
         });
@@ -1089,7 +1094,8 @@ impl Shared {
                 if r.cancelled.load(Ordering::SeqCst) {
                     return false;
                 }
-                if r.file == file {
+                // A reader that hasn't read or seeked yet doesn't place the window; the last position still does.
+                if r.file == file && r.position.load(Ordering::SeqCst) != UNPOSITIONED {
                     if primary.as_ref().is_none_or(|p| r.last_read.load(Ordering::SeqCst) > p.last_read.load(Ordering::SeqCst)) {
                         primary = Some(r.clone());
                     }
@@ -1517,6 +1523,13 @@ mod tests {
         assert!(error.message.contains("need a cache of at least"), "{}", error.message);
         let none = Config { cache_dir: String::new(), ..Config::default() };
         assert_eq!(Engine::with_swarm(none, |_, _| unreachable!()).err().unwrap().kind, ErrorKind::EngineFailed);
+    }
+
+    #[test]
+    fn port_mapping_is_off_unless_asked_for() {
+        // Not implemented at all (see native/README.md); the defaults must never ask for it either.
+        let config = Config::default();
+        assert!(!config.upnp && !config.natpmp);
     }
 
     #[test]

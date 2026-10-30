@@ -16,7 +16,9 @@ computer.
 | `core/tests/` | Integration tests against real seeders on loopback |
 | `core/examples/fetch.rs` | Streams a file from given peers and prints its SHA-256, for checks against other BitTorrent implementations |
 | `core/notices.py` | Writes the app's notice for the crates linked into `libstream.so` |
-| `eval/rqbit/` | Evaluation of librqbit against the fixtures; never shipped (see its README) |
+| `eval/interop.sh` | Loopback interoperability checks against independent implementations (librqbit, Node's HTTP/HTTPS) |
+| `eval/rqbit/` | Evaluation of librqbit against the fixtures, and `src/bin/interop.rs`, the librqbit peer `interop.sh` uses; never shipped (see its README) |
+| `SOAK_INVESTIGATION.md` | What is and isn't known about the emulator soak's `Timed out: soak seek 159` |
 
 ## Building
 
@@ -66,13 +68,67 @@ sdkmanager --install "ndk;29.0.14206865"
   roots the app writes from Android's store; certificates are always verified.
   `public_network_only` keeps peers, trackers and DHT nodes off loopback and
   private networks.
-- **Not implemented**: port mapping (UPnP/NAT-PMP; the app never enables it and
-  the engine logs that it stays off), BEP 17 (Hoffman-style) seeds, the DHT over
-  IPv6 (BEP 32), IPv6 local discovery, uTP on more than the first listen
-  interface, BitTorrent v2 block-level hash requests after a failed piece (the
-  piece is downloaded again whole), seeding to v2 peers that need piece layers
-  for files we only know by their root, I2P, SOCKS/HTTP proxies, and SSL
-  torrents. This is not libtorrent feature parity.
+- **Not implemented**: port mapping (UPnP/NAT-PMP; see below), BEP 17
+  (Hoffman-style) seeds, the DHT over IPv6 (BEP 32), IPv6 local discovery, uTP
+  on more than the first listen interface, BitTorrent v2 block-level hash
+  requests after a failed piece (the piece is downloaded again whole), seeding to
+  v2 peers that need piece layers for files we only know by their root, I2P,
+  SOCKS/HTTP proxies, and SSL torrents.
+
+## Compatibility and limitations
+
+This is a streaming client with the parts of BitTorrent a TV player needs. It
+does not aim at, and does not have, libtorrent's feature set or its years of
+exposure to real swarms; nothing here should be read as parity with libtorrent
+or any other client.
+
+**Checked against independent implementations** (`eval/interop.sh`, loopback
+only, generated content, results from October 2026):
+
+| Direction | Passed | Failed as expected (the other side lacks it) |
+| --- | --- | --- |
+| Stream seeder -> librqbit 9.1.0 | v1 and hybrid torrents over TCP; v1 and hybrid magnets (metadata by BEP 9); v1 over uTP only; a multi-file hybrid | pure v2 (librqbit has no BEP 52) |
+| librqbit 9.1.0 seeder -> Stream | v1 with MSE tried then plaintext, and with MSE off; v1 magnet; v1 over uTP only; hybrid torrent and btih+btmh magnet; the middle file of a multi-file hybrid | MSE forced (librqbit has no MSE/PE); pure v2 can't be seeded by librqbit |
+| Node HTTP web seed -> Stream | v1, v2 and hybrid, single file and the middle file of multi-file torrents, no peers at all | |
+| Node HTTPS web seed -> Stream | hybrid, with a locally generated CA given as the trust root | the same seed without that root is never used |
+
+Caveats: librqbit's uTP is `librqbit-utp` 0.7.0, the same library the engine
+uses, so the uTP rows are not independent at that layer. Only librqbit was
+available locally; Transmission, qBittorrent/libtorrent, aria2 and WebTorrent
+were not tested. With librqbit, a hybrid only ever runs as v1 (it never upgrades
+to the v2 handshake).
+
+**Checked only against this repository's own code** (tests in `core/tests/`):
+pure v2 transfers and v2 piece-layer exchange, the BEP 52 handshake upgrade of
+hybrids, MSE/PE in every negotiation (including forced encryption), lt_donthave
+and eviction behaviour, uTP alone with MSE, trackers, and the seeder side of web
+seeds. Real public swarms are deliberately never used by the tests.
+
+**Known limitations besides the list above**:
+
+- A request is asked of a second peer after 2 s only for urgent pieces, and only
+  when another peer has the piece; otherwise it waits for the 30 s request
+  timeout. With a single slow or misbehaving peer that is a 30 s stall.
+- Requests for pieces that leave the read-ahead window are not cancelled; they
+  are answered and their pieces finish at the lowest priority.
+- Endgame duplicates only for urgent pieces; there is no general endgame mode,
+  super-seeding, or choking algorithm beyond rate-ordered unchoking of eight.
+- Streaming torrents never report themselves complete and never seed whole
+  files; uploads are only of pieces currently in the cache.
+- The engine has been soaked on the Android TV emulator once (thirty minutes,
+  passed); it has not been validated on a physical TV or across platforms.
+
+**Port mapping** (UPnP IGD and NAT-PMP/PCP) is off by default in the engine
+(`Config::default()`, tested) and in the app (`TorrentEngine.Config`), and is not
+implemented: enabling it only logs that it stays off. It is deliberately not
+implemented. A streaming client downloads from peers it dials, so inbound
+reachability helps uploads and reciprocity more than playback; UPnP needs SSDP
+multicast and SOAP requests to devices on the LAN, which the tests forbid and
+which would contact the owner's router from a TV app without being asked; and
+mappings left behind by a crashed process outlive it. If it is ever wanted, it
+should be an explicit opt-in in Settings, NAT-PMP/PCP first (a single unicast to
+the gateway), with a short lease renewed while a torrent is active, removed on
+shutdown, and tested against a loopback fake gateway.
 
 ## How streaming works
 
@@ -128,17 +184,24 @@ a test runs its own loopback tracker), with no internet or LAN:
   torrent stays finished until it wants a piece; a peer learns by lt_donthave,
   stays connected and has requests for evicted pieces rejected; downloading
   peers without lt_donthave are disconnected and seeds are not;
+- seek stress (`seek_stress.rs`): dozens of seeks through a 15-slot cache with
+  readers reopened as Media3 does, every byte checked, each seek within the
+  soak's 30 s; an ignored 200-seek run at the simulator's 4 MiB/s
+  (`./native/build-host.sh release --ignored soak_shaped`); and a reopened
+  reader leaving the read-ahead window where it was until it reads;
 - streaming through the engine: several cache turnovers within the bound,
   rewind into evicted data, seeks, multi-file v1/v2/hybrid torrents, metadata
   from magnets and info hashes (v2 piece layers included), an HTTP tracker,
   timeouts, cancellation, shutdown during transfers, corrupt peers, refusals,
   offsets beyond 4 GiB, and concurrent readers.
 
-Interoperability with other implementations is checked by hand: `core/examples/fetch.rs`
-streams the simulator's libtorrent-made v1, v2 and hybrid torrents (and their
-magnets) from a libtorrent seeder, also over uTP only (`STREAM_TCP=0`) and with
-MSE forced (`STREAM_ENCRYPTION=forced`); `eval/rqbit` downloads them from
-`stream-fixture seed`.
+Interoperability with independent implementations is checked by
+`eval/interop.sh` (see above; not part of `build-host.sh`): it builds
+`stream-fixture`, `core/examples/fetch.rs` and the librqbit peer in `eval/rqbit`
+(`CARGO_OFFLINE=1` uses only the local Cargo cache), then runs each direction on
+127.0.0.1. Before libtorrent was removed, `fetch` was also checked by hand
+against a libtorrent seeder over uTP only and with MSE forced; libtorrent is no
+longer in the repository, so that is not repeatable here.
 
 On the emulator, `./simulator.sh test` runs the same engine through JNI and
 Media3 against the host's `stream-fixture` seeder. The seeder is limited to
