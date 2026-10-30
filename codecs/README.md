@@ -36,9 +36,27 @@ network protocols and statically linked mbedTLS), but `media3ext`'s CMake import
 only the four libraries above, so libavformat is never packaged. The FFmpeg
 libraries embed their configure line (`avutil_configuration()`);
 `0003-ffmpeg-configuration-paths.patch` rewrites the builder's checkout, NDK and
-home paths in it to `ffmpeg`, `ndk` and `~` after configure, so packaged
-libraries name no local paths. (The Rust engine's build remaps its source paths
+home paths in it to `ffmpeg`, `ndk` and `~`, and the NASM/pkg-config executable
+paths to their command names after configure, so packaged libraries name no
+local paths. (The Rust engine's build remaps its source paths
 the same way; see `../android/torrent/build.gradle`.)
+
+To check already-built distribution outputs without building, signing or installing:
+
+```sh
+(cd ../android && ./gradlew -PabiSplits=true :app:assembleRelease)
+(cd ../android && ./gradlew :app:bundleRelease)
+../simulator/check-distribution.sh
+```
+
+Run the checker from any directory (the Gradle commands above assume `codecs/`).
+It requires Python 3 and the pinned SDK/NDK tools. It checks the three ABI APKs,
+the universal APK and App Bundle for the complete library set, unexpected ABIs,
+uncompressed and zip-aligned APK libraries, ELF LOAD alignment, unshipped network
+library dependencies, and embedded builder paths. It reads the App Bundle's
+`BundleConfig.pb` page-alignment setting directly; Gradle's bundletool dependency
+is not an executable CLI jar. The 32-bit NDK `libc++_shared` exception is described
+in `../android/DECODERS.md`. This verifies packaging, not signatures or playback.
 
 ## Decoder-only evaluation
 
@@ -77,7 +95,9 @@ Repeated current builds produced byte-identical libraries. The saving is about
 0.1–0.2% of each APK, so the shipping configuration is unchanged. Adoption would
 be justified by roughly 20% less native build time and one fewer pinned
 dependency, not size, and needs the decoder, subtitle, seek and software-profile
-device tests first. Results are retained under the ignored
+device tests first. Review of the retained outputs confirmed these size figures;
+the reduced configuration remains an experiment and is not enabled in `deps.lock`
+or the shipping build patch. Results are retained under the ignored
 `simulator/.cache/evidence/dist/`.
 
 NextLib is GPL-3.0; FFmpeg uses the LGPL-3.0 configuration, dav1d BSD-2-Clause,

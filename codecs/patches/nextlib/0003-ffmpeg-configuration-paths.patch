@@ -1,12 +1,13 @@
 --- a/ffmpeg/setup.sh
 +++ b/ffmpeg/setup.sh
-@@ -227,6 +227,10 @@
+@@ -227,6 +227,11 @@
        --disable-debug \
        ${EXTRA_BUILD_CONFIGURATION_FLAGS} \
        ${COMMON_OPTIONS}
 +
 +    # The libraries embed this configure line (avutil_configuration); keep the builder's paths out of it.
-+    sed -e "s|$BASE_DIR|ffmpeg|g" -e "s|$ANDROID_NDK_HOME|ndk|g" -e "s|$HOME|~|g" config.h >config.h.paths
++    sed -e "s|$BASE_DIR|ffmpeg|g" -e "s|$ANDROID_NDK_HOME|ndk|g" -e "s|$HOME|~|g" \
++      -e "s|$(command -v nasm)|nasm|g" -e "s|$(command -v pkg-config)|pkg-config|g" config.h >config.h.paths
 +    mv config.h.paths config.h
  
      # Build FFmpeg
