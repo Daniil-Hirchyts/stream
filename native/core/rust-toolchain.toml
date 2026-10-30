@@ -1,0 +1,5 @@
+# Pinned with native/deps.lock: every native build of the engine uses this compiler.
+[toolchain]
+channel = "1.92.0"
+targets = ["aarch64-linux-android", "armv7-linux-androideabi", "x86_64-linux-android"]
+profile = "minimal"

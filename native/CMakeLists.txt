@@ -77,13 +77,54 @@ add_subdirectory("${DTV_DEPS_DIR}/libtorrent" libtorrent EXCLUDE_FROM_ALL)
 # Third-party code: its warnings are upstream's to fix, and would hide ours.
 target_compile_options(torrent-rasterbar PRIVATE -w)
 
+# The Rust engine core (core/, pinned by core/rust-toolchain.toml and core/Cargo.lock), built by Cargo for this
+# target and linked statically. Its piece cache stores every torrent's pieces (see src/piece_cache.hpp).
+find_program(DTV_CARGO cargo HINTS "$ENV{HOME}/.cargo/bin" REQUIRED)
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+	set(dtv_rust_target aarch64-linux-android)
+elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
+	set(dtv_rust_target armv7-linux-androideabi)
+elseif(ANDROID_ABI STREQUAL "x86_64")
+	set(dtv_rust_target x86_64-linux-android)
+elseif(ANDROID_ABI)
+	message(FATAL_ERROR "No Rust target for ${ANDROID_ABI}")
+endif()
+set(dtv_rust_dir "${CMAKE_CURRENT_BINARY_DIR}/rust")
+if(dtv_rust_target)
+	set(dtv_rust_lib "${dtv_rust_dir}/${dtv_rust_target}/release/libstream_core.a")
+	set(dtv_rust_target_args --target ${dtv_rust_target})
+else()
+	set(dtv_rust_lib "${dtv_rust_dir}/release/libstream_core.a")
+	set(dtv_rust_target_args)
+endif()
+file(GLOB_RECURSE dtv_rust_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/core/src/*.rs")
+add_custom_command(OUTPUT "${dtv_rust_lib}"
+	# Run from core/ so rustup picks the pinned toolchain; --locked keeps the reviewed dependency versions.
+	COMMAND "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${dtv_rust_dir}"
+		"${DTV_CARGO}" build --release --locked --no-default-features ${dtv_rust_target_args}
+	WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/core"
+	DEPENDS ${dtv_rust_sources} core/Cargo.toml core/Cargo.lock core/rust-toolchain.toml
+	COMMENT "Building the Rust engine core"
+	VERBATIM)
+add_custom_target(dtv_rust_core DEPENDS "${dtv_rust_lib}")
+add_library(stream_core STATIC IMPORTED GLOBAL)
+set_target_properties(stream_core PROPERTIES IMPORTED_LOCATION "${dtv_rust_lib}")
+add_dependencies(stream_core dtv_rust_core)
+if(APPLE)
+	set_property(TARGET stream_core APPEND PROPERTY INTERFACE_LINK_LIBRARIES iconv)
+elseif(ANDROID)
+	set_property(TARGET stream_core APPEND PROPERTY INTERFACE_LINK_LIBRARIES log dl m)
+else()
+	set_property(TARGET stream_core APPEND PROPERTY INTERFACE_LINK_LIBRARIES pthread dl m)
+endif()
+
 add_library(dtv_engine STATIC
 	src/piece_cache.cpp
 	src/cache_disk_io.cpp
 	src/engine.cpp
 )
-target_include_directories(dtv_engine PUBLIC src)
-target_link_libraries(dtv_engine PUBLIC torrent-rasterbar)
+target_include_directories(dtv_engine PUBLIC src include)
+target_link_libraries(dtv_engine PUBLIC torrent-rasterbar stream_core)
 target_compile_options(dtv_engine PRIVATE -Wall -Wextra -Werror)
 # 64-bit file offsets on every ABI, including 32-bit ARM.
 target_compile_definitions(dtv_engine PUBLIC _FILE_OFFSET_BITS=64)

@@ -11,6 +11,7 @@ commit, before anything is built. Nothing is downloaded at runtime.
 | try_signal (libtorrent submodule) | at libtorrent's recorded commit `105cce59972f925a33aa6b1c3109e4cd3caf583d` | — | BSD-3-Clause | `libtorrent/deps/try_signal/LICENSE` |
 | ed25519 (in libtorrent) | — | — | Public domain | `libtorrent/src/ed25519/LICENSE` |
 | Boost (headers only) | 1.90.0 | SHA-256 `5e93d582aff26868d581a52ae78c7d8edf3f3064742c6e77901a1f18a437eea9` | BSL-1.0 | `boost/LICENSE_1_0.txt` |
+| libc (Rust crate) | 0.2.177 | `core/Cargo.lock` checksum | MIT OR Apache-2.0 | crate's `LICENSE-MIT`, `LICENSE-APACHE` |
 | OpenSSL (libssl, libcrypto) | 3.5.9 | SHA-256 `603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a` | Apache-2.0 | `openssl/LICENSE.txt` |
 
 Paths are relative to `.deps/`. Build tools, not shipped: Android NDK

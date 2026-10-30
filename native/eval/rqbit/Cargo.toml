@@ -1,0 +1,12 @@
+[package]
+name = "stream-eval-rqbit"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Evaluates librqbit as a replacement for libtorrent against Stream's loopback fixtures. Never shipped."
+
+[dependencies]
+librqbit = { version = "=9.1.0", default-features = false, features = ["rust-tls"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "fs"] }
+anyhow = "1"
+sha2 = "0.10"

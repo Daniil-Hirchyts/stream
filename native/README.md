@@ -7,15 +7,23 @@ computer.
 
 | Path | Role |
 | --- | --- |
-| `src/piece_cache.*` | One preallocated file per torrent, divided into piece-sized slots; pins, verification, LRU eviction candidates |
+| `core/` | Rust engine core. `cache.rs` is the piece cache: one preallocated file per torrent, divided into piece-sized slots; pins, verification, LRU eviction candidates. Also a handle-based engine (`engine.rs`, `api.rs`) over a pluggable backend (`swarm.rs`), unit-tested against a fake backend, not yet used by the app |
+| `include/stream_core.h` | The Rust core's C ABI |
+| `src/piece_cache.*` | The C++ face of the Rust cache that libtorrent's disk subsystem uses |
 | `src/cache_disk_io.*` | libtorrent's disk subsystem over the cache; one worker for writes, reads, clears and releases in order, one for hashes |
 | `src/engine.*` | The session, readers, the read-ahead window controller, eviction, errors and statistics |
 | `jni/jni_bridge.cpp` | `tv.stream.torrent.TorrentEngine`'s native methods |
 | `patches/libtorrent/` | The eviction patch (see [THIRD_PARTY.md](THIRD_PARTY.md)) |
 | `tools/` | `dtv-fixture` (content, torrents, a real seeder) and shared test fixtures |
 | `tests/` | Host tests: cache units, eviction regressions, streaming against real seeders |
+| `eval/rqbit/` | Evaluation of librqbit as a libtorrent replacement against the fixtures; never shipped (see its README) |
 
 ## Building
+
+The Rust core is built by Cargo from CMake, with the toolchain pinned in
+`core/rust-toolchain.toml` (Rust 1.92.0 and the three Android targets, which
+rustup installs on first use) and dependencies locked in `core/Cargo.lock`. Its
+own unit tests run with `cargo test --no-default-features` in `core/`.
 
 ```sh
 ./native/build-host.sh dev        # debug build, then all tests

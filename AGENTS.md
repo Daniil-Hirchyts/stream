@@ -18,7 +18,8 @@ authorization. Preserve other AVDs, owner data, ADB preferences and TLS checking
 - `android/playback`: this repository's Media3 player, subtitle compatibility,
   menus, overlays and resources; package `tv.stream.playback`.
 - `android/torrent`: JNI/Media3 data source, package `tv.stream.torrent`.
-- `native`: C++17 engine, bounded cache and pinned libtorrent 2.1.2.
+- `native`: C++17 engine, Rust core (`native/core`: bounded piece cache, pinned
+  toolchain and Cargo.lock) and pinned libtorrent 2.1.2.
 - `android/codecs` and `codecs`: pinned software decoder integration/build tools.
 - `sounds`: deterministic generated UI sounds; regenerate rather than hand-edit.
 - `simulator.sh` and `simulator`: generated local media, real loopback BitTorrent

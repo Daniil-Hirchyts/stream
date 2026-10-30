@@ -1,0 +1,30 @@
+[package]
+name = "stream-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+license = "BSD-3-Clause"
+description = "Stream's streaming engine core: bounded piece cache, read-ahead window, handle-based API and JNI bridge."
+publish = false
+
+[lib]
+name = "stream_core"
+# staticlib: linked into libstream.so (Android) and dtv-tests (host) together with the libtorrent shim.
+# rlib: the crate's own unit tests.
+crate-type = ["staticlib", "rlib"]
+
+[features]
+default = ["libtorrent"]
+# The libtorrent backend links against native/shim; the crate's own unit tests run without it.
+libtorrent = ["dep:jni"]
+
+[dependencies]
+jni = { version = "=0.21.1", default-features = false, optional = true }
+libc = "=0.2.177"
+
+[profile.release]
+# The engine runs inside the app process: an abort on panic would take the player down without a report.
+panic = "unwind"
+debug = "line-tables-only"
+lto = "thin"
+codegen-units = 4

@@ -10,6 +10,9 @@ sounds/build/
 # Fetched native sources, native and Gradle build output, and simulator caches stay local.
 native/.deps/
 native/build/
+# Cargo output of the Rust engine core and evaluation crates.
+native/core/target/
+native/eval/*/target/
 android/.gradle/
 android/**/build/
 simulator/.cache/

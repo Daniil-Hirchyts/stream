@@ -1,5 +1,7 @@
 #pragma once
 
+#include "stream_core.h"
+
 #include <libtorrent/error_code.hpp>
 #include <libtorrent/span.hpp>
 #include <libtorrent/units.hpp>
@@ -54,11 +56,13 @@ public:
 	piece_cache(piece_cache const&) = delete;
 	piece_cache& operator=(piece_cache const&) = delete;
 
-	int piece_length() const { return m_piece_length; }
-	int num_pieces() const { return int(m_piece_sizes.size()); }
+	int piece_length() const { return stream_cache_piece_length(m_cache); }
+	int num_pieces() const { return stream_cache_num_pieces(m_cache); }
 	// 0 for an index outside the torrent.
-	int piece_size(piece_index_t p) const { return valid(p) ? m_piece_sizes[std::size_t(static_cast<int>(p))] : 0; }
-	int slot_count() const { return int(m_slots.size()); }
+	int piece_size(piece_index_t p) const { return stream_cache_piece_size(m_cache, static_cast<int>(p)); }
+	int slot_count() const { return stream_cache_slot_count(m_cache); }
+	// The Rust cache this object holds a reference to.
+	stream_cache const* handle() const { return m_cache; }
 
 	// Gives the piece a slot ahead of its data; false when none is free, or while its previous slot is still being
 	// released. Reserving a piece twice is harmless.
@@ -112,49 +116,7 @@ public:
 	stats get_stats() const;
 
 private:
-	enum class state : std::uint8_t { free, reserved, partial, complete, verified };
-
-	struct slot
-	{
-		piece_index_t piece{-1};
-		state st = state::free;
-		bool releasing = false;
-		bool release_requested = false;
-		int pins = 0;
-		int written_blocks = 0;
-		int required = 0;
-		std::uint64_t last_use = 0;
-		std::vector<bool> written;
-	};
-
-	bool valid(piece_index_t p) const { return p >= piece_index_t(0) && static_cast<int>(p) < num_pieces(); }
-	// -1 for a piece without a slot, and for an index outside the torrent.
-	int slot_of(piece_index_t p) const { return valid(p) ? m_slot_of[std::size_t(static_cast<int>(p))] : -1; }
-	int take_slot_locked(piece_index_t p);
-	// Returns whether the slot was freed; the caller then returns it to the free list outside the lock.
-	bool maybe_free_locked(int s);
-	void unpin(int s);
-	std::int64_t slot_offset(int s) const { return std::int64_t(s) * m_piece_length; }
-	int blocks_in(piece_index_t p) const;
-	// Blocks holding at least one byte of file data; a piece is complete once all of them are written.
-	int required_blocks(piece_index_t p) const;
-	void zero_pads(piece_index_t p, int offset, lt::span<char> out) const;
-
-	std::string const m_path;
-	int const m_piece_length;
-	std::vector<int> const m_piece_sizes;
-	std::vector<pad_ranges> const m_pads;
-	int m_fd = -1;
-
-	mutable std::mutex m_mutex;
-	std::condition_variable m_verified_cv;
-	std::vector<slot> m_slots;
-	std::vector<int> m_slot_of;
-	std::vector<int> m_free;
-	std::uint64_t m_tick = 0;
-	std::int64_t m_evicted = 0;
-	bool m_closed = false;
-	std::function<void()> m_on_slot_freed;
+	stream_cache const* m_cache = nullptr;
 };
 
 } // namespace dtv
