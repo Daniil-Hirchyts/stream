@@ -1,6 +1,10 @@
 plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android'; id 'org.jetbrains.kotlin.plugin.compose' }
 def releaseValidation = providers.gradleProperty('releaseValidation').orNull == 'true'
 def separateTvApp = providers.gradleProperty('separateTvApp').orNull == 'true'
+// Distribution: -PabiSplits=true adds one APK per ABI (sideloading, such as the Fire TV Stick's armeabi-v7a) beside the
+// universal APK; :app:bundleRelease makes an App Bundle that stores serve per ABI. Run the bundle task without
+// abiSplits: AGP cannot build a bundle from split-APK outputs. The option applies to all variants.
+def abiSplits = providers.gradleProperty('abiSplits').orNull == 'true'
 
 android {
     namespace 'tv.stream.app'
@@ -24,6 +28,17 @@ android {
     }
     kotlinOptions { jvmTarget = '17' }
     buildFeatures { buildConfig true; compose true }
+    splits {
+        abi {
+            enable abiSplits
+            reset()
+            include 'armeabi-v7a', 'arm64-v8a', 'x86_64'
+            universalApk true
+        }
+    }
+    bundle { abi { enableSplit true } }
+    // Native libraries stay uncompressed and 16 KiB aligned in every APK and split, loaded in place.
+    packaging { jniLibs { useLegacyPackaging false } }
     // JVM tests of the add-on protocol code; Android stubs answer defaults and org.json comes from its own artifact.
     // Robolectric UI snapshots need the merged resources.
     testOptions { unitTests.returnDefaultValues = true; unitTests.includeAndroidResources = true }
