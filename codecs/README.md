@@ -27,6 +27,21 @@ its 1080p device budget. Native decoder discovery alone does not prove that a
 container extractor can deliver a particular format or that a TV can decode it
 fast enough. See `../android/DECODERS.md` for verified combinations and limits.
 
+## Decoder-only evaluation
+
+An isolated arm64 FFmpeg 9.0.1 build on the development Mac compared the current
+configuration with the same decoder and parser list but FFmpeg's avformat and
+networking disabled. Using four build jobs and the same prebuilt dav1d inputs,
+configure plus build took 77 seconds for the current configuration and 67 seconds
+for the reduced one. These are single runs, not controlled benchmarks. The four
+stripped libraries used by the app totalled 8,241,272 bytes and 8,216,480 bytes
+respectively, a 24,792-byte difference. The current APK does not package the
+separately built libavformat, so its much larger scratch-build size is not an APK
+saving. This experiment did not build an APK with the reduced libraries or run
+playback, TLS or other ABI checks. The shipping configuration is unchanged;
+the reduced build requires those checks before adoption. Scratch build logs and
+outputs are retained locally via `simulator/.cache/evidence/ffmpeg-eval-path.txt`.
+
 NextLib is GPL-3.0; FFmpeg uses the LGPL-3.0 configuration, dav1d BSD-2-Clause,
 and mbedTLS Apache-2.0. Retain the license texts and corresponding source/build
 inputs with distributions. APK notices are in
