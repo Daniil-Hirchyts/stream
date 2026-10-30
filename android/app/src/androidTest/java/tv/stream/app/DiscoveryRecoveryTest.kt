@@ -53,7 +53,7 @@ class DiscoveryRecoveryTest : AppHarness() {
             waitUntil("failed search explained", 12000) { visible("Search unavailable") && text("Attempt 3 of 3") }
             assertFalse("A failed provider is not an empty success", visible("No results"))
             assertEquals(3, server.searchRequests.get().toLong()); screenshot("validation-search-recovery.png")
-            browse!!.onActivity { activity -> activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("keyboard:f").requestFocus() }
+            browse!!.onActivity { activity -> assertNotNull("Focusable keyboard:f", focusKey(activity, "keyboard:f")) }
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
             waitUntil("remote reaches recovery", 5000) { focus() == "reload-search" }
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT)

@@ -36,7 +36,7 @@ class StartupTimingTest : AppHarness() {
                 browse!!.onActivity { activity -> activity.openTitle(title, title.id) }
                 waitFast {
                     val shown = AtomicBoolean()
-                    browse!!.onActivity { activity -> val play = activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("play"); shown.set(play != null && play.isShown) }
+                    browse!!.onActivity { activity -> shown.set(tv.stream.app.ui.PageFocus.has(activity.findViewById(R.id.page_rows), "play")) }
                     shown.get()
                 }
                 details.add(SystemClock.elapsedRealtime() - opened)
@@ -44,7 +44,8 @@ class StartupTimingTest : AppHarness() {
                 services.addons.newRequest().use { scope -> assertFalse(entry.awaitCandidate(scope, "").isEmpty()) }
                 val before = File(context.cacheDir, "payload").listFiles()
                 assertTrue("Details must not allocate torrent payload", before == null || before.size == 0)
-                browse!!.onActivity { activity -> val play = activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("play"); assertNotNull(play); assertTrue(play.performClick()) }
+                browse!!.onActivity { activity -> assertTrue("Play takes focus", tv.stream.app.ui.PageFocus.request(activity.findViewById(R.id.page_rows), "play")) }
+                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_CENTER)
                 try { AppHarness.waitUntil("first video and audio output", 30000) { watch() != null && diagnostics().optLong("playTapToFirstAvMs") > 0 } }
                 catch (failure: AssertionError) {
                     val error = diagnostics().put("run", run).put("configuration", configuration)

@@ -44,6 +44,15 @@ abstract class SearchHarness : AppHarness() {
         }
         instrumentation.runOnMainSync { collect(node) }
         assertTrue("Key caption has a measurable text layout", layouts.isNotEmpty())
-        for (layout in layouts) assertFalse("Key captions fit", layout.hasVisualOverflow)
+        // The semantics action lays text out at its full constraint width, so hasVisualOverflow would compare that
+        // paragraph with the narrower drawn text. Check what can actually clip: extra lines, wide lines or height.
+        for (layout in layouts) {
+            val input = layout.layoutInput; val paragraph = layout.multiParagraph
+            val caption = "Key caption \"${input.text}\" fits ${input.constraints}"
+            assertFalse("$caption: within its lines", paragraph.didExceedMaxLines)
+            for (line in 0 until layout.lineCount)
+                assertTrue("$caption: line $line width", layout.getLineRight(line) - layout.getLineLeft(line) <= input.constraints.maxWidth + .5f)
+            assertTrue("$caption: height ${paragraph.height}", paragraph.height <= input.constraints.maxHeight + .5f)
+        }
     }
 }

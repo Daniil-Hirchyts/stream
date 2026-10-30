@@ -50,7 +50,7 @@ class DesignAuditCapture : AppHarness() {
         browse!!.onActivity { activity -> activity.push(Route("Catalogues")) }; waitUntil("Browse", 5000) { visible("Generated films") }; shot(phase, "07-browse")
         browse!!.onActivity { activity -> activity.search() }; waitUntil("Search", 5000) { visible("Type a") }
         browse!!.onActivity { activity -> activity.searchInput("Generated") }; waitUntil("search results", 10000) { visible("Generated Film") }; shot(phase, "08-search-keyboard")
-        browse!!.onActivity { activity -> activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("keyboard:f").requestFocus() }
+        browse!!.onActivity { activity -> org.junit.Assert.assertNotNull("Focusable keyboard:f", focusKey(activity, "keyboard:f")) }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT); waitUntil("full search", 5000) { !visible("Type a") }; shot(phase, "09-search-grid")
         browse!!.onActivity { activity -> activity.root("Settings") }; waitUntil("Settings", 5000) { visible("Languages") }; shot(phase, "10-settings")
         tap("Subtitles", false); waitUntil("subtitle settings", 5000) { visible("Subtitle color") }; shot(phase, "11-subtitle-settings")

@@ -115,7 +115,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         super.onCreate(saved)
         stack = routes.stack
         app = application as TvApplication
-        prompts = BrowseDialogs(this, { main.post { updateTopBar() } }) {
+        prompts = BrowseDialogs(this, { main.post { if (!isDestroyed) updateTopBar() } }) {
             val view = list.findViewWithTag<View>("subtitle-preview")
             if (view is tv.stream.app.ui.SubtitlePreviewView) view.updateFrom(services!!.playerPreferences)
         }
@@ -175,7 +175,8 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
             // so the rail and toolbar return to that control rather than the first filter or row.
             if (contentReady && !stack.isEmpty() && shownRoute === route() && insidePage(old) && old!!.tag is String)
                 route().focus = adapter.persistentFocus(old.tag as String)
-            main.post { updateTopBar() }
+            // Focus also moves while the activity is torn down; a posted update must not outlive its window.
+            main.post { if (!isDestroyed) updateTopBar() }
         }
         Tv.control(searchButton, "nav:search", Runnable { search(); enterContent() }, Consumer<String> { }, DoubleSupplier { topBar.lift() }, false)
         Tv.hover(searchButton, DoubleSupplier { topBar.lift() })
@@ -493,7 +494,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
     fun contentStart(): Int { return Tv.dp(this, contentInset().toFloat()) }
     private fun updateTopBar() {
         // A rebound keyboard can restore focus before RecyclerView has attached every holder.
-        if (list.isComputingLayout) { list.post { updateTopBar() }; return }
+        if (list.isComputingLayout) { list.post { if (!isDestroyed) updateTopBar() }; return }
         val offset = list.computeVerticalScrollOffset()
         scrollFade.alpha = if (!stack.isEmpty() && route().screen == "Search") 0f else Math.min(1f, offset / Tv.dp(this, 32f).toFloat())
         if (prompts.isShowing) return
@@ -503,8 +504,8 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
                 else NavigationRail.State.WRAPPED
         topBar.state(state)
         if (hidden) topBar.visibility = View.INVISIBLE
-        findViewById<View>(R.id.navigation_reveal).visibility = View.GONE
-        findViewById<View>(R.id.navigation_dismiss).visibility = if (state == NavigationRail.State.EXPANDED) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.navigation_reveal)?.visibility = View.GONE
+        findViewById<View>(R.id.navigation_dismiss)?.visibility = if (state == NavigationRail.State.EXPANDED) View.VISIBLE else View.GONE
     }
     private fun focusNavigation() {
         if (hiddenNavigation()) return

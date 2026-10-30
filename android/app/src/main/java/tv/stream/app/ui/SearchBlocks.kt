@@ -74,7 +74,8 @@ internal object SearchBlocks {
             focusAfter = focus; visible = show; item.keyboardVisible = show; modeChanged(show)
         }
         fun toggle() = keyboard(!visible)
-        fun result(): String = lastResult.takeIf { key -> item.tiles.any { it.key == key } } ?: item.tiles.firstOrNull()?.key ?: "search-results"
+        fun result(): String = lastResult.takeIf { key -> item.tiles.any { it.key == key } } ?: item.tiles.firstOrNull()?.key
+                ?: item.actions.firstOrNull()?.key ?: "search-results"
         fun focused(key: String, arrowing: Boolean) {
             if (key.startsWith(item.key + ":")) lastKeyboard = key
             else if (item.tiles.any { it.key == key }) {
@@ -95,6 +96,10 @@ internal object SearchBlocks {
                 if (code == KeyEvent.KEYCODE_DPAD_LEFT) { if (at > 0) request?.invoke(row[at - 1].key); return true }
                 if (code == KeyEvent.KEYCODE_DPAD_RIGHT && at == row.lastIndex && item.tiles.isNotEmpty()) {
                     keyboard(false); return true
+                }
+                // Without results, a recovery action (Reload) beside the keyboard is the next stop.
+                if (code == KeyEvent.KEYCODE_DPAD_RIGHT && at == row.lastIndex && item.actions.isNotEmpty()) {
+                    request?.invoke(item.actions[0].key); return true
                 }
             }
             if (code == KeyEvent.KEYCODE_DPAD_LEFT && !visible) {
@@ -211,7 +216,8 @@ internal object SearchBlocks {
                             opacity.animateTo(0f, tween((140 * opacity.value).toInt().coerceAtLeast(1)))
                             val index = grid.firstVisibleItemIndex; val offset = grid.firstVisibleItemScrollOffset
                             split = show; state.columns = if (show) 4 else 6
-                            grid.scrollToItem(index, offset)
+                            // An empty Search composes no grid; scrolling a never-laid-out lazy grid would never return.
+                            if (grid.layoutInfo.totalItemsCount > 0) grid.scrollToItem(index, offset)
                             awaitFrame()
                         }
                         opacity.animateTo(1f, tween(220))

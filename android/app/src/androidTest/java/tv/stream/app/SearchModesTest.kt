@@ -177,7 +177,7 @@ class SearchModesTest : SearchHarness() {
         browse!!.onActivity { activity -> (activity.findViewById<RecyclerView>(R.id.page_rows).adapter as PageAdapter).toggleSearchKeyboard() }
         searchWait("empty results get the full page", 5000) { !keyboardShown() && focus() == "search-results" }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT)
-        AppHarness.waitUntil("Left returns to typing even without results", 5000) { keyboardShown() && focus().startsWith("keyboard:") }
+        searchWait("Left returns to typing even without results", 5000) { keyboardShown() && focus().startsWith("keyboard:") }
     }
     @Test @Throws(Exception::class) fun theQueryHeadsTheKeyboardAndFullSearchIsOnlyResults() {
         BrowseRecoveryTest.CatalogServer().use { server ->

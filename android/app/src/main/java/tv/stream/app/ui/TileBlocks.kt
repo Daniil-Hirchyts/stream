@@ -73,6 +73,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -162,7 +163,9 @@ internal object TileBlocks {
                     PageControls.Icon(tile.badge, 14, colorResource(R.color.tv_text))
                 }
                 if (tile.flag.isNotEmpty()) BasicText(tile.flag.uppercase(), Modifier.align(Alignment.TopStart).padding(start = 7.dp, top = 7.dp)
-                        .platter(R.drawable.tv_flag).padding(horizontal = 7.dp, vertical = 2.dp).clearAndSetSemantics {},
+                        .platter(R.drawable.tv_flag).padding(horizontal = 7.dp, vertical = 2.dp)
+                        // The card's description already ends with the flag; the tag only shows that it is painted.
+                        .clearAndSetSemantics { testTag = tile.key + ":flag" },
                         style = TextBlocks.style(Tv.Font.MEDIUM, 11f, R.color.tv_on_focus, false).copy(letterSpacing = .06.em), maxLines = 1)
             }
             val drop = with(LocalDensity.current) { (scale - 1f) * frameHeight / 2f }

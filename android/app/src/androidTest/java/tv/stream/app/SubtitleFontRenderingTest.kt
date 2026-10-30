@@ -57,8 +57,7 @@ class SubtitleFontRenderingTest : AppHarness() {
         AppHarness.waitUntil("Settings returns focus after the chooser closes", 5000) {
             val ready = java.util.concurrent.atomic.AtomicBoolean()
             browse!!.onActivity { activity ->
-                val row = activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("subtitle-font")
-                ready.set(activity.hasWindowFocus() && row != null && row.hasFocus())
+                ready.set(activity.hasWindowFocus() && activity.currentFocus?.tag == "subtitle-font")
             }; ready.get()
         }
     }

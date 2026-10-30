@@ -161,7 +161,7 @@ class VerticalNavigationTest : AppHarness() {
     @Test @Throws(Exception::class) fun hiddenPagesKeepRemoteAndPointerNavigationInsideContent() {
         readyLibrary(); launch(); AppHarness.waitUntil("Home", 10000) { visible("Generated Film") }
         tap("Generated Film", true); AppHarness.waitUntil("Details", 10000) { visible("Play") }
-        browse!!.onActivity { a -> a.findViewById<View>(R.id.page_rows).findViewWithTag<View>("play").requestFocus() }
+        browse!!.onActivity { a -> assertNotNull("Focusable play", focusKey(a, "play")) }
         AppHarness.waitUntil("Details Play focused", 5000) { focused("play") }
         key(KeyEvent.KEYCODE_DPAD_LEFT); assertFocus("play"); assertNavigationHidden()
         key(KeyEvent.KEYCODE_DPAD_RIGHT); assertFocus("sources")
@@ -169,7 +169,7 @@ class VerticalNavigationTest : AppHarness() {
         key(KeyEvent.KEYCODE_DPAD_RIGHT); key(KeyEvent.KEYCODE_DPAD_CENTER)
         AppHarness.waitUntil("Sources page", 10000) { visible("Size") }
         assertNavigationHidden()
-        browse!!.onActivity { a -> a.findViewById<View>(R.id.page_rows).findViewWithTag<View>("sort:BEST").requestFocus() }
+        browse!!.onActivity { a -> assertNotNull("Focusable sort:BEST", focusKey(a, "sort:BEST")) }
         key(KeyEvent.KEYCODE_DPAD_LEFT); assertFocus("sort:BEST")
         key(KeyEvent.KEYCODE_DPAD_RIGHT); assertFocus("sort:QUALITY")
         key(KeyEvent.KEYCODE_DPAD_LEFT); assertFocus("sort:BEST")
@@ -244,7 +244,7 @@ class VerticalNavigationTest : AppHarness() {
         AppHarness.waitUntil("Popup dismisses before rail navigation", 5000) { visible("Subtitle color") }
         browse!!.onActivity { a -> assertFalse(a.findViewById<View>(R.id.top_bar).hasFocus()) }
         tap("Search", true); AppHarness.waitUntil("Keyboard", 5000) { visible("Type a") }; collapsed("08-search")
-        browse!!.onActivity { a -> a.findViewById<View>(R.id.page_rows).findViewWithTag<View>("keyboard:a").requestFocus() }
+        browse!!.onActivity { a -> assertNotNull("Focusable keyboard:a", focusKey(a, "keyboard:a")) }
         key(KeyEvent.KEYCODE_DPAD_LEFT); assertFocus("keyboard:a")
         browse!!.onActivity { a ->
             assertEquals(NavigationRail.State.HIDDEN, (a.findViewById<View>(R.id.top_bar) as NavigationRail).state())
@@ -254,7 +254,7 @@ class VerticalNavigationTest : AppHarness() {
         shot("09-search-no-rail")
         browse!!.onActivity { a -> a.searchInput("Generated") }
         AppHarness.waitUntil("Search results", 10000) { visible("Generated Film") }; collapsed("10-search-results")
-        browse!!.onActivity { a -> a.findViewById<View>(R.id.page_rows).findViewWithTag<View>("keyboard:f").requestFocus() }
+        browse!!.onActivity { a -> assertNotNull("Focusable keyboard:f", focusKey(a, "keyboard:f")) }
         key(KeyEvent.KEYCODE_DPAD_RIGHT)
         browse!!.onActivity { a -> assertFalse("Right from keyboard reaches results", a.currentFocus!!.tag.toString().startsWith("keyboard:")) }
         key(KeyEvent.KEYCODE_DPAD_LEFT)

@@ -44,8 +44,7 @@ class NavigationPerformanceTest : AppHarness() {
                 val ready = AtomicBoolean(false)
                 while (!ready.get() && SystemClock.elapsedRealtime() < deadline) {
                     browse!!.onActivity { activity ->
-                        val play = activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("play")
-                        ready.set(play != null && play.isShown && activity.hasWindowFocus())
+                        ready.set(tv.stream.app.ui.PageFocus.has(activity.findViewById(R.id.page_rows), "play") && activity.hasWindowFocus())
                     }
                     if (!ready.get()) SystemClock.sleep(10)
                 }

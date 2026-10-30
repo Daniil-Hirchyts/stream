@@ -177,8 +177,7 @@ class LiveAddonTest : AppHarness() {
     private fun tagged(key: String): Boolean {
         val found = AtomicBoolean()
         browse!!.onActivity { activity ->
-            val view: android.view.View? = activity.findViewById<android.view.View>(R.id.page_rows).findViewWithTag(key)
-            found.set(view != null && view.isShown)
+            found.set(tv.stream.app.ui.PageFocus.has(activity.findViewById(R.id.page_rows), key))
         }
         return found.get()
     }

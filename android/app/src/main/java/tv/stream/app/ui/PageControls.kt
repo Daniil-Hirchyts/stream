@@ -6,6 +6,7 @@ import android.os.Looper
 import android.view.KeyEvent as PlatformKeyEvent
 import androidx.annotation.ColorRes
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -97,6 +98,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.launch
 import tv.stream.app.R
 
 /**
@@ -390,22 +392,30 @@ internal object PageControls {
         }
         val text = TextBlocks.style(Tv.Font.REGULAR, 12.5f, R.color.tv_text_secondary, false)
         Box(Modifier.fillMaxWidth().height(28.dp).clearAndSetSemantics {}) {
-            for (i in slots.indices) {
-                val slot = slots[i].value ?: continue
-                val on = i == active && target != null && target.label == slot.label
-                val alpha by animateFloatAsState(if (on) 1f else 0f, tween(if (on) 180 else 120, if (on) 60 else 0), label = "caption")
-                val rise by animateDpAsState(if (on) 0.dp else if (i == active) 4.dp else (-3).dp, tween(if (on) 180 else 120, if (on) 60 else 0), label = "caption-rise")
-                BasicText(slot.label, style = text.copy(textAlign = TextAlign.Center), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(min = 160.dp).padding(horizontal = 6.dp)
-                                .graphicsLayer { this.alpha = alpha; translationY = rise.toPx() }
-                                .drawWithContent { drawContent(); captionDrawn?.invoke(slot.label, alpha) }
-                                .layout { measurable, constraints ->
-                                    val placeable = measurable.measure(constraints.copy(minWidth = 0))
-                                    layout(placeable.width, placeable.height) {
-                                        val x = slot.center - slot.scroll.value - placeable.width / 2f
-                                        placeable.place(x.coerceIn(0f, (constraints.maxWidth - placeable.width).coerceAtLeast(0).toFloat()).toInt(), 0)
-                                    }
-                                })
+            for (i in slots.indices) key(i) {
+                val slot = slots[i].value
+                if (slot != null) {
+                    val on = i == active && target != null && target.label == slot.label
+                    // A slot appears when it is first given a label: it starts hidden and below, then fades and rises in.
+                    val fade = remember { Animatable(0f) }
+                    val lift = remember { Animatable(4f) }
+                    LaunchedEffect(on, i == active) {
+                        val motion = tween<Float>(if (on) 180 else 120, if (on) 60 else 0)
+                        launch { fade.animateTo(if (on) 1f else 0f, motion) }
+                        lift.animateTo(if (on) 0f else if (i == active) 4f else -3f, motion)
+                    }
+                    BasicText(slot.label, style = text.copy(textAlign = TextAlign.Center), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(min = 160.dp).padding(horizontal = 6.dp)
+                                    .graphicsLayer { this.alpha = fade.value; translationY = lift.value.dp.toPx() }
+                                    .drawWithContent { drawContent(); captionDrawn?.invoke(slot.label, fade.value) }
+                                    .layout { measurable, constraints ->
+                                        val placeable = measurable.measure(constraints.copy(minWidth = 0))
+                                        layout(placeable.width, placeable.height) {
+                                            val x = slot.center - slot.scroll.value - placeable.width / 2f
+                                            placeable.place(x.coerceIn(0f, (constraints.maxWidth - placeable.width).coerceAtLeast(0).toFloat()).toInt(), 0)
+                                        }
+                                    })
+                }
             }
         }
     }

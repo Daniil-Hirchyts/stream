@@ -159,7 +159,7 @@ class LiveTorrentProvidersTest : AppHarness() {
     }
     private fun tagged(tag: String): Boolean {
         val found = AtomicBoolean()
-        browse!!.onActivity { activity -> val view: android.view.View? = activity.findViewById<android.view.View>(R.id.page_rows).findViewWithTag(tag); found.set(view != null && view.isShown) }
+        browse!!.onActivity { activity -> found.set(tv.stream.app.ui.PageFocus.has(activity.findViewById(R.id.page_rows), tag)) }
         return found.get()
     }
     @Throws(Exception::class)

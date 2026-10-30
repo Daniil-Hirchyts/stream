@@ -3,7 +3,6 @@ package tv.stream.app
 import org.junit.Assert.*
 import android.view.KeyEvent
 import android.view.View
-import android.widget.TextView
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONArray
@@ -34,6 +33,9 @@ class NewEpisodesScreenTest : AppHarness() {
 
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
         waitUntil("Details open on the new episode", 10000) { focused("play") && visible("S1 E3") }
+        // This fixture has no stream provider, so the "Get add-ons" notice sits between the actions and the seasons.
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitUntil("the no-provider notice", 5000) { focused("add-source") }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
         waitUntil("episodes", 5000) { focused("season:1") }
         waitUntil("the new episode card is marked", 5000) { "New" == flag("episode:followed:1:3") }
@@ -52,6 +54,8 @@ class NewEpisodesScreenTest : AppHarness() {
         // Opening the series without choosing an episode still starts where the viewer is, now unmarked.
         browse!!.onActivity { activity -> activity.openTitle(show, "") }
         waitUntil("Play continues the series", 10000) { focused("play") && visible("S1 E3") }
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitUntil("the no-provider notice", 5000) { focused("add-source") }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
         waitUntil("episodes", 5000) { focused("season:1") }
         waitUntil("no longer marked", 5000) { shown("episode:followed:1:3") && flag("episode:followed:1:3") == null }
@@ -77,27 +81,10 @@ class NewEpisodesScreenTest : AppHarness() {
         browse!!.onActivity { activity -> result.set(activity.currentFocus != null && key == activity.currentFocus!!.tag) }
         return result.get()
     }
-    private fun shown(key: String): Boolean {
-        val result = AtomicReference(false)
-        browse!!.onActivity { activity -> val view: View? = activity.findViewById<View>(R.id.page_rows).findViewWithTag(key); result.set(view != null && view.isShown) }
-        return result.get()
-    }
-    private fun description(key: String): String? {
-        val result = AtomicReference<String>()
-        browse!!.onActivity { activity ->
-            val view: View? = activity.findViewById<View>(R.id.page_rows).findViewWithTag(key)
-            result.set(if (view == null || view.contentDescription == null) null else view.contentDescription.toString())
-        }
-        return result.get()
-    }
-    /** The word over a tile's artwork, or null when it has none. */
-    private fun flag(key: String): String? {
-        val result = AtomicReference<String>()
-        browse!!.onActivity { activity ->
-            val tile: View? = activity.findViewById<View>(R.id.page_rows).findViewWithTag(key)
-            val flag: TextView? = if (tile == null) null else tile.findViewWithTag("tile-flag")
-            result.set(if (flag == null || !flag.isShown) null else flag.text.toString())
-        }
-        return result.get()
-    }
+    private fun shown(key: String): Boolean = semanticNode(key) != null
+    private fun description(key: String): String? =
+            semanticNode(key)?.config?.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription) { emptyList() }?.joinToString(" ")?.ifEmpty { null }
+    /** The word over a tile's artwork, or null when it has none: the painted flag ends the card's description. */
+    private fun flag(key: String): String? =
+            if (semanticNode("$key:flag") == null) null else description(key)?.substringAfterLast(". ")
 }
