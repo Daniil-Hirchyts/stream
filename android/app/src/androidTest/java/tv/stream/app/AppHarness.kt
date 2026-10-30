@@ -38,7 +38,7 @@ abstract class AppHarness {
     @JvmField var browse: ActivityScenario<MainActivity>? = null
     @Before @Throws(Exception::class) open fun configure() {
         val info: android.accessibilityservice.AccessibilityServiceInfo = instrumentation.uiAutomation.serviceInfo
-        info.flags = info.flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        info.flags = info.flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
         instrumentation.uiAutomation.serviceInfo = info
         app = context.applicationContext as TvApplication
         val options = context.getSharedPreferences("instrumentation", Context.MODE_PRIVATE)
@@ -98,8 +98,16 @@ abstract class AppHarness {
         instrumentation.runOnMainSync { for (a in ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)) if (a is WatchActivity) result.set(a.diagnosticSnapshot()) }; return result.get()
     }
     open fun visible(label: String): Boolean { return findWindow(label) != null }
+    /**
+     * Compose sends semantics changes only when an accessibility service is enabled, which UiAutomation is not, so its
+     * node cache can keep a composition's previous content. Read each snapshot afresh.
+     */
+    fun windows(): List<android.view.accessibility.AccessibilityWindowInfo> {
+        if (android.os.Build.VERSION.SDK_INT >= 34) instrumentation.uiAutomation.clearCache()
+        return instrumentation.uiAutomation.windows
+    }
     private fun findWindow(label: String): AccessibilityNodeInfo? {
-        for (window in instrumentation.uiAutomation.windows) {
+        for (window in windows()) {
             if (!window.isFocused) continue
             val result = find(window.root, label); if (result != null) return result
         }
@@ -124,8 +132,28 @@ abstract class AppHarness {
         return null
     }
     open fun row(key: String, mouse: Boolean) {
-        val bounds = Rect(); browse!!.onActivity { activity -> val v = activity.findViewById<android.view.View>(R.id.page_rows).findViewWithTag<android.view.View>(key); assertNotNull("Row $key", v); assertTrue(v.getGlobalVisibleRect(bounds)) }
+        val bounds = Rect()
+        if (!keyed(bounds) { it == key }) browse!!.onActivity { activity -> val v = activity.findViewById<android.view.View>(R.id.page_rows).findViewWithTag<android.view.View>(key); assertNotNull("Row $key", v); assertTrue(v.getGlobalVisibleRect(bounds)) }
         pointer(bounds.centerX().toFloat(), bounds.centerY().toFloat(), mouse)
+    }
+    /** Focuses the page control keyed `key`, native or declarative; the platform view then holding focus, or null. */
+    open fun focusKey(activity: MainActivity, key: String): android.view.View? =
+            if (tv.stream.app.ui.PageFocus.request(activity.findViewById(R.id.page_rows), key)) activity.currentFocus else null
+    /** A visible declarative control whose key (exposed as its accessibility resource name) matches. */
+    open fun keyed(bounds: Rect, matches: (String) -> Boolean): Boolean {
+        for (window in windows()) {
+            if (!window.isFocused) continue
+            val node = keyedNode(window.root, matches) ?: continue
+            node.getBoundsInScreen(bounds); return !bounds.isEmpty
+        }
+        return false
+    }
+    private fun keyedNode(node: AccessibilityNodeInfo?, matches: (String) -> Boolean): AccessibilityNodeInfo? {
+        if (node == null || !node.isVisibleToUser) return null
+        val id = node.viewIdResourceName
+        if (id != null && node.isFocusable && matches(id)) return node
+        for (i in 0 until node.childCount) { val found = keyedNode(node.getChild(i), matches); if (found != null) return found }
+        return null
     }
     open fun tap(label: String, mouse: Boolean) {
         revealNavigationFor(label, mouse)
@@ -165,7 +193,7 @@ abstract class AppHarness {
     private fun targetNode(label: String): AccessibilityNodeInfo? {
         // A shelf heading can have the same text as its card. Only match labels inside an actual click target,
         // carrying the ancestor from this snapshot instead of following potentially recycled parent pointers.
-        for (window in instrumentation.uiAutomation.windows) {
+        for (window in windows()) {
             if (!window.isFocused) continue
             val target = clickableLabel(window.root, label, null)
             if (target != null) return target
@@ -223,7 +251,8 @@ abstract class AppHarness {
         val bounds = Rect()
         waitUntil("playable source row", 30000) {
             if (watch() != null) return@waitUntil true
-            bounds.setEmpty(); browse!!.onActivity { activity -> sourceBounds(activity.findViewById(R.id.page_rows), bounds) }
+            bounds.setEmpty()
+            if (!keyed(bounds) { it.startsWith("source:") }) browse!!.onActivity { activity -> sourceBounds(activity.findViewById(R.id.page_rows), bounds) }
             !bounds.isEmpty
         }
         if (!bounds.isEmpty) pointer(bounds.centerX().toFloat(), bounds.centerY().toFloat(), true)

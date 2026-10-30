@@ -15,7 +15,7 @@ class ScreenStateInteractionTest : AppHarness() {
         tap("Playback", false)
         waitUntil("Playback settings", 5_000) { visible("Play next episode") }
         browse!!.onActivity { activity ->
-            assertTrue(activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>("autoplay").requestFocus())
+            assertNotNull("autoplay row", focusKey(activity, "autoplay"))
         }
         browse!!.recreate()
         waitUntil("Playback category and focused action restored", 10_000) {

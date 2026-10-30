@@ -608,16 +608,36 @@ work owner. Native create/select/close stays ordered on the application's
 session. Pause, speed and position still use lifecycle saves and the encrypted
 progress store.
 
-Compose adoption starts with Settings and add-on management and extends to the
-shared Details and browse blocks. `ComposePageBlock` owns block models and applies
-native bindings through `AndroidView`. RecyclerView retains page/shelf identity
-and scrolling; the existing native controls retain drawing, accessibility tags,
-remote focus paths, touch and animations. Complex shelves, grids and the search
-keyboard keep their custom parents. Media3 retains its video surface and the
-player controls migrate last through `ComposePlayerControls`, which binds title,
-episode and watched state without replacing the native controls or their event
-handlers. The player timeline retains its 48 dp touch target and dragging behavior. New Compose
-work must preserve those interaction contracts rather than introduce new styling.
+Compose adoption proceeds block by block inside the page's RecyclerView, which
+keeps page/shelf identity and scrolling. `ComposePageBlock` hosts each block; a
+block with a declarative implementation is drawn by composables alone, the rest
+still host their native builders through `AndroidView`.
+
+- **Declarative:** headings, explanatory text and quiet messages (`TextBlocks`);
+  Settings and add-on management rows (list, source and field rows) and the
+  Settings split view (`PageRows`). Rows keep the native platter look, Settings'
+  fixed growth, sounds, exact accessibility labels, click by remote (confirm keys
+  press on down and click on up), pointer and touch, focus after a touch, and
+  popups that grow from the row's platter (`Tv.Region`). The split view selects
+  a category on focus, enters its pane on Right/OK/tap, returns to the lit
+  category on Left, restores a pane row by key and keeps each column's scroll.
+  The subtitle preview inside Settings stays a platform view (it renders with the
+  player's subtitle renderer).
+- **Focus by key:** `PageFocus` finds, focuses and reports page controls by key
+  whichever toolkit draws them. Declarative controls register a `FocusRequester`
+  (and their popup region) with their block; the focused key is mirrored onto
+  the composition owner's tag, so route focus, `currentFocus.tag` and
+  instrumentation keep working. Controls expose their key as an accessibility
+  resource name for tests.
+- **Still native inside `AndroidView`:** Details header and actions, chips,
+  episode browser, shelves and grids, the Home spotlight, the search keyboard,
+  notices and messages with actions, skeletons, pagination, and the player
+  overlays (`ComposePlayerControls` binds title, episode and watched state but
+  keeps the native controls). Media3 keeps its video surface. The player
+  timeline retains its 48 dp touch target and dragging behavior.
+
+New Compose work must preserve those interaction contracts rather than introduce
+new styling.
 
 ## Local data
 

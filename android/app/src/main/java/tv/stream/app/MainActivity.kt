@@ -30,6 +30,7 @@ import tv.stream.app.addon.AddonException
 import tv.stream.app.addon.AddonUrl
 import tv.stream.app.addon.Cancellation
 import tv.stream.app.addon.Title
+import tv.stream.app.ui.PageFocus
 import tv.stream.app.ui.Artwork
 import tv.stream.app.ui.Backdrop
 import tv.stream.app.ui.Failures
@@ -600,9 +601,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
     private fun enterContent() {
         if (stack.isEmpty()) return
         topBar.state(if (hiddenNavigation()) NavigationRail.State.HIDDEN else NavigationRail.State.WRAPPED)
-        val target: View? = list.findViewWithTag(route().focus)
-        if (target != null && target.isShown && target.isFocusable) target.requestFocus()
-        else {
+        if (!PageFocus.request(list, route().focus)) {
             val first = firstFocusable(list)
             if (first != null) first.requestFocus()
             else list.requestFocus() // Right can collapse the rail even on an empty or still-loading page.
@@ -696,7 +695,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
             else list.scrollToPosition(0)
         }
         var available = wanted
-        if (!wanted.isEmpty() && adapter.position(wanted) < 0 && pageTools.findViewWithTag<View>(wanted) == null)
+        if (!wanted.isEmpty() && adapter.position(wanted) < 0 && pageTools.findViewWithTag<View>(wanted) == null && !PageFocus.has(list, wanted))
             available = if (page.initialFocus != null) page.initialFocus!! else if (page.firstTile() == null) "" else page.firstTile()!!
         val target = available
         val mine = generation
@@ -704,15 +703,14 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
             if (mine != generation || stopped) return@afterPageLayout
             finishContentFocusWait()
             if (preserveNavigation) { contentReady = true; return@afterPageLayout }
-            var found: View? = if (target.isEmpty()) null else pageTools.findViewWithTag(target)
-            if (found == null && !target.isEmpty()) found = list.findViewWithTag(target)
+            val found: View? = if (target.isEmpty()) null else pageTools.findViewWithTag(target)
             if (found != null) found.requestFocus()
+            else if (PageFocus.request(list, target)) Unit
             else if (!target.isEmpty() && adapter.position(target) >= 0) {
                 list.scrollToPosition(adapter.position(target))
                 afterPageLayout {
                     if (mine != generation || stopped) return@afterPageLayout
-                    val restored: View? = list.findViewWithTag(target)
-                    if (restored != null) restored.requestFocus() else focusFirst()
+                    if (!PageFocus.request(list, target)) focusFirst()
                     contentReady = true
                 }
                 return@afterPageLayout
@@ -1077,6 +1075,9 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         if (move) lastUpNavigation = if (event.keyCode == KeyEvent.KEYCODE_DPAD_UP) android.os.SystemClock.uptimeMillis() else 0
         if (move) Sounds.input()
         val before: View? = currentFocus
+        // A composition moves focus between its own controls without changing the platform focus view.
+        val beforeKey = before?.tag
+        val stayed = { currentFocus === before && currentFocus?.tag == beforeKey }
         if (move && event.keyCode == KeyEvent.KEYCODE_DPAD_UP && before != null
                 && before.tag.toString().startsWith("season:") && returnToSeriesOverview()) return true
         if (move && event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && (before === list || before == null) && services != null && !hiddenNavigation()) {
@@ -1092,11 +1093,11 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
             super.dispatchKeyEvent(event)
         } finally { adapter.arrowing(false) }
         if (move && !hiddenNavigation() && event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && insidePage(before) && leftContentEdge(before)
-                && (currentFocus === before || !insidePage(currentFocus))) {
+                && (stayed() || !insidePage(currentFocus))) {
             focusNavigation(); handled = true
         }
-        if (move && event.repeatCount == 0 && before != null && currentFocus === before)
-            main.postDelayed({ if (!stopped && currentFocus === before) Sounds.play(Sounds.Sound.EDGE) }, 90)
+        if (move && event.repeatCount == 0 && before != null && stayed())
+            main.postDelayed({ if (!stopped && stayed()) Sounds.play(Sounds.Sound.EDGE) }, 90)
         return handled
     }
 
@@ -1162,14 +1163,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         private const val SKELETON_DELAY_MS: Long = 160
 
         private fun showsLibrary(route: Route): Boolean { return route.screen == "Home" || route.screen == "Library" }
-        private fun firstFocusable(view: View): View? {
-            if (view.visibility != View.VISIBLE) return null
-            if (view.isFocusable && view.tag is String) return view
-            if (view is ViewGroup) {
-                for (i in 0 until view.childCount) { val found = firstFocusable(view.getChildAt(i)); if (found != null) return found }
-            }
-            return null
-        }
+        private fun firstFocusable(view: View): View? = PageFocus.first(view)
         /** Screens built as lists and forms (Page.narrow): their skeletons use the same centred column. */
         private fun isNarrow(screen: String): Boolean {
             return when (screen) {

@@ -27,6 +27,8 @@ internal class ComposePageBlock(
     private val rebind: (View, Item) -> Boolean,
 ) : AbstractComposeView(context) {
     private data class Model(val revision: Long, val item: Item)
+    /** The keyed declarative controls this block draws (Settings rows and the split view). */
+    val focus = PageFocus.Registry(this)
     private val model = mutableStateOf(Model(0, initialItem))
     private var nativeSlot: NativeSlot? = initialContent?.let { NativeSlot(context, it) }
     private val slot: NativeSlot get() = nativeSlot ?: NativeSlot(context, render(model.value.item)).also { nativeSlot = it }
@@ -44,6 +46,7 @@ internal class ComposePageBlock(
                 ?: ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
+
     /** RecyclerView publishes a model; the composition owns rendering and rebinding it. */
     fun bind(item: Item): Boolean {
         if (item.kind != model.value.item.kind || item.key != model.value.item.key) return false
@@ -55,10 +58,12 @@ internal class ComposePageBlock(
         get() = model.value.revision != (nativeSlot?.shownRevision ?: drawnRevision)
 
     // Native controls are exposed as focus targets directly, so the Compose owner never becomes an extra D-pad stop
-    // between a page control and the toolbar/rail. Declarative blocks so far are text, which takes no focus.
+    // between a page control and the toolbar/rail. A block whose declarative controls take focus offers its owner,
+    // which moves focus into the composition; text-only blocks offer nothing.
     override fun addFocusables(views: ArrayList<View>, direction: Int, focusableMode: Int) {
         val native = nativeSlot
         if (native != null && native.isAttachedToWindow) native.addFocusables(views, direction, focusableMode)
+        else if (native == null && focus.hasControls) super.addFocusables(views, direction, focusableMode)
     }
 
     @Composable
@@ -66,7 +71,7 @@ internal class ComposePageBlock(
         val current = model.value
         val block = declarative(current.item)
         if (block != null) {
-            block()
+            androidx.compose.runtime.CompositionLocalProvider(PageFocus.Local provides focus) { block() }
             SideEffect { drawnRevision = current.revision }
             return
         }

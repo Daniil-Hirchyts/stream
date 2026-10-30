@@ -24,13 +24,13 @@ import org.robolectric.annotation.LooperMode
 import tv.stream.app.R
 import tv.stream.app.addon.Title
 
-/** The first migrated control keeps the native row's geometry, labels, click/remote focus and view identity. */
+/** A native block hosted in a composition keeps its geometry, labels, click/remote focus and view identity. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w960dp-h540dp-land-television-xhdpi")
 @LooperMode(LooperMode.Mode.PAUSED)
 class ComposePageBlockTest {
     @get:Rule val composition = createEmptyComposeRule()
-    @Test fun interopPreservesNativeSettingsRowGeometryAndInteraction() {
+    @Test fun interopPreservesNativeControlGeometryAndInteraction() {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup().visible()
         val activity = controller.get()
         try {
@@ -39,7 +39,8 @@ class ComposePageBlockTest {
                 override fun focused(key: String) {}
                 override fun featured(title: Title?) {}
             })
-            val row = Item.row("cache-size", 0, "Playback cache", "256 MiB", Runnable { clicks++ })
+            fun action(label: String, run: Runnable) = Item.Action("cache-size", Item.Action.Style.SECONDARY, label, run)
+            val row = Item.actions("cache-actions", action("Playback cache", Runnable { clicks++ }))
             val build = PageAdapter::class.java.getDeclaredMethod("build", Item::class.java).apply { isAccessible = true }
             val baseline = build.invoke(adapter(), row) as View
             val native = build.invoke(adapter(), row) as View
@@ -72,14 +73,15 @@ class ComposePageBlockTest {
             root.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER))
             root.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_CENTER))
             assertEquals(2, clicks)
-            composed.bind(Item.row("cache-size", 0, "Playback cache", "512 MiB", Runnable { clicks += 10 }))
+            composed.bind(Item.actions("cache-actions", action("Playback cache", Runnable { clicks += 10 })))
             settle(root)
             assertSame("Recomposition keeps the focused native control", control, composed.findViewWithTag("cache-size"))
             assertSame(control, root.findFocus())
-            assertEquals("Playback cache. 512 MiB", control.contentDescription)
+            assertEquals(old.contentDescription, control.contentDescription)
             control.performClick()
             assertEquals("Recomposition binds the new action", 12, clicks)
-            assertEquals(bounds(baseline, old), bounds(composed, control))
+            // The focused button grows (a transform); its layout matches the unfocused baseline's.
+            assertEquals(old.width to old.height, control.width to control.height)
         } finally {
             controller.pause().stop().destroy()
         }

@@ -34,8 +34,6 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
     }
     class Holder(view: View) : RecyclerView.ViewHolder(view)
 
-    /** Settings' columns lift their rows on focus, like the app's buttons; other lists only turn white. */
-    private var liftRows = false
     private var items: List<Item> = Collections.emptyList()
     private var snapshots: MutableList<List<Any?>> = Collections.emptyList()
     private var restore = ""
@@ -71,6 +69,11 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
                 if (active != null) childScroll.put(active, view.layoutManager!!.onSaveInstanceState())
             }
         })
+    }
+    /** Child scroll for declarative columns (Settings' split view), saved with the route like RecyclerView states. */
+    private val scrollMemory = object : PageRows.ScrollMemory {
+        override fun load(key: String): android.os.Parcelable? = childScroll[key]
+        override fun save(key: String, state: android.os.Parcelable?) { childScroll[key] = state }
     }
     /** The live Search results column, if Search is showing. */
     private var searchResults: LinearLayout? = null
@@ -256,6 +259,16 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
                 val (title, detail) = item.title to item.detail
                 ({ TextBlocks.Paragraph(title, detail, inList, layout) })
             }
+            Item.Kind.LIST, Item.Kind.SOURCE, Item.Kind.FIELD -> {
+                val page = PageRows.Page(this::focused, restore)
+                val start = layout.start; val end = layout.end
+                ({ PageRows.Block(item, start, end, page) })
+            }
+            Item.Kind.SPLIT -> {
+                val page = PageRows.Page(this::focused, restore)
+                val start = layout.start; val end = layout.end
+                ({ PageRows.Split(item, start, end, page, scrollMemory, this::build) })
+            }
             Item.Kind.MESSAGE -> if (item.icon == 0 && item.actions.isEmpty()) {
                 val (title, detail) = item.title to item.detail
                 ({ TextBlocks.QuietMessage(title, detail, layout) })
@@ -283,11 +296,7 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
             Item.Kind.ACTIONS -> return actions(item, if (item.centered) Gravity.CENTER_HORIZONTAL else Gravity.START)
             Item.Kind.CHIPS -> return chips(item)
             Item.Kind.EPISODES -> return episodes(item)
-            Item.Kind.LIST -> return row(item)
-            Item.Kind.SOURCE -> return source(item)
-            Item.Kind.FIELD -> return field(item)
             Item.Kind.KEYBOARD -> return keyboard(item)
-            Item.Kind.SPLIT -> return split(item)
             Item.Kind.SKELETON -> return skeleton(item)
             Item.Kind.MESSAGE -> return message(item)
             Item.Kind.NOTICE -> return notice(item)
@@ -1137,100 +1146,6 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
         return box
     }
 
-    private fun row(item: Item): View {
-        return wrapRow(item, rowContent(item), R.drawable.tv_row, Tv.LIFT_ROW)
-    }
-    private fun rowContent(item: Item): LinearLayout {
-        val row = LinearLayout(context); row.orientation = LinearLayout.HORIZONTAL; row.gravity = Gravity.CENTER_VERTICAL
-        row.minimumHeight = dp(46)
-        row.setPadding(dp(ROW_INSET), dp(8), dp(14), dp(8))
-        row.contentDescription = if (item.value.isEmpty()) item.title else item.title + ". " + item.value
-        if (item.icon != 0) {
-            val icon = Tv.icon(context, item.icon, 18, R.color.tv_on_glass)
-            (icon.layoutParams as LinearLayout.LayoutParams).rightMargin = dp(12); row.addView(icon)
-        }
-        val title = Tv.oneLine(Tv.heading(context, item.title, 15.5f, R.color.tv_on_glass)); title.isDuplicateParentStateEnabled = true
-        row.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        if (!item.value.isEmpty()) {
-            val value = Tv.oneLine(Tv.type(context, item.value, Tv.Type.VALUE, R.color.tv_on_glass_secondary)); value.isDuplicateParentStateEnabled = true
-            value.maxWidth = dp(280); value.setPadding(dp(12), 0, dp(4), 0); row.addView(value)
-        }
-        if (item.action != null) row.addView(Tv.icon(context, R.drawable.ic_tv_chevron, 16, R.color.tv_on_glass_secondary))
-        return row
-    }
-    private fun source(item: Item): View {
-        return wrapRow(item, sourceContent(item), R.drawable.tv_row_multiline, Tv.LIFT_ROW)
-    }
-    private fun sourceContent(item: Item): LinearLayout {
-        val row = LinearLayout(context); row.orientation = LinearLayout.HORIZONTAL; row.gravity = Gravity.CENTER_VERTICAL
-        row.setPadding(dp(ROW_INSET), dp(10), dp(14), dp(10))
-        row.contentDescription = item.title + ". " + item.meta + ". " + item.value
-        val text = LinearLayout(context); text.orientation = LinearLayout.VERTICAL; text.isDuplicateParentStateEnabled = true
-        val title = Tv.oneLine(Tv.heading(context, item.title, 15.5f, R.color.tv_on_glass)); title.isDuplicateParentStateEnabled = true; text.addView(title)
-        val meta = Tv.oneLine(Tv.text(context, item.meta, 13f, R.color.tv_on_glass_secondary)); meta.isDuplicateParentStateEnabled = true
-        meta.setPadding(0, dp(5), 0, 0); text.addView(meta)
-        row.addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val status = LinearLayout(context); status.gravity = Gravity.CENTER_VERTICAL; status.isDuplicateParentStateEnabled = true
-        val statusIcon = if (item.statusIcon != 0) item.statusIcon else if (item.muted) R.drawable.ic_tv_info else R.drawable.ic_tv_check
-        if (statusIcon > 0) status.addView(Tv.icon(context, statusIcon, 18, if (item.muted) R.color.tv_on_glass_secondary else R.color.tv_on_glass))
-        val value = Tv.lines(Tv.text(context, item.value, 13f, R.color.tv_on_glass_secondary), 2); value.isDuplicateParentStateEnabled = true
-        value.maxWidth = dp(200); value.setPadding(if (statusIcon > 0) dp(7) else 0, 0, 0, 0); status.addView(value)
-        val statusParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        statusParams.leftMargin = dp(16)
-        row.addView(status, statusParams)
-        row.alpha = if (item.muted) 0.55f else 1f
-        return row
-    }
-    private fun field(item: Item): View {
-        return wrapRow(item, fieldContent(item), R.drawable.tv_field, Tv.LIFT_ROW)
-    }
-    private fun fieldContent(item: Item): LinearLayout {
-        val row = LinearLayout(context); row.orientation = LinearLayout.HORIZONTAL; row.gravity = Gravity.CENTER_VERTICAL
-        row.minimumHeight = dp(48); row.setPadding(dp(18), 0, dp(18), 0)
-        row.contentDescription = item.title + ". " + item.value
-        val icon = Tv.icon(context, R.drawable.ic_tv_search, 18, R.color.tv_on_glass)
-        (icon.layoutParams as LinearLayout.LayoutParams).rightMargin = dp(12); row.addView(icon)
-        val value = Tv.oneLine(Tv.heading(context, item.value, 15f, R.color.tv_on_glass_secondary)); value.isDuplicateParentStateEnabled = true
-        row.addView(value)
-        return row
-    }
-    /** A focusable platter around a row: transparent until focused, then white with dark text (no live blur). */
-    private fun wrapRow(item: Item, row: LinearLayout, background: Int, fixedLift: Float): View {
-        val box = FrameLayout(context); box.clipChildren = false; box.clipToPadding = false
-        box.setPadding(gutterStart, dp(2), gutterEnd, dp(2))
-        val platter = FrameLayout(context)
-        platter.setBackgroundResource(background)
-        platter.contentDescription = row.contentDescription
-        row.contentDescription = null
-        row.isDuplicateParentStateEnabled = true
-        platter.addView(row, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        box.addView(platter, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        // Settings rows grow by the same few dp as a button, whatever their width, so their text barely shifts.
-        val lift: java.util.function.DoubleSupplier = if (!liftRows || fixedLift != Tv.LIFT_ROW) java.util.function.DoubleSupplier { fixedLift.toDouble() }
-                else java.util.function.DoubleSupplier { (if (platter.width > 0) 1f + dp(ROW_GROWTH) / platter.width.toFloat() else 1f).toDouble() }
-        if (item.action != null) {
-            Tv.control(platter, item.key, item.action!!, this::focused, lift, true)
-            if (item.key.equals(restore)) restoreLater(platter, item.key)
-        } else platter.tag = item.key
-        box.setTag(R.id.page_binding, Binding { next ->
-            if (next.kind != item.kind || !next.key.equals(item.key) || (next.action == null) != (item.action == null)) return@Binding false
-            val body: LinearLayout
-            when (next.kind) {
-                Item.Kind.LIST -> body = rowContent(next)
-                Item.Kind.SOURCE -> body = sourceContent(next)
-                Item.Kind.FIELD -> body = fieldContent(next)
-                else -> return@Binding false
-            }
-            platter.contentDescription = body.contentDescription; body.contentDescription = null
-            body.isDuplicateParentStateEnabled = true
-            platter.removeAllViews(); platter.addView(body, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            if (next.action != null) Tv.control(platter, next.key, next.action!!, this::focused, lift, true)
-            true
-        })
-        box.layoutParams = fill()
-        return box
-    }
-
     // States.
     private fun message(item: Item): View {
         val quiet = item.icon == 0 && item.actions.isEmpty()
@@ -1758,132 +1673,6 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
      * moves down the categories. Right from a category goes to the first row of its pane; Left from a pane returns
      * to the selected category, which stays lit while its pane is in use.
      */
-    private fun split(item: Item): View {
-        val panes: MutableMap<String, List<Item>> = java.util.LinkedHashMap(item.panes!!)
-        val active = arrayOf(item)
-        val categories: List<Item> = item.children!!
-        var chosen = item.value
-        for (pane in panes.entries) for (row in pane.value) if (row.key.equals(restore)) chosen = pane.key
-        if (panes.containsKey(restore)) chosen = restore
-        if (!panes.containsKey(chosen)) chosen = categories.get(0).key
-        val selected = arrayOf(chosen)
-        val restoreTarget = restore
-        val restoringPane = booleanArrayOf(!restoreTarget.isEmpty())
-
-        val root = SplitView(context)
-        root.orientation = LinearLayout.HORIZONTAL; root.clipChildren = false; root.clipToPadding = false
-        root.setPadding(gutterStart, dp(4), gutterEnd, 0)
-        val left = RecyclerView(context); val right = RecyclerView(context)
-        val pane = PageAdapter(context, artwork, listener)
-        pane.gutter(28, 0); pane.liftRows = true
-        val list = PageAdapter(context, artwork, object : Listener {
-            override fun focused(key: String) {
-                // Replacing a changed settings pane can give the first category transient framework focus.
-                // Restore the actual row before accepting category changes, or the pane jumps back to Add-ons.
-                if (restoringPane[0] && !key.equals(restoreTarget)) return
-                listener.focused(key)
-                if (!panes.containsKey(key) || key.equals(selected[0])) return
-                val before: View? = left.findViewWithTag(selected[0])
-                if (before != null) before.isActivated = false
-                selected[0] = key
-                val now: View? = left.findViewWithTag(key)
-                if (now != null) now.isActivated = true
-                pane.set(panes.get(key)!!, "")
-                retainScroll(right, item.key + ":pane:" + key)
-                val input = active[0].keyboardInput
-                if (input != null) input.accept(key)
-            }
-            override fun featured(title: Title?) { listener.featured(title) }
-        })
-        list.gutter(0, 0); list.liftRows = true
-        // OK or a tap on a category moves into its pane, once the pane shows that category's rows (a tap selects and
-        // opens in one step, so the new rows may not be laid out yet).
-        val enter = Runnable { val first = firstFocusable(right); if (first != null) first.requestFocus() }
-        for (category in categories) category.action = Runnable {
-            if (!right.hasPendingAdapterUpdates() && !right.isLayoutRequested) { enter.run(); return@Runnable }
-            right.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
-                override fun onGlobalLayout() { right.viewTreeObserver.removeOnGlobalLayoutListener(this); enter.run() }
-            })
-        }
-        for (column in arrayOf(left, right)) {
-            column.layoutManager = LinearLayoutManager(context); column.itemAnimator = null
-            column.clipChildren = false; column.clipToPadding = false; column.isVerticalScrollBarEnabled = false
-        }
-        left.adapter = list; right.adapter = pane
-        list.set(categories, if (panes.containsKey(restore)) restore else "")
-        pane.set(panes.get(chosen)!!, restore)
-        retainScroll(left, item.key + ":categories")
-        retainScroll(right, item.key + ":pane:" + chosen)
-        left.post { val lit: View? = left.findViewWithTag(selected[0]); if (lit != null) lit.isActivated = true }
-        root.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
-            override fun onLayoutChange(view: View, l: Int, t: Int, r: Int, b: Int, ol: Int, ot: Int, or: Int, ob: Int) {
-                root.removeOnLayoutChangeListener(this)
-                if (restoringPane[0]) {
-                    val target: View? = root.findViewWithTag(restoreTarget)
-                    if (target != null) target.requestFocus()
-                    restoringPane[0] = false
-                }
-            }
-        })
-        root.addView(left, LinearLayout.LayoutParams(dp(240), ViewGroup.LayoutParams.MATCH_PARENT))
-        // The pane scrolls inside its own clip; the page around it stays still.
-        right.setPadding(0, 0, 0, dp(28))
-        val paneParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
-        paneParams.leftMargin = -dp(12); paneParams.rightMargin = -dp(12); paneParams.bottomMargin = -dp(40)
-        root.addView(Tv.clipped(right, dp(12)), paneParams)
-        root.categories = left; root.pane = right; root.selected = java.util.function.Supplier { left.findViewWithTag<View>(selected[0]) }
-        root.setTag(R.id.page_binding, Binding { next ->
-            val nextPanes = next.panes
-            if (next.kind != Item.Kind.SPLIT || !next.key.equals(item.key) || nextPanes == null || nextPanes.isEmpty()) return@Binding false
-            active[0] = next; panes.clear(); panes.putAll(nextPanes)
-            for (category in next.children!!) category.action = enter
-            if (!panes.containsKey(selected[0])) selected[0] = panes.keys.iterator().next()
-            list.set(next.children!!, ""); pane.set(panes.get(selected[0])!!, "")
-            left.post { val lit: View? = left.findViewWithTag(selected[0]); if (lit != null) lit.isActivated = true }
-            true
-        })
-        root.layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        return root
-    }
-    /** Steers sideways focus between a split view's two columns (see [split]). */
-    private class SplitView(context: Context) : LinearLayout(context) {
-        var categories: View? = null
-        var pane: View? = null
-        var selected: java.util.function.Supplier<View?>? = null
-        override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-            val focused: View? = findFocus()
-            if (focused != null && event.action == android.view.KeyEvent.ACTION_DOWN) {
-                var target: View? = null
-                if (event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT && within(pane, focused)) target = selected!!.get()
-                if (event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT && within(categories, focused)) target = firstFocusable(pane!!)
-                if (target != null) { target.requestFocus(); return true }
-            }
-            return super.dispatchKeyEvent(event)
-        }
-        override fun focusSearch(focused: View?, direction: Int): View? {
-            val next: View? = super.focusSearch(focused, direction)
-            if (direction == View.FOCUS_RIGHT && within(categories, focused)) {
-                val first = firstFocusable(pane!!)
-                return if (first != null) first else focused
-            }
-            if (direction == View.FOCUS_LEFT && within(pane, focused) && (next == null || !within(pane, next))) {
-                val lit = selected!!.get()
-                if (lit != null) return lit
-            }
-            return next
-        }
-        companion object {
-            private fun within(parent: View?, view: View?): Boolean {
-                var v: View? = view
-                while (v != null) {
-                    if (v === parent) return true
-                    v = if (v.parent is View) v.parent as View else null
-                }
-                return false
-            }
-        }
-    }
-
     /** The keyboard page survives the re-render each keystroke causes, so symbols can be typed one after another. */
     private var keyboardPage = 0
 
@@ -2138,9 +1927,7 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
         private const val GAP = 20
         private const val SEARCH_COLUMNS = 4
         /** Where a list row's label starts inside its platter. */
-        private const val ROW_INSET = 16
-        /** The width, in dp, a focused Settings row adds: about what a button's focus lift adds. */
-        private const val ROW_GROWTH = 12
+        private const val ROW_INSET = PageRows.ROW_INSET
         /** Height to width of a category block. */
         private const val BLOCK_RATIO = 0.5f
         /** Letters, digits/punctuation and language-specific accents, normally six characters to a row. */

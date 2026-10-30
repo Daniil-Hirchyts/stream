@@ -37,6 +37,23 @@ object Tv {
     const val LIFT_ICON = 1.12f
     private val ACTIVATING = ThreadLocal<View>()
     fun activatingControl(): View? { return ACTIVATING.get() }
+    /**
+     * Part of a view that a popup grows from and returns to: a declarative control inside its composition owner.
+     * `bounds` reads the control's current rectangle in its window (null once it has gone); `radius` is its corner in px.
+     */
+    class Region(val bounds: () -> android.graphics.Rect?, val radius: Float)
+    private val ACTIVATING_REGION = ThreadLocal<Region>()
+    fun activatingRegion(): Region? { return ACTIVATING_REGION.get() }
+    /** Runs a control's action with `control` as the [activatingControl], where popups grow from. */
+    fun activate(control: View, action: Runnable) { activate(control, null, action) }
+    fun activate(control: View, region: Region?, action: Runnable) {
+        val previous = ACTIVATING.get(); val previousRegion = ACTIVATING_REGION.get()
+        ACTIVATING.set(control); if (region == null) ACTIVATING_REGION.remove() else ACTIVATING_REGION.set(region)
+        try { action.run() } finally {
+            if (previous == null) ACTIVATING.remove() else ACTIVATING.set(previous)
+            if (previousRegion == null) ACTIVATING_REGION.remove() else ACTIVATING_REGION.set(previousRegion)
+        }
+    }
 
     fun dp(context: Context, value: Float): Int { return Math.round(value * context.resources.displayMetrics.density) }
 
@@ -124,10 +141,7 @@ object Tv {
             if (event.actionMasked == MotionEvent.ACTION_DOWN) { Sounds.input(); if (!v.isFocused) v.requestFocus() }
             false
         }
-        view.setOnClickListener { v ->
-            focused.accept(key); Sounds.click(); val previous = ACTIVATING.get(); ACTIVATING.set(v)
-            try { action.run() } finally { if (previous == null) ACTIVATING.remove() else ACTIVATING.set(previous) }
-        }
+        view.setOnClickListener { v -> focused.accept(key); Sounds.click(); activate(v, action) }
         view.setOnFocusChangeListener { v, has -> if (has) { focused.accept(key); Sounds.focus(v) }; animate(v, has, lift.asDouble.toFloat(), raise) }
         animate(view, view.isFocused, lift.asDouble.toFloat(), raise)
     }

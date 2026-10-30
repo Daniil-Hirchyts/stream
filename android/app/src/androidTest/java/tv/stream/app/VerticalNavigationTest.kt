@@ -388,6 +388,7 @@ class VerticalNavigationTest : AppHarness() {
         }
         AppHarness.waitUntil("Wrapped or hidden rail", 5000) { width(NavigationRail.COLLAPSED) && railState() != NavigationRail.State.EXPANDED }
         SystemClock.sleep(350)
+        val edge = java.util.concurrent.atomic.AtomicInteger()
         browse!!.onActivity { a ->
             val rail = a.findViewById<View>(R.id.top_bar); val content = a.findViewById<View>(R.id.browse_content)
             val hidden = (rail as NavigationRail).state() == NavigationRail.State.HIDDEN
@@ -407,7 +408,9 @@ class VerticalNavigationTest : AppHarness() {
                 for (i in 0 until nav.childCount) assertEquals("Each destination is circular", nav.getChildAt(i).height.toLong(), nav.getChildAt(i).width.toLong())
             }
             assertControlsInside(content, if (hidden) 0 else rail.right)
+            edge.set(if (hidden) 0 else rail.right)
         }
+        assertKeyedControlsInside(edge.get())
         shot(name)
     }
     private fun assertControlsInside(view: View, edge: Int) {
@@ -418,11 +421,26 @@ class VerticalNavigationTest : AppHarness() {
             if (focused != null) assertControlsInside(focused, edge)
             return
         }
+        // A composition owner spans its whole block; its declarative controls are measured by assertKeyedControlsInside.
+        if (view.javaClass.name.endsWith("AndroidComposeView")) return
         if (view.isFocusable && view.tag is String) {
             val bounds = Rect()
             if (view.getGlobalVisibleRect(bounds)) assertTrue("Visible control clears rail: " + view.tag, bounds.left > edge)
         }
         if (view is ViewGroup) for (i in 0 until view.childCount) assertControlsInside(view.getChildAt(i), edge)
+    }
+    /** Declarative page controls, by their own accessibility bounds (queried off the main thread). */
+    private fun assertKeyedControlsInside(edge: Int) {
+        fun visit(node: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (node == null || !node.isVisibleToUser) return
+            val id = node.viewIdResourceName
+            if (id != null && node.isFocusable && !id.contains(":id/")) {
+                val bounds = Rect(); node.getBoundsInScreen(bounds)
+                assertTrue("Visible control clears rail: $id", bounds.left > edge)
+            }
+            for (i in 0 until node.childCount) visit(node.getChild(i))
+        }
+        for (window in windows()) if (window.isFocused) visit(window.root)
     }
     private fun assertCaptions(view: View) {
         if (!view.isShown) return

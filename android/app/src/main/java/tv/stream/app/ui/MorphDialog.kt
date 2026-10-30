@@ -53,6 +53,8 @@ class MorphDialog(context: Context, contextual: Boolean) : Dialog(context) {
     private val shape = GradientDrawable()
     private val opener: View?
     private val anchor: View?
+    /** The declarative control within [anchor] that opened this, when the anchor is its composition owner. */
+    private val region: Tv.Region?
     private val owner: Activity?
     private val artwork: Boolean
     private val original = Rect()
@@ -80,6 +82,8 @@ class MorphDialog(context: Context, contextual: Boolean) : Dialog(context) {
         while (base is ContextWrapper && base !is Activity) base = base.baseContext
         owner = if (base is Activity) base else null
         val activated = Tv.activatingControl()
+        region = if (activated != null) Tv.activatingRegion()
+                else if (owner != null && contextual) PageFocus.focusedRegion(owner.currentFocus) else null
         opener = if (activated != null) activated else if (owner == null || !contextual) null else owner.currentFocus
         var surface = opener
         val tagged: Any? = if (surface == null) null else surface.getTag(R.id.popup_anchor)
@@ -89,7 +93,7 @@ class MorphDialog(context: Context, contextual: Boolean) : Dialog(context) {
             val selected = selectedControl(surface); if (selected != null) surface = selected
         }
         anchor = surface
-        if (anchor != null && anchor.isAttachedToWindow && anchor.getGlobalVisibleRect(original)
+        if (anchor != null && anchor.isAttachedToWindow && anchorBounds(original)
                 && (original.width() < context.resources.displayMetrics.widthPixels * .8f
                 || original.height() < context.resources.displayMetrics.heightPixels * .4f)) openingImage = copyControl()
         else original.setEmpty()
@@ -372,8 +376,22 @@ class MorphDialog(context: Context, contextual: Boolean) : Dialog(context) {
      * Live-blur buttons (GlassView) draw nothing into a bitmap canvas, so a control is copied as its platter plus
      * its content. Artwork and plain views draw themselves.
      */
+    /** The opener's on-screen rectangle: its declarative control's, or the whole view's. */
+    private fun anchorBounds(out: Rect): Boolean {
+        if (anchor == null) return false
+        if (region == null) return anchor.getGlobalVisibleRect(out)
+        out.set(region.bounds() ?: return false)
+        return !out.isEmpty
+    }
     private fun copyControl(): Bitmap? {
         if (anchor == null) return null
+        if (region != null) {
+            // Only the control's part of its composition, at its on-screen size.
+            val image = Bitmap.createBitmap(Math.max(1, original.width()), Math.max(1, original.height()), Bitmap.Config.ARGB_8888)
+            val at = IntArray(2); anchor.getLocationInWindow(at)
+            try { val canvas = Canvas(image); canvas.translate((at[0] - original.left).toFloat(), (at[1] - original.top).toFloat()); anchor.draw(canvas); return image }
+            catch (unsupportedSurface: RuntimeException) { image.recycle(); return null }
+        }
         if (artwork) return copyView(anchor, 512)
         // At its on-screen pixel size, focus growth included: the copy sits over the real control while the
         // menu opens, and a smaller copy stretched to that size shows its text soft until the swap.
@@ -464,6 +482,7 @@ class MorphDialog(context: Context, contextual: Boolean) : Dialog(context) {
     private fun cornerRadius(bounds: Rect): Float {
         if (artwork) return dp(10f).toFloat()
         val half = Math.min(bounds.width(), bounds.height()) / 2f
+        if (region != null) return Math.min(half, region.radius)
         val current: Drawable? = if (anchor == null || anchor.background == null) null else anchor.background.current
         if (current !is GradientDrawable) return Math.min(dp(22f).toFloat(), half)
         val platter: GradientDrawable = current
@@ -531,7 +550,7 @@ class MorphDialog(context: Context, contextual: Boolean) : Dialog(context) {
         if (beforeClose != null) beforeClose!!.run()
         if (!animate) { closeNow(); return }
         val end = Rect()
-        if (anchor != null && anchor.isAttachedToWindow && anchor.getGlobalVisibleRect(end)) {
+        if (anchor != null && anchor.isAttachedToWindow && anchorBounds(end)) {
             val position = IntArray(2); root.getLocationOnScreen(position); end.offset(-position[0], -position[1])
         } else end.set(start)
         val image = if (returning) openingImage else null

@@ -49,7 +49,7 @@ internal object TextBlocks {
     data class Layout(val start: Dp, val end: Dp, val inset: Dp)
 
     @Composable
-    private fun style(font: Tv.Font, sp: Float, @ColorRes color: Int, onArtwork: Boolean, spacing: Float = 1f): TextStyle {
+    fun style(font: Tv.Font, sp: Float, @ColorRes color: Int, onArtwork: Boolean, spacing: Float = 1f): TextStyle {
         val density = LocalDensity.current
         val context = LocalContext.current
         // Tv.onArtwork: a 5 dp shadow 1 dp down, 70% black.

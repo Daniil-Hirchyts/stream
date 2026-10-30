@@ -59,8 +59,8 @@ class InPlaceFocusTest : AppHarness() {
         val observer = AtomicReference<ViewTreeObserver.OnGlobalFocusChangeListener>()
         val changes: MutableList<String> = ArrayList()
         browse!!.onActivity { activity ->
-            val control = activity.findViewById<View>(R.id.page_rows).findViewWithTag<View>(key)
-            assertNotNull("Control $key", control); control.requestFocus(); original.set(control)
+            val control = focusKey(activity, key)
+            assertNotNull("Control $key", control); original.set(control)
         }
         SystemClock.sleep(300)
         browse!!.onActivity { activity ->
@@ -76,6 +76,7 @@ class InPlaceFocusTest : AppHarness() {
             rows.viewTreeObserver.removeOnGlobalFocusChangeListener(observer.get())
             assertSame("Focusable surface survives: $key", original.get(), rows.findViewWithTag<View>(key))
             assertSame("Focus stays on $key", original.get(), activity.currentFocus)
+            assertEquals("The focused control is still $key", key, activity.currentFocus?.tag)
             assertTrue("No intermediate focus jumps: $changes", changes.isEmpty())
         }
     }

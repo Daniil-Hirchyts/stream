@@ -43,6 +43,11 @@ and native/Compose control geometry, accessibility, remote activation and focus
 through rebinding. Instrumented interaction coverage uses generated media on the
 verified local emulator.
 
+`PageRowsTest` drives the declarative Settings rows and split view inside a real
+RecyclerView: labels, focus by key, D-pad moves between blocks (dispatched as
+ViewRootImpl does), OK/Enter and touch clicks after a rebind, category selection,
+Right/Left steering and restoring a pane row by key.
+
 `ScreenStateInteractionTest` recreates Settings and Details, then exercises the
 restored actions by remote and touch and checks that Back pops one screen.
 

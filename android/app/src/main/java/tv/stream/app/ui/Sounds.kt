@@ -101,7 +101,10 @@ class Sounds private constructor(context: Context) {
     /** From a semitone lower at the screen's left edge to a semitone higher at its right. */
     private fun across(view: View): Float {
         val at = IntArray(2); view.getLocationOnScreen(at)
-        val centre = (at[0] + view.width / 2f) / Math.max(1, screenWidth)
+        return across(at[0] + view.width / 2f)
+    }
+    private fun across(screenX: Float): Float {
+        val centre = screenX / Math.max(1, screenWidth)
         return Math.max(-1f, Math.min(1f, centre * 2 - 1))
     }
     private fun sound(sound: Sound, semitones: Float) {
@@ -154,6 +157,11 @@ class Sounds private constructor(context: Context) {
         fun focus(view: View) {
             val s = instance
             if (s != null && SystemClock.uptimeMillis() - s.inputAt <= INPUT_MS) s.sound(Sound.FOCUS, s.across(view))
+        }
+        /** A declarative control's focus tick, at the control's own centre (`screenX`) rather than its host view's. */
+        fun focusAt(screenX: Float) {
+            val s = instance
+            if (s != null && SystemClock.uptimeMillis() - s.inputAt <= INPUT_MS) s.sound(Sound.FOCUS, s.across(screenX))
         }
         /** {@code sound} leaning with {@code view}'s place across the screen, like a focus tick. */
         fun at(sound: Sound, view: View) { val s = instance; if (s != null) s.sound(sound, s.across(view)) }
