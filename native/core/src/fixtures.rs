@@ -98,6 +98,8 @@ pub struct SeederOptions {
     pub tcp: bool,
     pub utp: bool,
     pub encryption: crate::bt::mse::Policy,
+    /// Super-seeding (BEP 16): each peer is shown one rare piece at a time.
+    pub super_seed: bool,
 }
 
 impl Default for SeederOptions {
@@ -109,6 +111,7 @@ impl Default for SeederOptions {
             tcp: true,
             utp: true,
             encryption: crate::bt::mse::Policy::Enabled,
+            super_seed: false,
         }
     }
 }
@@ -144,6 +147,7 @@ impl Seeder {
             let files = FileStorage::open(&t.info, save).map_err(|e| format!("{}: {e}", save.display()))?;
             let torrent = session.add(i as u64, t.info.hashes, Some(t.info), t.layers, Vec::new(), Vec::new());
             torrent.seed_from(Storage::Files(Arc::new(files)), options.verify);
+            torrent.lock().super_seed = options.super_seed;
             out.push(torrent);
         }
         Ok(Seeder { session, torrents: out })

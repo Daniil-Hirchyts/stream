@@ -104,6 +104,56 @@ fn utp_alone_carries_metadata_and_pieces() {
     }
 }
 
+/// A uTP peer that reconnects from its one UDP port while its first connection still looks open, as Transmission
+/// does once a magnet's metadata arrives, is served on the new connection; the stale one is closed. Before, the
+/// second handshake was answered and the connection dropped, so the peer gave up on the seeder.
+#[test]
+fn a_utp_peer_reconnecting_from_its_port_replaces_the_stale_connection() {
+    use stream_core::bt::wire::{Handshake, Reserved};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let dir = TempDir::new("stream-utp-reconnect");
+    let torrent = film(&dir, Version::V1, 61);
+    let seed = Seeder::single(&torrent, dir.path(), &SeederOptions { tcp: false, encryption: Policy::Disabled, ..SeederOptions::default() });
+    let hash = metainfo::parse_torrent(&torrent).unwrap().info.hashes.v1.unwrap();
+    let address: std::net::SocketAddr = seed.address().parse().unwrap();
+    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+    runtime.block_on(async {
+        let socket = librqbit_utp::UtpSocketUdp::new_udp("127.0.0.1:0".parse().unwrap()).await.unwrap();
+        // Opens a connection from the socket's one endpoint and reads the seeder's handshake and first message.
+        let open = |id: u8| {
+            let socket = socket.clone();
+            let mut peer_id = [7u8; 20];
+            peer_id[0] = id;
+            let ours = Handshake { reserved: Reserved::ours(false, false), info_hash: hash, peer_id };
+            async move {
+                let mut s = socket.connect(address).await.unwrap();
+                s.write_all(&ours.encode()).await.unwrap();
+                let mut answer = [0u8; 68];
+                tokio::time::timeout(Duration::from_secs(5), s.read_exact(&mut answer)).await.unwrap().unwrap();
+                assert_eq!(&answer[28..48], &hash[..], "the seeder answers for the torrent");
+                let mut length = [0u8; 4];
+                tokio::time::timeout(Duration::from_secs(5), s.read_exact(&mut length)).await.expect("a first message").unwrap();
+                s
+            }
+        };
+        let mut first = open(1).await;
+        let _second = open(2).await;
+        // The first connection is closed by the seeder (end of stream or reset), not left hanging.
+        let mut buf = [0u8; 4096];
+        let closed = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match first.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => continue,
+                }
+            }
+        })
+        .await;
+        assert!(closed.is_ok(), "the stale connection was closed");
+    });
+    assert_eq!(seed.torrents[0].lock().peers.len(), 1, "one live connection for the endpoint");
+}
+
 /// A loopback HTTP server answering ranged GETs for files under `root`, counting requests. With `corrupt`, every
 /// response has one byte flipped.
 struct WebSeed {

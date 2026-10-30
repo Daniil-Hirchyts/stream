@@ -57,6 +57,9 @@ impl std::error::Error for EngineError {}
 
 pub type Result<T> = std::result::Result<T, EngineError>;
 
+/// How long an eviction may go unreported before it is abandoned (shorter in unit tests).
+const EVICTION_TIMEOUT: Duration = if cfg!(test) { Duration::from_millis(300) } else { Duration::from_secs(10) };
+
 pub type LogSink = Arc<dyn Fn(&str) + Send + Sync>;
 
 #[derive(Clone)]
@@ -74,12 +77,14 @@ pub struct Config {
     pub listen_interfaces: String,
     pub dht: bool,
     pub lsd: bool,
-    /// UPnP IGD is not implemented: enabling it only logs that it stays off (see native/README.md).
+    /// UPnP IGD port mapping at [`Config::natpmp_gateway`], when PCP and NAT-PMP don't map; off by default.
     pub upnp: bool,
-    /// NAT-PMP port mapping through [`Config::natpmp_gateway`]; off by default.
+    /// PCP port mapping, falling back to NAT-PMP, at [`Config::natpmp_gateway`]; off by default.
     pub natpmp: bool,
-    /// The IPv4 gateway NAT-PMP talks to, from the platform's default route; nothing is discovered.
+    /// The IPv4 gateway port mapping talks to, from the platform's default route; nothing else is contacted.
     pub natpmp_gateway: String,
+    /// Tests only: where unicast UPnP searches go instead of the gateway's port 1900.
+    pub upnp_discovery: String,
     pub pex: bool,
     /// uTP for incoming peers and when TCP can't connect.
     pub utp: bool,
@@ -117,6 +122,7 @@ impl Default for Config {
             upnp: false,
             natpmp: false,
             natpmp_gateway: String::new(),
+            upnp_discovery: String::new(),
             pex: true,
             utp: true,
             tcp: true,
@@ -155,6 +161,8 @@ pub struct Stats {
     pub num_pieces: i32,
     pub hash_failures: i32,
     pub evictions_requested: i32,
+    /// How long the outstanding eviction has waited for its report, or -1 when none is outstanding.
+    pub eviction_pending_ms: i64,
     pub urgent_reservation_failures: i32,
     pub obsolete_partials: i32,
     pub verified_read_bytes: i64,
@@ -170,7 +178,7 @@ impl Stats {
                 "{{\"state\":\"{}\",\"error\":\"{}\",\"errorKind\":{},\"peers\":{},\"seeds\":{},",
                 "\"downloadRate\":{},\"uploadRate\":{},\"totalDownload\":{},\"totalUpload\":{},",
                 "\"verifiedReadBytes\":{},\"urgentReservationFailures\":{},\"obsoletePartials\":{},",
-                "\"pieceLength\":{},\"pieces\":{},\"hashFailures\":{},\"evictionsRequested\":{},",
+                "\"pieceLength\":{},\"pieces\":{},\"hashFailures\":{},\"evictionsRequested\":{},\"evictionPendingMs\":{},",
                 "\"cache\":{{\"slots\":{},\"used\":{},\"verified\":{},\"pinned\":{},\"evicted\":{},",
                 "\"fileBytes\":{},\"allocatedBytes\":{}}},",
                 "\"disk\":{{\"bufferBytes\":{},\"queuedWriteBytes\":{},\"blockedWrites\":{}}}}}"
@@ -191,6 +199,7 @@ impl Stats {
             self.num_pieces,
             self.hash_failures,
             self.evictions_requested,
+            self.eviction_pending_ms,
             self.cache.slots,
             self.cache.used,
             self.cache.verified,
@@ -318,6 +327,9 @@ struct Stream {
     urgent_reservation_failures: AtomicI32,
     obsolete_partials: AtomicI32,
     evicting: AtomicBool,
+    /// The outstanding eviction: its number, when it was asked for, and its pieces. One whose report never comes is
+    /// abandoned after [`EVICTION_TIMEOUT`], so a lost report can't stop eviction, and with it playback, for good.
+    eviction: Mutex<Option<(u64, Instant, Vec<i32>)>>,
     /// After an eviction the priorities are applied again, so the evicted pieces are wanted afresh where needed.
     priorities_stale: AtomicBool,
     hash_failures: AtomicI32,
@@ -635,6 +647,7 @@ impl Shared {
             urgent_reservation_failures: AtomicI32::new(0),
             obsolete_partials: AtomicI32::new(0),
             evicting: AtomicBool::new(false),
+            eviction: Mutex::new(None),
             priorities_stale: AtomicBool::new(false),
             hash_failures: AtomicI32::new(0),
             evictions: AtomicI32::new(0),
@@ -805,6 +818,7 @@ impl Shared {
         };
         ret.hash_failures = t.hash_failures.load(Ordering::Relaxed);
         ret.evictions_requested = t.evictions.load(Ordering::Relaxed);
+        ret.eviction_pending_ms = t.eviction.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map_or(-1, |(_, at, _)| at.elapsed().as_millis() as i64);
         ret.urgent_reservation_failures = t.urgent_reservation_failures.load(Ordering::Relaxed);
         ret.obsolete_partials = t.obsolete_partials.load(Ordering::Relaxed);
         ret.verified_read_bytes = t.verified_read_bytes.load(Ordering::Relaxed);
@@ -1216,22 +1230,25 @@ impl Shared {
             if t.priorities_stale.swap(false, Ordering::SeqCst) {
                 applied.priorities.clear();
             }
-            if priorities != applied.priorities {
-                t.torrent.prioritize_pieces(&priorities);
-                applied.priorities = priorities;
+            // A seek leaves old deadlines behind; the new set replaces them so they don't compete with the new
+            // position. Both apply together, so no peer is handed a soon-urgent piece as an ordinary one.
+            let new_priorities = (priorities != applied.priorities).then_some(&priorities[..]);
+            let deadlines: Vec<(i32, i32)> = urgent.iter().enumerate().map(|(i, &p)| (p, i as i32 * 500)).collect();
+            let new_deadlines = (urgent != applied.deadlines).then_some(&deadlines[..]);
+            if new_priorities.is_some() || new_deadlines.is_some() {
+                t.torrent.update_window(new_priorities, new_deadlines);
             }
-            if urgent != applied.deadlines {
-                // A seek leaves old deadlines behind; clear them so they don't compete with the new position.
-                t.torrent.clear_piece_deadlines();
-                for (i, &p) in urgent.iter().enumerate() {
-                    t.torrent.set_piece_deadline(p, i as i32 * 500);
-                }
+            if new_priorities.is_some() {
+                applied.priorities = priorities.clone();
+            }
+            if new_deadlines.is_some() {
                 applied.deadlines = urgent;
             }
         }
 
         let blocked = self.swarm.disk_stats().blocked_writes;
         let missing = need + 1 + i32::from(blocked > 0) - cache.free_slots();
+        self.abandon_lost_eviction(t, &cache);
         if missing > 0 && !t.evicting.load(Ordering::SeqCst) {
             let candidates = cache.eviction_candidates(missing, |p| keep.get(p as usize).copied().unwrap_or(false));
             if !candidates.is_empty() {
@@ -1240,9 +1257,30 @@ impl Shared {
         }
     }
 
+    /// An eviction whose report hasn't come after [`EVICTION_TIMEOUT`] is given up: its pieces stay, and the next
+    /// update may evict again. (The libtorrent-era engine had the same single eviction in flight with no way out: an
+    /// exception before its callback would have stopped every later eviction, and playback with it.)
+    fn abandon_lost_eviction(&self, t: &Arc<Stream>, cache: &Arc<PieceCache>) {
+        let mut eviction = t.eviction.lock().unwrap_or_else(|e| e.into_inner());
+        let Some((_, at, pieces)) = eviction.as_ref() else { return };
+        if at.elapsed() < EVICTION_TIMEOUT {
+            return;
+        }
+        for &p in pieces {
+            cache.cancel_release(p);
+        }
+        if let Some(log) = &self.config.log {
+            log(&format!("an eviction of {} pieces never reported back; evicting again", pieces.len()));
+        }
+        *eviction = None;
+        t.priorities_stale.store(true, Ordering::SeqCst);
+        t.evicting.store(false, Ordering::SeqCst);
+    }
+
     fn evict(&self, t: &Arc<Stream>, cache: Arc<PieceCache>, pieces: Vec<i32>) {
         t.evicting.store(true, Ordering::SeqCst);
-        t.evictions.fetch_add(1, Ordering::Relaxed);
+        let number = t.evictions.fetch_add(1, Ordering::Relaxed) as u64 + 1;
+        *t.eviction.lock().unwrap_or_else(|e| e.into_inner()) = Some((number, Instant::now(), pieces.clone()));
         cache.begin_release(&pieces);
         let weak = Arc::downgrade(t);
         let wake = self.wake.clone();
@@ -1256,8 +1294,13 @@ impl Shared {
                     cache.cancel_release(*p);
                 }
                 if let Some(s) = weak.upgrade() {
-                    s.priorities_stale.store(true, Ordering::SeqCst);
-                    s.evicting.store(false, Ordering::SeqCst);
+                    // A report of an eviction already given up must not end a newer one.
+                    let mut eviction = s.eviction.lock().unwrap_or_else(|e| e.into_inner());
+                    if eviction.as_ref().is_some_and(|(n, _, _)| *n == number) {
+                        *eviction = None;
+                        s.priorities_stale.store(true, Ordering::SeqCst);
+                        s.evicting.store(false, Ordering::SeqCst);
+                    }
                 }
                 wake.wake();
             }),
@@ -1289,6 +1332,8 @@ mod tests {
         slots: i32,
         /// The torrent doesn't have the pieces it reports finished, like a report older than an eviction.
         stale_reports: Arc<AtomicBool>,
+        /// This many eviction reports are lost: the pieces are not released and `done` never runs.
+        lost_evictions: Arc<AtomicI32>,
     }
 
     struct FakeTorrent {
@@ -1300,6 +1345,7 @@ mod tests {
         events: Queue,
         wake: Arc<Wake>,
         stale_reports: Arc<AtomicBool>,
+        lost_evictions: Arc<AtomicI32>,
     }
 
     fn byte(p: i64, i: i64) -> u8 {
@@ -1341,6 +1387,10 @@ mod tests {
             !self.stale_reports.load(Ordering::SeqCst) && self.storage().is_some_and(|c| c.complete(piece))
         }
         fn evict_pieces(&self, pieces: Vec<i32>, done: EvictDone) {
+            if self.lost_evictions.fetch_sub(1, Ordering::SeqCst) > 0 {
+                drop(done);
+                return;
+            }
             if let Some(cache) = self.storage() {
                 for &p in &pieces {
                     cache.release(p);
@@ -1384,6 +1434,7 @@ mod tests {
                 events: self.events.clone(),
                 wake: self.wake.clone(),
                 stale_reports: self.stale_reports.clone(),
+                lost_evictions: self.lost_evictions.clone(),
             }))
         }
         fn poll(&self, out: &mut Vec<Event>) {
@@ -1412,12 +1463,17 @@ mod tests {
     }
 
     fn engine_reporting(name: &str, cache_bytes: i64, stale_reports: Arc<AtomicBool>) -> Engine {
+        engine_losing(name, cache_bytes, stale_reports, Arc::default())
+    }
+
+    fn engine_losing(name: &str, cache_bytes: i64, stale_reports: Arc<AtomicBool>, lost_evictions: Arc<AtomicI32>) -> Engine {
         let dir = temp_dir(name);
         let config = Config { cache_dir: dir.to_string_lossy().into(), cache_bytes, reserve_bytes: 0, ..Config::default() };
         let cache_dir = temp_dir(&format!("{name}-storage"));
         Engine::with_swarm(config, move |config, wake| {
             let slots = cache_slots(config.cache_bytes, PIECE);
-            Ok(Box::new(FakeSwarm { events: Arc::default(), retries: Arc::default(), wake, dir: cache_dir, slots, stale_reports }) as Box<dyn Swarm>)
+            Ok(Box::new(FakeSwarm { events: Arc::default(), retries: Arc::default(), wake, dir: cache_dir, slots, stale_reports, lost_evictions })
+                as Box<dyn Swarm>)
         })
         .unwrap()
     }
@@ -1470,6 +1526,20 @@ mod tests {
         engine.close_reader(reader);
         engine.remove(t).unwrap();
         assert_eq!(engine.stats(t).unwrap_err().kind, ErrorKind::InvalidHandle);
+    }
+
+    #[test]
+    fn a_lost_eviction_report_does_not_stop_eviction_for_good() {
+        // Forty pieces through ten slots need many evictions; the first one's report never comes.
+        let lost = Arc::new(AtomicI32::new(1));
+        let engine = engine_losing("lost-eviction", 10 * i64::from(PIECE) + STORAGE_OVERHEAD, Arc::default(), lost.clone());
+        let t = engine.add(&hash_source("02")).unwrap();
+        engine.wait_metadata(t, Duration::from_secs(1), None).unwrap();
+        engine.select_file(t, 0).unwrap();
+        let reader = engine.open_reader(t, 0).unwrap();
+        assert_eq!(read_range(&engine, reader, 0, SIZE), expected(0, SIZE));
+        assert!(lost.load(Ordering::SeqCst) <= 0, "an eviction report was lost on the way");
+        assert!(engine.stats(t).unwrap().cache.evicted > 0);
     }
 
     #[test]
@@ -1558,7 +1628,7 @@ mod tests {
 
     #[test]
     fn port_mapping_is_off_unless_asked_for() {
-        // NAT-PMP is an explicit opt-in and UPnP is not implemented (see native/README.md); defaults ask for neither.
+        // Port mapping is an explicit opt-in (see native/README.md); the defaults ask for none of it.
         let config = Config::default();
         assert!(!config.upnp && !config.natpmp && config.natpmp_gateway.is_empty());
     }

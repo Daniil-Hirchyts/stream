@@ -14,7 +14,7 @@
 # STREAM_INTEROP_TOOLS names that directory; otherwise the PATH is searched), each with DHT, local discovery, peer
 # exchange, port mapping and public trackers off. Their rows are skipped, and say so, when they are absent:
 #   libtorrent 2.x (lt_peer.py): BEP 52, MSE/PE and its own uTP, in both directions; the independent check for pure v2.
-#   aria2: its own MSE/PE, v1 over TCP. Transmission: its own MSE/PE and libutp, v1. WebTorrent: v1 over TCP.
+#   aria2: its own MSE/PE, v1 over TCP. Transmission: its own MSE/PE and libutp, v1. WebTorrent: v1 and hybrid-as-v1 over TCP (it has no BEP 52).
 #   http-server (npm): a web seed not written for these checks.
 set -eu
 # Select a subset when following up one client; avoid repeating an already checked matrix.
@@ -470,8 +470,7 @@ EOF2
     sleep 0.5
     tr_address="127.0.0.1:$tr_port"
   }
-  # tr_fetch <name> <sha> <torrent> <daemon options...>: Stream's seeder dials the daemon, because Transmission 4.1.4
-  # was never seen to connect to a loopback peer its tracker named (it reports the peer and makes no attempt).
+  # tr_fetch <name> <sha> <torrent> <daemon options...>: Stream's seeder dials the daemon (Transmission accepts it).
   tr_fetch() {
     name=$1 want=$2 torrent=$3
     shift 3
@@ -491,6 +490,65 @@ EOF2
     fi
     stop "$tr_pid"
   }
+  # tr_dial <name> <sha> <torrent-or-magnet> <seeder options> -- <daemon options...>: Transmission dials Stream. It drops
+  # loopback peers named by a tracker or PEX (its is_martian_addr) but keeps those from its resume file, so the torrent
+  # is added paused, the daemon stopped, Stream's address written into the resume file's peers2, and the daemon
+  # restarted. Every piece must then arrive on the connection Transmission opened to Stream's listen port.
+  tr_dial() {
+    name=$1 want=$2 torrent=$3
+    shift 3
+    seed_opts=""
+    while [ "$1" != "--" ]; do seed_opts="$seed_opts $1"; shift; done
+    shift
+    d="$work/trd$n"
+    dial_port=$(free_port)
+    if tr_start "$d" "$@" && tr_cmd --start-paused -a "$torrent" >/dev/null && sleep 0.5 && stop "$tr_pid" &&
+      resume=$(find "$work/trc$n" -name '*.resume' | head -n1) && [ -n "$resume" ] &&
+      python3 -I "$here/tr_resume_peer.py" "$resume" "127.0.0.1:$dial_port"; then
+      # shellcheck disable=SC2086
+      "$fixture" seed --listen "127.0.0.1:$dial_port" $seed_opts "$work/t/film-v1.torrent" "$work/media" "$work/t/film-hybrid.torrent" "$work/media" >"$L/trds$n" 2>&1 &
+      seed_pid=$!
+      pids="$pids $seed_pid"
+      wait_line "$L/trds$n" "listening on"
+      # The same configuration directory: the restarted daemon loads the patched resume file.
+      cfg=$n
+      case "$seed_opts" in *--no-utp*) transports=tcp ;; *--no-tcp*) transports=utp ;; *) transports=utp,tcp ;; esac
+      settings_dial "$work/trc$cfg/settings.json" "$transports"
+      env DYLD_FALLBACK_LIBRARY_PATH="$tr_libs" "$tr_daemon" -f -g "$work/trc$cfg" -p "$tr_rpc" -P "$tr_port" -w "$d" -O -Y -M -B -T "$@" >"$L/trd$cfg" 2>&1 &
+      tr_pid=$!
+      pids="$pids $tr_pid"
+      i=0
+      while ! tr_cmd -l >/dev/null 2>&1 && [ $i -lt 100 ]; do i=$((i + 1)); sleep 0.1; done
+      tr_cmd -t 1 -s >/dev/null 2>&1
+      if tr_wait 100% 60 && [ "$(sha "$d/film.bin")" = "$want" ]; then
+        outgoing=$(grep -c "127.0.0.1:$dial_port \[[^]]*\]: got peer msg 'piece'" "$L/trd$cfg" || true)
+        incoming=$(grep -E "got peer msg 'piece'" "$L/trd$cfg" | grep -vc "127.0.0.1:$dial_port " || true)
+        transport=$(grep -m1 -oE "127.0.0.1:$dial_port socket \((µTP|tcp)\)|127.0.0.1:$dial_port (utp_on_state_change|is connected)" "$L/trd$cfg" | head -n1 || true)
+        if [ "$outgoing" -gt 0 ] && [ "$incoming" -eq 0 ] && grep -q "127.0.0.1:$dial_port.*isIncoming is false" "$L/trd$cfg"; then
+          row PASS "Transmission dials Stream: $name" "$outgoing pieces on its own connection to Stream ($transport)"
+        else
+          row FAIL "Transmission dials Stream: $name" "pieces outgoing=$outgoing incoming=$incoming"
+        fi
+      else
+        row FAIL "Transmission dials Stream: $name" "$(tr_cmd -t 1 -i 2>/dev/null | grep -E 'Percent Done|Error' | tr -s ' ' | tr '\n' ';' | cut -c1-160)"
+      fi
+      stop "$seed_pid"
+    else
+      row FAIL "Transmission dials Stream: $name" "could not prepare the resume file"
+    fi
+    stop "$tr_pid"
+  }
+  # settings_dial <settings.json> <transports>: trace logging names the connection each piece arrives on, and
+  # Transmission 4.1's preferred_transports picks the one the seeder offers.
+  settings_dial() {
+    python3 -I -c 'import json,sys; p=sys.argv[1]; s=json.load(open(p)); s["message-level"]=6
+s["preferred_transports"]=sys.argv[2].split(","); json.dump(s,open(p,"w"))' "$1" "$2"
+  }
+  tr_dial "v1 over TCP" "$film_sha" "$work/t/film-v1.torrent" --no-utp -- -et
+  tr_dial "v1 over uTP (libutp)" "$film_sha" "$work/t/film-v1.torrent" --no-tcp -- -et
+  tr_dial "v1, encryption required (TCP)" "$film_sha" "$work/t/film-v1.torrent" --no-utp -- -er
+  tr_dial "hybrid (as v1)" "$film_sha" "$work/t/film-hybrid.torrent" -- -et
+  tr_dial "v1 magnet (BEP 9 from Stream)" "$film_sha" "magnet:?xt=urn:btih:$v1_hash" -- -et
   tr_fetch "v1, plaintext tolerated" "$film_sha" "$work/t/film-v1.torrent" -et
   tr_fetch "v1, encryption required" "$film_sha" "$work/t/film-v1.torrent" -er
   tr_fetch "hybrid (as v1)" "$film_sha" "$work/t/film-hybrid.torrent" -et
@@ -532,6 +590,15 @@ if wants webtorrent && [ -n "$modules" ] && [ -d "$modules/webtorrent" ] &&
   wt() { node "$here/webtorrent_peer.mjs" "$modules" "$@"; }
   check "Stream seed -> WebTorrent: v1, TCP" "$film_sha" "$L/w1" wt fetch "$work/t/film-v1.torrent" "$ours" "$work/w1"
   check "Stream seed -> WebTorrent: hybrid (as v1), TCP" "$film_sha" "$L/w2" wt fetch "$work/t/film-hybrid.torrent" "$ours" "$work/w2"
+  # WebTorrent 3 has no BEP 52: its parse-torrent rejects a torrent without a v1 info dictionary. The row passes if a
+  # later WebTorrent downloads the right bytes, is an expected failure only for that refusal, and fails otherwise.
+  if wt fetch "$work/t/film-v2.torrent" "$ours" "$work/w2v2" >"$L/w2v2" 2>&1 && grep -q "^$film_sha " "$L/w2v2"; then
+    row PASS "Stream seed -> WebTorrent: pure v2" "$(cut -d' ' -f2- "$L/w2v2")"
+  elif grep -q "Invalid torrent identifier" "$L/w2v2"; then
+    row EXPECTED-FAIL "Stream seed -> WebTorrent: pure v2" "WebTorrent $(node -p "require('$modules/webtorrent/package.json').version") rejects BEP 52-only torrents"
+  else
+    row FAIL "Stream seed -> WebTorrent: pure v2" "$(tail -n1 "$L/w2v2" | cut -c1-120)"
+  fi
   mkdir -p "$work/ws"
   cp "$work/media/film.bin" "$work/ws/"
   node "$here/webtorrent_peer.mjs" "$modules" seed "$work/t/film-v1.torrent" "$work/ws" >"$L/w3s" 2>&1 &
@@ -543,6 +610,16 @@ if wants webtorrent && [ -n "$modules" ] && [ -d "$modules/webtorrent" ] &&
     check "WebTorrent seed -> Stream: v1 magnet (BEP 9)" "$film_sha" "$L/w4" "$fetch" "magnet:?xt=urn:btih:$v1_hash" "$address"
     check "WebTorrent seed -> Stream: MSE forced" "$film_sha" "$L/w5" \
       env STREAM_ENCRYPTION=forced "$fetch" "$work/t/film-v1.torrent" "$address"
+    # The same seed by the hybrid's v1 half: WebTorrent serves v1 pieces, which Stream checks against both hashes' data.
+    stop "$wt_pid"
+    node "$here/webtorrent_peer.mjs" "$modules" seed "$work/t/film-hybrid.torrent" "$work/ws" >"$L/w6s" 2>&1 &
+    wt_pid=$!
+    pids="$pids $wt_pid"
+    if wait_line "$L/w6s" "seeding on"; then
+      check "WebTorrent seed -> Stream: hybrid (as v1)" "$film_sha" "$L/w6" "$fetch" "$work/t/film-hybrid.torrent" "$(sed -n 's/^seeding on //p' "$L/w6s")"
+    else
+      row FAIL "WebTorrent seed -> Stream: hybrid (as v1)" "$(tail -n1 "$L/w6s" | cut -c1-120)"
+    fi
   else
     row FAIL "WebTorrent seed -> Stream" "$(tail -n1 "$L/w3s" | cut -c1-120)"
   fi

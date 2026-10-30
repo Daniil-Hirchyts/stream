@@ -4,6 +4,7 @@
 
 pub mod backend;
 pub mod bencode;
+pub mod choker;
 pub mod dht;
 pub mod lsd;
 pub mod merkle;
@@ -12,8 +13,10 @@ pub mod mse;
 pub mod natpmp;
 pub mod net;
 pub mod peer;
+pub mod portmap;
 pub mod session;
 pub mod storage;
 pub mod torrent;
 pub mod tracker;
+pub mod upnp;
 pub mod wire;

@@ -5,7 +5,7 @@ use super::dht::Dht;
 use super::lsd::Lsd;
 use super::metainfo::{Id20, Info, InfoHashes, Layers};
 use super::mse::{self, Policy as Encryption};
-use super::natpmp;
+use super::portmap;
 use super::net::{parse_listen, Policy};
 use super::peer::{self, UploadLimit};
 use super::torrent::Torrent;
@@ -37,8 +37,8 @@ pub struct SessionConfig {
     /// TCP listening and dialling; off only to test uTP alone.
     pub tcp: bool,
     pub encryption: Encryption,
-    /// NAT-PMP gateway (see [`super::natpmp`]); `None` maps nothing.
-    pub natpmp_gateway: Option<std::net::SocketAddrV4>,
+    /// Router port mapping (see [`super::portmap`]); `None` maps nothing.
+    pub port_mapping: Option<portmap::Options>,
 }
 
 impl Default for SessionConfig {
@@ -58,7 +58,7 @@ impl Default for SessionConfig {
             utp: true,
             tcp: true,
             encryption: Encryption::Enabled,
-            natpmp_gateway: None,
+            port_mapping: None,
         }
     }
 }
@@ -80,7 +80,7 @@ pub struct SessionShared {
     pub utp: Option<Arc<librqbit_utp::UtpSocketUdp>>,
     pub tcp: bool,
     port: AtomicU16,
-    /// The gateway's external TCP port when NAT-PMP mapped the listen port to a different one; 0 otherwise.
+    /// The gateway's external TCP port when port mapping gave the listen port a different one; 0 otherwise.
     external_port: AtomicU16,
     log_enabled: bool,
     lsd_enabled: bool,
@@ -144,7 +144,7 @@ impl SessionShared {
 pub struct Session {
     pub shared: Arc<SessionShared>,
     runtime: Option<tokio::runtime::Runtime>,
-    mapper: Option<natpmp::Mapper>,
+    mapper: Option<portmap::Mapper>,
 }
 
 impl Session {
@@ -213,7 +213,10 @@ impl Session {
         if config.utp {
             // uTP shares the TCP port, on the first interface; the DHT then takes another UDP port.
             let mut address = interfaces[0];
-            address.set_port(shared.port());
+            // Without TCP there is no listener to take the port from: keep the configured one.
+            if shared.port() != 0 {
+                address.set_port(shared.port());
+            }
             let opts = librqbit_utp::SocketOpts {
                 max_live_vsocks: std::num::NonZeroUsize::new(config.connections_limit.max(1)),
                 ..Default::default()
@@ -274,24 +277,24 @@ impl Session {
                 Err(e) => shared.log(format!("Local discovery unavailable: {e}")),
             }
         }
-        let mapper = match config.natpmp_gateway {
-            Some(gateway) if shared.port() != 0 && !config.public_only => {
+        let mapper = match config.port_mapping.clone() {
+            Some(options) if shared.port() != 0 && !config.public_only => {
                 let mut protocols = Vec::new();
                 if config.tcp {
-                    protocols.push(natpmp::Protocol::Tcp);
+                    protocols.push(portmap::Protocol::Tcp);
                 }
                 if shared.utp.is_some() {
-                    protocols.push(natpmp::Protocol::Udp);
+                    protocols.push(portmap::Protocol::Udp);
                 }
                 let weak = Arc::downgrade(&shared);
-                let log: natpmp::Log = Arc::new(move |line| if let Some(s) = weak.upgrade() { s.log(line) });
+                let log: portmap::Log = Arc::new(move |line| if let Some(s) = weak.upgrade() { s.log(line) });
                 let weak = Arc::downgrade(&shared);
-                let external: natpmp::External = Arc::new(move |port| if let Some(s) = weak.upgrade() {
+                let external: portmap::External = Arc::new(move |port| if let Some(s) = weak.upgrade() {
                     let port = if port == s.port() { 0 } else { port };
                     s.external_port.store(port, Ordering::Relaxed);
                 });
                 let _guard = runtime.enter();
-                Some(natpmp::Mapper::start(gateway, shared.port(), protocols, log, external))
+                Some(portmap::Mapper::start(options, shared.port(), protocols, log, external))
             }
             _ => None,
         };
@@ -302,7 +305,7 @@ impl Session {
         self.shared.port()
     }
 
-    /// The port announced to trackers, the DHT and peers: a NAT-PMP external port, or the listen port.
+    /// The port announced to trackers, the DHT and peers: a mapped external port, or the listen port.
     pub fn announce_port(&self) -> u16 {
         self.shared.announce_port()
     }

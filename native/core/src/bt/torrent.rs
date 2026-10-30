@@ -4,6 +4,7 @@
 //! Peer tasks and the engine thread share [`State`] behind one mutex that is never held across an await or while
 //! hashing; messages to peers go through their writer channels.
 
+use super::choker;
 use super::merkle::{self, Hash};
 use super::metainfo::{self, check_layer, Id20, Info, InfoHashes, Layers, Version, MAX_METADATA};
 use super::session::SessionShared;
@@ -47,7 +48,17 @@ const URGENT_DUPLICATE: Duration = Duration::from_secs(2);
 /// An urgent block unanswered for this long, and well past what the peer's queue explains, is asked of the same peer
 /// again: a request lost without a reject must not stall a lone seed's stream until [REQUEST_TIMEOUT].
 const URGENT_RETRY: Duration = Duration::from_secs(5);
-const MAX_UNCHOKED: usize = 8;
+/// In endgame, with nothing new left to ask a peer for, a block another peer was asked for this long ago may be asked
+/// of it too; whichever copy arrives first cancels the other.
+const ENDGAME_DUPLICATE: Duration = Duration::from_secs(1);
+/// A peer that sent nothing for this long while holding urgent requests is disconnected: a wedged connection is
+/// redialled, and its blocks go to other peers.
+const URGENT_STALL: Duration = Duration::from_secs(20);
+/// A peer that has sent no block yet is assumed to take this long a block when comparing delivery times.
+const UNKNOWN_SERVICE: Duration = Duration::from_millis(250);
+/// Super-seeding: a revealed piece not yet seen at another peer this long after the peer got it is given up on, and
+/// the peer is shown another, so a small swarm can't stall.
+const SUPER_SEED_PATIENCE: Duration = Duration::from_secs(10);
 const RECONNECT: Duration = Duration::from_secs(5);
 const MAX_CANDIDATES: usize = 1000;
 const LAYER_CHUNK: usize = 512;
@@ -125,6 +136,16 @@ pub struct Peer {
     last_pex: Option<Instant>,
     pub incoming: bool,
     hash_failures: u32,
+    connected_at: Instant,
+    /// When it last sent a block we asked for (or connected): a peer silent for long while we wait is snubbed.
+    last_block: Instant,
+    /// Smoothed time it takes to serve one block once it can start on it: what it can do, unlike its average rate,
+    /// which is low for a fast peer that is mostly idle.
+    service: Option<Duration>,
+    /// Super-seeding: the pieces shown to this peer, the one it is fetching now, and when it reported having that.
+    revealed: HashSet<u32>,
+    super_piece: Option<u32>,
+    super_piece_done: Option<Instant>,
 }
 
 /// A block asked of a peer.
@@ -246,6 +267,13 @@ pub struct State {
     pub up: Rate,
     pub total_down: i64,
     pub total_up: i64,
+    /// The peer holding the optimistic unchoke slot, rotated every third choke round.
+    optimistic: Option<PeerKey>,
+    choke_rounds: u32,
+    /// Super-seeding (BEP 16), for a full seed: each peer is shown one rare piece at a time.
+    pub super_seed: bool,
+    /// How many peers each piece was shown to.
+    super_shown: HashMap<u32, u32>,
 }
 
 impl State {
@@ -314,6 +342,10 @@ impl Torrent {
                 up: Rate::default(),
                 total_down: 0,
                 total_up: 0,
+                optimistic: None,
+                choke_rounds: 0,
+                super_seed: false,
+                super_shown: HashMap::new(),
             }),
             wake: Notify::new(),
             next_key: AtomicU64::new(1),
@@ -467,6 +499,25 @@ impl Torrent {
         self.refill_all();
     }
 
+    /// Priorities and/or a new set of deadlines under one lock, then one refill: see [`crate::swarm::SwarmTorrent::update_window`].
+    pub fn update_window(&self, priorities: Option<&[u8]>, deadlines: Option<&[(i32, i32)]>) {
+        let mut st = self.lock();
+        if let Some(d) = deadlines {
+            st.deadlines.clear();
+            let now = Instant::now();
+            for &(p, ms) in d {
+                st.deadlines.insert(p, now + Duration::from_millis(ms.max(0) as u64));
+            }
+        }
+        if let Some(priorities) = priorities.filter(|p| p.len() == st.priorities.len()) {
+            cancel_departed(&mut st, priorities);
+            st.priorities.copy_from_slice(priorities);
+        }
+        recompute(&mut st);
+        drop(st);
+        self.refill_all();
+    }
+
     pub fn clear_deadlines(&self) {
         let mut st = self.lock();
         st.deadlines.clear();
@@ -480,6 +531,17 @@ impl Torrent {
     /// Forgets pieces we have. Peers that know about lt_donthave are told; peers downloading from us that don't are
     /// disconnected (they'd keep asking for pieces we no longer have); seeds need nothing from us and stay.
     pub fn evict(&self, pieces: Vec<i32>, done: EvictDone) {
+        // The engine allows one eviction at a time and waits for this report: it is made even if eviction panics
+        // (as evicting nothing).
+        struct Report(Option<EvictDone>);
+        impl Drop for Report {
+            fn drop(&mut self) {
+                if let Some(done) = self.0.take() {
+                    done(Vec::new());
+                }
+            }
+        }
+        let mut report = Report(Some(done));
         let mut evicted = Vec::new();
         let storage = {
             let mut st = self.lock();
@@ -509,7 +571,9 @@ impl Torrent {
                 storage.release(p);
             }
         }
-        done(evicted);
+        if let Some(done) = report.0.take() {
+            done(evicted);
+        }
         self.refill_all();
     }
 
@@ -633,7 +697,15 @@ impl Torrent {
         if st.removed || st.paused || st.is_banned(&addr) || st.peers.len() >= max_peers {
             return None;
         }
-        if st.peers.values().any(|p| p.addr == addr || (!multiple_per_ip && p.addr.ip() == addr.ip())) {
+        if let Some(stale) = st.peers.values().find(|p| p.addr == addr) {
+            // Two live connections can't share one remote endpoint, so an incoming connection from the endpoint of one
+            // we still hold means that one is gone and its close not yet seen, as when a uTP peer reconnects from its
+            // one UDP port. The new connection replaces it; a dial to an address already connected is refused.
+            if !incoming {
+                return None;
+            }
+            stale.close();
+        } else if !multiple_per_ip && st.peers.values().any(|p| p.addr.ip() == addr.ip()) {
             return None;
         }
         let key = self.next_key.fetch_add(1, Ordering::Relaxed);
@@ -665,6 +737,12 @@ impl Torrent {
             last_pex: None,
             incoming,
             hash_failures: 0,
+            connected_at: Instant::now(),
+            last_block: Instant::now(),
+            service: None,
+            revealed: HashSet::new(),
+            super_piece: None,
+            super_piece_done: None,
         };
         // Our side of the opening: extension handshake, then what we have.
         if reserved.extensions() {
@@ -680,7 +758,13 @@ impl Torrent {
             };
             peer.send(Message::Extended { id: 0, payload: ext.encode() });
         }
-        if !st.have.is_empty() && st.have.count() > 0 {
+        let super_seeding = super_seeding(&st);
+        if super_seeding {
+            // BEP 16: claim nothing, then show one piece.
+            if reserved.fast() {
+                peer.send(Message::HaveNone);
+            }
+        } else if !st.have.is_empty() && st.have.count() > 0 {
             if st.have.all() && reserved.fast() {
                 peer.send(Message::HaveAll);
             } else {
@@ -690,6 +774,9 @@ impl Torrent {
             peer.send(Message::HaveNone);
         }
         st.peers.insert(key, peer);
+        if super_seeding {
+            reveal_next(&mut st, key);
+        }
         if st.candidates.len() < MAX_CANDIDATES || st.candidates.contains_key(&addr) {
             let c = st.candidates.entry(addr).or_insert(Candidate {
                 next_try: Instant::now(),
@@ -727,6 +814,10 @@ impl Torrent {
         }
         let addr = peer.listen_addr().unwrap_or(peer.addr);
         for a in [peer.addr, addr] {
+            // A connection that replaced this one from the same endpoint still holds the candidate.
+            if st.peers.values().any(|p| p.addr == a) {
+                continue;
+            }
             if let Some(c) = st.candidates.get_mut(&a) {
                 c.connected = false;
                 c.connecting = false;
@@ -826,6 +917,9 @@ impl Torrent {
                     } else {
                         return Err("have for a piece that doesn't exist".into());
                     }
+                    if super_seeding(&st) {
+                        on_super_have(&mut st, key, p, Instant::now());
+                    }
                 }
                 self.refill(key);
             }
@@ -908,7 +1002,10 @@ impl Torrent {
                 && b.length <= wire::BLOCK
                 && st.have.get(b.piece as usize)
                 && st.info.as_ref().is_some_and(|i| b.offset as u64 + b.length as u64 <= i.piece_size(b.piece as i32) as u64);
+            let super_seeding = super_seeding(&st);
             let Some(peer) = st.peers.get_mut(&key) else { return };
+            // A super-seed serves only the pieces it showed this peer.
+            let ok = ok && (!super_seeding || peer.revealed.contains(&b.piece));
             let full = peer.link.upload.load(Ordering::SeqCst) + b.length as usize > MAX_QUEUED_UPLOAD;
             if ok && !peer.am_choking && full && peer.waiting.len() < MAX_WAITING_REQUESTS {
                 peer.waiting.push_back(b);
@@ -987,7 +1084,15 @@ impl Torrent {
             // Unrequested or already cancelled: ignore it.
             return Ok(());
         };
+        let now = Instant::now();
+        // It could start on this block once asked and once it had sent the previous one.
+        let sample = now.duration_since(peer.requests[i].sent.max(peer.last_block));
+        peer.service = Some(match peer.service {
+            Some(s) => (s * 3 + sample) / 4,
+            None => sample,
+        });
         peer.requests.swap_remove(i);
+        peer.last_block = now;
         peer.down.add(data.len());
         st.down.add(data.len());
         st.total_down += data.len() as i64;
@@ -1277,6 +1382,7 @@ impl Torrent {
         st.up.tick();
         let now = Instant::now();
         let mut expired: Vec<(PeerKey, BlockRef)> = Vec::new();
+        let mut stalled: Vec<PeerKey> = Vec::new();
         for (k, peer) in st.peers.iter_mut() {
             peer.down.tick();
             peer.up.tick();
@@ -1288,12 +1394,32 @@ impl Torrent {
                 keep
             });
             retry_urgent(peer, &st.deadlines, now);
+            if stalled_on_urgent(peer, &st.deadlines, now) {
+                stalled.push(*k);
+            }
             if tick % 30 == 0 {
                 peer.send(Message::KeepAlive);
             }
         }
         for (k, b) in expired {
             unrequest(st, k, &b);
+        }
+        if super_seeding(st) {
+            let late: Vec<PeerKey> = st
+                .peers
+                .iter()
+                .filter(|(_, p)| p.super_piece_done.is_some_and(|t| now.duration_since(t) >= SUPER_SEED_PATIENCE))
+                .map(|(k, _)| *k)
+                .collect();
+            for k in late {
+                reveal_next(st, k);
+            }
+        }
+        for k in stalled {
+            // Closing ends its connection task, which detaches it and returns its requests to the pool.
+            if let Some(peer) = st.peers.get(&k) {
+                peer.close();
+            }
         }
         // A request that timed out stops counting against its peer, or a peer ignoring two would never be asked again.
         for f in st.metadata_fetch.iter_mut() {
@@ -1562,6 +1688,61 @@ fn retry_urgent(peer: &mut Peer, deadlines: &HashMap<i32, Instant>, now: Instant
     }
 }
 
+fn super_seeding(st: &State) -> bool {
+    st.super_seed && !st.have.is_empty() && st.have.all()
+}
+
+/// Shows a peer the piece it lacks that is rarest: shown to the fewest peers, then held by the fewest.
+fn reveal_next(st: &mut State, key: PeerKey) {
+    let n = st.have.len() as u32;
+    let Some(peer) = st.peers.get(&key) else { return };
+    let held = |p: u32| st.peers.values().filter(|q| q.have.get(p as usize)).count();
+    let next = (0..n)
+        .filter(|&p| !peer.have.get(p as usize) && !peer.revealed.contains(&p))
+        .min_by_key(|&p| (st.super_shown.get(&p).copied().unwrap_or(0), held(p), p));
+    let peer = st.peers.get_mut(&key).unwrap();
+    peer.super_piece = next;
+    peer.super_piece_done = None;
+    if let Some(p) = next {
+        peer.revealed.insert(p);
+        peer.send(Message::Have(p));
+        *st.super_shown.entry(p).or_insert(0) += 1;
+    }
+}
+
+/// A peer reported having piece `p`. If it was shown to another peer, it has spread: that peer is shown another
+/// (BEP 16). A peer that got its own piece waits for that, except when it is the only peer.
+fn on_super_have(st: &mut State, key: PeerKey, p: u32, now: Instant) {
+    let spread: Vec<PeerKey> = st.peers.iter().filter(|(k, q)| **k != key && q.super_piece == Some(p)).map(|(k, _)| *k).collect();
+    for k in spread {
+        reveal_next(st, k);
+    }
+    let alone = st.peers.len() == 1;
+    if let Some(peer) = st.peers.get_mut(&key) {
+        if peer.super_piece == Some(p) {
+            if alone {
+                reveal_next(st, key);
+            } else {
+                peer.super_piece_done = Some(now);
+            }
+        }
+    }
+}
+
+/// Whether a peer that is not choking us has sent nothing for [`URGENT_STALL`] while it holds requests for deadline
+/// pieces, every one of them older than that.
+fn stalled_on_urgent(peer: &Peer, deadlines: &HashMap<i32, Instant>, now: Instant) -> bool {
+    !peer.peer_choking
+        && now.duration_since(peer.last_block) >= URGENT_STALL
+        && peer.requests.iter().any(|r| deadlines.contains_key(&(r.block.piece as i32)))
+        && peer.requests.iter().all(|r| now.duration_since(r.at) >= URGENT_STALL)
+}
+
+/// How long a peer would take to deliver its queue plus `extra` blocks, at its measured time per block.
+fn delivery_time(peer: &Peer, extra: usize) -> Duration {
+    peer.service.unwrap_or(UNKNOWN_SERVICE) * (peer.requests.len() + extra).min(10_000) as u32
+}
+
 /// Rebuilds the wanted list: deadline pieces by deadline, then by priority, then in file order.
 fn recompute(st: &mut State) {
     let Some(info) = st.info.clone() else {
@@ -1612,6 +1793,10 @@ fn pick(st: &mut State, key: PeerKey, target: usize) -> Vec<BlockRef> {
     let mut room = target.saturating_sub(peer.requests.len());
     let mut out = Vec::new();
     let now = Instant::now();
+    // Whether pass 0 met anything not yet asked of anyone that this peer could send: without it, endgame.
+    let mut fresh = false;
+    // Urgent pieces left to a faster peer: not duplicated from this one either.
+    let mut too_slow: HashSet<i32> = HashSet::new();
     for pass in 0..2 {
         for &p in &st.order {
             if room == 0 {
@@ -1621,10 +1806,31 @@ fn pick(st: &mut State, key: PeerKey, target: usize) -> Vec<BlockRef> {
             if !peer.have.get(p as usize) || st.hashing.contains(&p) {
                 continue;
             }
+            // An urgent piece goes to the peers that deliver it soonest: a peer leaves it to one with the piece that is
+            // at least twice as fast and in time for the deadline (libtorrent's time-critical picking does likewise).
+            if too_slow.contains(&p) {
+                continue;
+            }
+            if pass == 0 {
+                if let Some(&deadline) = st.deadlines.get(&p) {
+                    let mine = delivery_time(peer, out.len() + 1);
+                    let faster = st.peers.iter().any(|(k, q)| {
+                        *k != key && !q.peer_choking && q.have.get(p as usize) && q.service.is_some() && {
+                            let theirs = delivery_time(q, 1);
+                            theirs * 2 < mine && now + theirs <= deadline
+                        }
+                    });
+                    if faster {
+                        too_slow.insert(p);
+                        continue;
+                    }
+                }
+            }
             if !st.progress.contains_key(&p) {
                 if pass == 1 || !storage.accepts(p) {
                     continue;
                 }
+                fresh = true;
                 let size = info.piece_size(p);
                 let pads = &info.piece_pads(p);
                 let blocks = (0..block_count(size))
@@ -1651,11 +1857,16 @@ fn pick(st: &mut State, key: PeerKey, target: usize) -> Vec<BlockRef> {
                 let b = BlockRef { piece: p as u32, offset: i as u32 * wire::BLOCK, length: block_len(size, i) };
                 match *block {
                     Block::Missing if pass == 0 => {
+                        fresh = true;
                         *block = Block::Requested { first: key, second: None, at: now };
                     }
-                    // Endgame for urgent pieces: a slow peer must not hold up playback.
+                    // Urgent pieces always, and everything once nothing new is left (endgame): a second peer is asked
+                    // for a block outstanding a while, so one slow peer can't hold up the window.
                     Block::Requested { first, second: None, at }
-                        if pass == 1 && urgent && first != key && now.duration_since(at) >= URGENT_DUPLICATE =>
+                        if pass == 1
+                            && first != key
+                            && ((urgent && now.duration_since(at) >= URGENT_DUPLICATE)
+                                || (!fresh && now.duration_since(at) >= ENDGAME_DUPLICATE)) =>
                     {
                         *block = Block::Requested { first, second: Some(key), at };
                     }
@@ -1669,16 +1880,37 @@ fn pick(st: &mut State, key: PeerKey, target: usize) -> Vec<BlockRef> {
     out
 }
 
-/// Unchokes up to [`MAX_UNCHOKED`] interested peers, those sending us the most first.
+/// Chokes and unchokes by [`choker::choose`]. `rotate` is the ten-second round, which may also choke; otherwise only
+/// free slots are filled, for a peer that just became interested.
 fn choke_round(st: &mut State, rotate: bool) {
-    let mut interested: Vec<(i64, PeerKey)> =
-        st.peers.iter().filter(|(_, p)| p.peer_interested).map(|(k, p)| (p.down.per_second(), *k)).collect();
-    interested.sort_by(|a, b| b.cmp(a));
+    let now = Instant::now();
     let unchoked_now = st.peers.values().filter(|p| !p.am_choking).count();
-    if !rotate && unchoked_now >= MAX_UNCHOKED {
+    if !rotate && unchoked_now >= choker::SLOTS {
         return;
     }
-    let keep: HashSet<PeerKey> = interested.iter().take(MAX_UNCHOKED).map(|(_, k)| *k).collect();
+    // Nothing more wanted from the swarm: reward the peers we upload to fastest, as a seed does.
+    let seeding = st.order.is_empty();
+    let candidates: Vec<choker::Candidate> = st
+        .peers
+        .iter()
+        .map(|(k, p)| choker::Candidate {
+            key: *k,
+            interested: p.peer_interested,
+            down: p.down.per_second(),
+            up: p.up.per_second(),
+            snubbed: p.am_interested && !p.peer_choking && !p.requests.is_empty() && now.duration_since(p.last_block) >= choker::SNUB,
+            connected_for: now.duration_since(p.connected_at),
+        })
+        .collect();
+    let rotate_optimistic = rotate && st.choke_rounds % 3 == 0;
+    if rotate {
+        st.choke_rounds = st.choke_rounds.wrapping_add(1);
+    }
+    let mut random = [0u8; 8];
+    let _ = getrandom::fill(&mut random);
+    let (unchoke, optimistic) = choker::choose(&candidates, seeding, st.optimistic, rotate_optimistic, u64::from_le_bytes(random));
+    st.optimistic = optimistic;
+    let keep: HashSet<PeerKey> = unchoke.into_iter().collect();
     for (k, peer) in st.peers.iter_mut() {
         let unchoke = keep.contains(k);
         if unchoke && peer.am_choking {

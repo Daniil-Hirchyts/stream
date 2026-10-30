@@ -12,7 +12,8 @@ and what was checked on the host. Evidence paths are relative to `simulator/.cac
 | Is the failing run's state at seek 159 retained? | No: only a progress snapshot at cycle 93 survives | Proven |
 | Does the Rust engine reproduce it on the host? | No: 200 soak-shaped seeks (and the routine stress tests) never stalled | Proven for the host model only |
 | Does the Rust engine pass the emulator soak? | One run passed (183 cycles, `OK (1 test)`) | Proven for that one run |
-| Cause of the original timeout | Not established | Hypotheses below |
+| Is there a defect that produces exactly this stall? | Yes: the libtorrent-era engine allowed one eviction at a time and could lose its report for good (below) | Proven from the code; reproduced in the Rust engine's model before its fix |
+| Did that defect fire in the failing run? | Can't be confirmed: the run's state at seek 159 wasn't kept | Most likely mechanism, not proven |
 
 ## The failing run
 
@@ -102,7 +103,33 @@ The gap between Media3's open and first read is short, so this usually costs at 
 evictions; the host runs show it does not, alone, produce a 30-second stall. It is a plausible contributor to slow
 seeks, not a proven cause of the timeout.
 
-## Hypotheses for the original failure (not proven)
+## The eviction latch: a mechanism that fits
+
+Both engines evict through a single eviction in flight. In the libtorrent-era `engine.cpp` (`2e44bcd`), `update()`
+evicts only when `!t->evicting`, `evict()` sets `t->evicting = true`, and only the callback passed to the patched
+`torrent_handle::evict_pieces` sets it back. That call goes through libtorrent's `async_call`, which runs
+`torrent::evict_pieces` on the network thread and turns any exception into a `torrent_error_alert`; the patch
+(`0001-evict-pieces.patch`) calls `done` only after `evict_pieces_impl` returns. An exception there (from the picker
+rebuild, file progress, the per-connection `reject_piece`/`write_dont_have`/`disconnect` loop, or an allocation)
+would skip `done`, and nothing else ever cleared the flag. From then on no piece could be evicted: the 15-slot cache
+stays full, the seek's pieces can't be reserved (`need` grows; `urgentReservationFailures` counts it), nothing new
+downloads, and playback never reaches the target. That is a permanent stall after any number of good seeks, which is
+what seek 159 looks like: every earlier cycle recovered in about 2 s, and this one never did within 30 s.
+
+The Rust engine kept the same latch. `engine::tests::a_lost_eviction_report_does_not_stop_eviction_for_good` loses one
+eviction report in the model swarm: before the fix, reads stop at the first full cache (nothing within 5 s); after it,
+the film plays through. The fix: an eviction unreported for 10 s is abandoned (its pieces' release is cancelled and
+eviction resumes), a late report of an abandoned eviction can't end a newer one, `Torrent::evict` reports even if it
+panics, and the stats show an outstanding eviction's age (`evictionPendingMs`).
+
+This explains the failure only as far as the evidence allows: the defect is real and produces the observed symptom,
+but no record of the failing run's eviction state survived, so it can't be shown that this, rather than one of the
+hypotheses below, is what happened. A future failure can be: on a timed-out seek the soak now writes a `failure`
+record to `validation-soak.json` (the target, the player's position, playing, buffering and error, and the engine's
+diagnostics every five seconds of the wait and at the end, including `evictionPendingMs` and
+`urgentReservationFailures`), and `simulator.sh soak` keeps that file, the logcat and the failure screenshot.
+
+## Other hypotheses for the original failure (not proven)
 
 1. **libtorrent-era piece or request starvation.** With a single seeder, an urgent block whose request is lost or
    held waits for the request timeout. The work that followed (`f6a6153`, 2026-10-25) added `urgentReservationFailures`
@@ -128,8 +155,8 @@ cannot clear another peer's requests, and duplicate replies do not reset the
 metadata stall timer. Web-seed data is hashed before it can
 write to the cache, including a late corrupt answer after a peer verified the
 piece; stale completion reports cannot verify a piece the torrent no longer
-has. These are separate defects/risks addressed by regressions. None establishes
-the cause of the historical seek-159 timeout.
+has. These are separate defects/risks addressed by regressions. They are not the eviction
+latch above, the most likely mechanism found.
 
 The retained pre-fix thirty-minute emulator pass above is insufficient to
 validate the reader fix. A single final post-fix thirty-minute emulator soak is

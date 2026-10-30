@@ -70,7 +70,7 @@ sdkmanager --install "ndk;29.0.14206865"
   roots the app writes from Android's store; certificates are always verified.
   `public_network_only` keeps peers, trackers and DHT nodes off loopback and
   private networks.
-- **Not implemented**: UPnP/PCP port mapping (NAT-PMP is an opt-in; see below), BEP 17
+- **Not implemented**: BEP 17
   (Hoffman-style) seeds, the DHT over IPv6 (BEP 32), IPv6 local discovery, uTP
   on more than the first listen interface, BitTorrent v2 block-level hash
   requests after a failed piece (the piece is downloaded again whole), seeding to
@@ -99,16 +99,25 @@ Transmission 4.1.4. libtorrent supplies an independent BEP 52 and MSE check:
 pure-v2 and hybrid torrents, magnets with piece layers, single/multi-file
 transfers, TCP/uTP and forced MSE are checked in both directions. aria2 and
 Transmission cover v1/hybrid-as-v1 downloads in both directions, magnets and
-MSE; Transmission also supplies an independent libutp seeder. Transmission's
-leecher is reached by dialing its loopback listening port, because it did not
-dial the loopback peer supplied by its tracker. Its outgoing connection path
-has therefore not been validated by those leecher rows.
+MSE; Transmission also supplies an independent libutp seeder. Transmission
+ignores loopback peers named by a tracker or PEX (its `is_martian_addr`) but
+keeps those from its resume file, so `interop.sh` also writes Stream's address
+into the leecher's resume file (`tr_resume_peer.py`) and requires every piece to
+arrive on the connection Transmission itself opened: over TCP, over its libutp
+uTP, with encryption required, for a hybrid torrent and for a magnet (metadata by
+BEP 9 from Stream). Those rows found two engine defects, both fixed with
+regressions: a uTP-only session ignored the configured listen port, and a peer
+reconnecting from the endpoint of a connection not yet seen closed (Transmission
+does so after a magnet's metadata) was refused instead of replacing it.
 
 Caveats: librqbit's uTP is `librqbit-utp` 0.7.0, the same library the engine
 uses. aria2 does not supply uTP or BEP 52, Transmission does not supply BEP 52,
 and librqbit does not supply MSE or BEP 52. WebTorrent 3.0.21 passes v1 and
-hybrid-as-v1 leecher checks, v1 seeding and magnet metadata, including Stream
-forcing MSE; its pure-v2 path is not covered. Its native Node runtime dependency
+hybrid-as-v1 leecher checks, v1 and hybrid-as-v1 seeding and magnet metadata,
+including Stream forcing MSE. It has no BEP 52: its pure-v2 row is an expected
+failure only when WebTorrent rejects the torrent as such ("Invalid torrent
+identifier"), passes if a later WebTorrent downloads the right bytes, and fails
+otherwise; libtorrent supplies the independent pure-v2 check. Its native Node runtime dependency
 must load before those optional rows run. The separately packaged npm
 `http-server` supplies an additional HTTP range-server check in every torrent
 version. Real public swarms are deliberately never used by these checks.
@@ -118,40 +127,68 @@ lt_donthave and eviction behaviour, hostile peers and dropped requests,
 metadata recovery after corrupt or missing answers, bounded peer/control
 queues, trackers, and concurrent cache/reader lifecycle behaviour.
 
+**Scheduling, choking and seeding** (`tests/scheduling.rs`, `tests/super_seed.rs`, `src/bt/choker.rs`):
+
+- Urgent pieces go to the peers that deliver them soonest: a peer leaves an urgent piece to one with the piece that
+  serves blocks at least twice as fast (measured per block, not by average rate) and in time for the deadline, as
+  libtorrent's time-critical picking does. An urgent block outstanding 2 s is also asked of a second peer, and with a
+  lone peer it is re-sent after at least 5 s (three times its queue's drain time for a slow peer).
+- Endgame covers every piece: once nothing new is left to ask a peer for, blocks outstanding for a second are asked
+  of it too; whichever copy arrives first cancels the other.
+- A peer that sends nothing for 20 s while holding urgent requests is disconnected and dialled again.
+- Choking follows the mainline scheme: seven regular slots by the rate a peer sends to us (or, once nothing is
+  wanted, the rate we send to it), snubbed peers (silent 60 s while we wait) without a regular slot, and one
+  optimistic slot rotated every 30 s, three times as likely to go to a peer connected less than a minute.
+- Super-seeding (BEP 16) is available to a full seed (`SeederOptions::super_seed`, `stream-fixture seed --super-seed`):
+  each peer is shown one rare piece at a time, only shown pieces are served, and a piece seen at another peer brings
+  the next. Two downloaders finish from such a seed while it uploads under one and a half copies (a plain seed sends
+  two).
+
 **Known limitations besides the list above**:
 
-- An urgent request can be duplicated to another peer after 2 s. With a lone
-  peer it is resent after at least 5 s, allowing three times the queue's estimated
-  drain time for slow peers; the original 30 s expiry remains. This reduces
-  dropped-request stalls without guaranteeing a deadline against a silent peer.
 - Requests that drop from the active window to low/no priority are cancelled;
   partial pieces still finish later at the lowest priority when nothing more
   urgent is wanted. Cancellation cannot retract bytes already in flight.
-- Endgame duplicates only for urgent pieces; there is no general endgame mode,
-  super-seeding, or choking algorithm beyond rate-ordered unchoking of eight.
 - Streaming torrents never report themselves complete and never seed whole
-  files; uploads are only of pieces currently in the cache.
-- The engine has been soaked on the Android TV emulator once (thirty minutes,
-  passed, before the subsequent reader fix); the final post-fix emulator run is
-  documented in `SOAK_INVESTIGATION.md`. It has not been validated on a physical TV
-  or across platforms.
+  files; uploads are only of pieces currently in the cache. Super-seeding
+  therefore applies to full seeds (the fixture seeder), not to the app.
+- A slow lone peer still limits playback to its speed: no scheduling can make
+  one peer faster than it is.
+- The engine has passed the thirty-minute emulator soak; see
+  `SOAK_INVESTIGATION.md` for the earlier libtorrent-era timeout, the eviction
+  defect found, and what a failing soak now records. It has not been validated
+  on a physical TV or across platforms.
+- None of this is parity with libtorrent's feature set or its years of exposure
+  to real swarms.
 
 **Port mapping** is off by default in the engine (`Config::default()`, tested) and
-the app. NAT-PMP (RFC 6886, `src/bt/natpmp.rs`) is an explicit opt-in: Settings →
-Playback → Router port mapping. With it on, and only outside local-only and
-public-network-only sessions, the app passes the active network's default IPv4
-gateway; the engine sends unicast requests to that address alone (private,
-link-local or loopback addresses only; nothing is discovered or broadcast) to map
-the listen port for TCP and uTP with a ten-minute lease. It renews at half the
-granted lease, announces a differing external TCP port to trackers, the DHT and
-peers, and deletes both mappings when the session closes; a mapping left by a
-process that died expires with its lease. Replies are accepted only from the
-gateway's address, for the opcode and port asked. `tests/natpmp.rs` checks
-mapping, renewal, the announced external port, deletion and a refusing gateway
-against a fake gateway on loopback. PCP and UPnP IGD are not implemented: UPnP
-needs SSDP multicast discovery and SOAP requests to LAN devices, which the tests
-forbid; enabling `upnp` only logs that it stays off. A streaming client mostly
-dials its peers, so mapping helps uploads and reciprocity more than playback.
+the app, and is an explicit opt-in: Settings → Playback → Router port mapping.
+With it on, and only outside local-only and public-network-only sessions, the app
+passes the active network's default IPv4 gateway (private, link-local or loopback
+addresses only). `src/bt/portmap.rs` maps the listen port for TCP and uTP with a
+ten-minute lease, renews it at half the granted lease, announces a differing
+external TCP port to trackers, the DHT and peers, and deletes its mappings when
+the session closes:
+
+1. **PCP** (RFC 6887, `natpmp.rs`): unicast MAP requests to the gateway's port
+   5351, matched to their replies by nonce, opcode and port.
+2. **NAT-PMP** (RFC 6886) when the gateway answers PCP with NAT-PMP's
+   "unsupported version".
+3. **UPnP IGD** (`upnp.rs`) when neither answers or the gateway refuses:
+   discovery asks the gateway by unicast SSDP first, then by the standard
+   multicast search; only answers from the gateway's address are accepted, and
+   its description and control URLs must name that address, so no other device
+   is contacted. WANIPConnection:2/1 or WANPPPConnection:1 via SOAP
+   AddPortMapping/DeletePortMapping. A gateway that grants only permanent
+   mappings (error 725) gets one, which is deleted on shutdown; a process that
+   dies would leave that one behind until the router forgets it.
+
+`tests/portmap.rs` checks each method against fake gateways on loopback (PCP
+renewal and nonce-matched deletion, a NAT-PMP-only gateway, a refusing gateway,
+UPnP leases, a permanent-only IGD, and a description pointing elsewhere); the
+multicast search is skipped for a loopback gateway. Real routers have not been
+tried. A streaming client mostly dials its peers, so mapping helps uploads and
+reciprocity more than playback.
 
 ## How streaming works
 

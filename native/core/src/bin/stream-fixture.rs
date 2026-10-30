@@ -3,7 +3,7 @@
 //!   stream-fixture content <path> <bytes> <seed>
 //!   stream-fixture create <out.torrent> <file-or-dir> <piece-bytes> [v1|v2|hybrid]
 //!   stream-fixture info <file.torrent>
-//!   stream-fixture seed [--listen 127.0.0.1:58134] [--rate bytes/s] [--peer address:port] <file.torrent> <save-path> [...]
+//!   stream-fixture seed [--listen 127.0.0.1:58134] [--rate bytes/s] [--no-tcp|--no-utp] [--super-seed] [--peer address:port] <file.torrent> <save-path> [...]
 //!
 //! `seed` runs a real BitTorrent seeder with DHT, local discovery, port mapping and trackers off, until SIGINT or
 //! SIGTERM; peers reach it only at the address given, or it dials the `--peer` given (for a client that can't be told
@@ -16,7 +16,7 @@ use stream_core::fixtures::{self, Seeder, SeederOptions};
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage:\n  stream-fixture content <path> <bytes> <seed>\n  stream-fixture create <out.torrent> <file-or-dir> <piece-bytes> [v1|v2|hybrid]\n  stream-fixture info <file.torrent>\n  stream-fixture seed [--listen 127.0.0.1:58134] [--rate bytes/s] [--peer address:port] <file.torrent> <save-path> [...]"
+        "usage:\n  stream-fixture content <path> <bytes> <seed>\n  stream-fixture create <out.torrent> <file-or-dir> <piece-bytes> [v1|v2|hybrid]\n  stream-fixture info <file.torrent>\n  stream-fixture seed [--listen 127.0.0.1:58134] [--rate bytes/s] [--no-tcp|--no-utp] [--super-seed] [--peer address:port] <file.torrent> <save-path> [...]"
     );
     ExitCode::from(2)
 }
@@ -41,6 +41,19 @@ fn seed(args: &[String]) -> Result<(), String> {
             "--rate" if i + 1 < args.len() => {
                 options.upload_rate = args[i + 1].parse().map_err(|_| "invalid rate")?;
                 i += 2;
+            }
+            // One transport only: a client then has to use the other one to reach this seeder.
+            "--no-tcp" => {
+                options.tcp = false;
+                i += 1;
+            }
+            "--super-seed" => {
+                options.super_seed = true;
+                i += 1;
+            }
+            "--no-utp" => {
+                options.utp = false;
+                i += 1;
             }
             "--peer" if i + 1 < args.len() => {
                 peers.push(stream_core::swarm::parse_peer(&args[i + 1]).map_err(|e| e.message)?);

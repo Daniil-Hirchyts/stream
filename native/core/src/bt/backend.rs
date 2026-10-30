@@ -21,19 +21,35 @@ pub struct RustSwarm {
 impl RustSwarm {
     pub fn create(config: &Config, wake: Arc<Wake>) -> Result<RustSwarm> {
         let note = |line: &str| if let Some(log) = &config.log { log(line) };
-        if config.upnp {
-            note("UPnP port mapping is not supported and stays off");
-        }
-        let natpmp_gateway = if !config.natpmp {
+        let port_mapping = if !config.natpmp && !config.upnp {
             None
         } else if config.public_network_only {
-            note("NAT-PMP stays off on public-network-only sessions");
+            note("Port mapping stays off on public-network-only sessions");
             None
         } else {
             match super::natpmp::parse_gateway(&config.natpmp_gateway) {
-                Ok(gateway) => Some(gateway),
+                Ok(gateway) => {
+                    let ssdp = if config.upnp_discovery.is_empty() {
+                        Ok(std::net::SocketAddrV4::new(*gateway.ip(), super::upnp::SSDP_PORT))
+                    } else {
+                        super::natpmp::parse_gateway(&config.upnp_discovery)
+                    };
+                    match ssdp {
+                        Ok(ssdp) => Some(super::portmap::Options {
+                            gateway,
+                            pcp: config.natpmp,
+                            upnp: config.upnp,
+                            ssdp,
+                            multicast: !gateway.ip().is_loopback(),
+                        }),
+                        Err(e) => {
+                            note(&format!("Port mapping stays off: {e}"));
+                            None
+                        }
+                    }
+                }
                 Err(e) => {
-                    note(&format!("NAT-PMP stays off: {e}"));
+                    note(&format!("Port mapping stays off: {e}"));
                     None
                 }
             }
@@ -54,7 +70,7 @@ impl RustSwarm {
                 utp: config.utp,
                 tcp: config.tcp,
                 encryption: config.encryption,
-                natpmp_gateway,
+                port_mapping,
             },
             Some(Arc::new(move || wake.wake())),
         )
@@ -146,6 +162,9 @@ impl SwarmTorrent for RustTorrent {
     }
     fn set_piece_deadline(&self, piece: i32, milliseconds: i32) {
         self.torrent.set_deadline(piece, milliseconds);
+    }
+    fn update_window(&self, priorities: Option<&[u8]>, deadlines: Option<&[(i32, i32)]>) {
+        self.torrent.update_window(priorities, deadlines);
     }
     fn have_piece(&self, piece: i32) -> bool {
         self.torrent.have_piece(piece)

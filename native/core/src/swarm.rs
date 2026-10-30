@@ -117,6 +117,19 @@ pub trait SwarmTorrent: Send + Sync {
     fn prioritize_pieces(&self, priorities: &[u8]);
     fn clear_piece_deadlines(&self);
     fn set_piece_deadline(&self, piece: i32, milliseconds: i32);
+    /// New priorities and/or deadlines (piece, milliseconds), replacing all earlier deadlines, applied together: a
+    /// peer must not be handed a soon-urgent piece as an ordinary one between the two.
+    fn update_window(&self, priorities: Option<&[u8]>, deadlines: Option<&[(i32, i32)]>) {
+        if let Some(d) = deadlines {
+            self.clear_piece_deadlines();
+            for &(p, ms) in d {
+                self.set_piece_deadline(p, ms);
+            }
+        }
+        if let Some(p) = priorities {
+            self.prioritize_pieces(p);
+        }
+    }
     fn have_piece(&self, piece: i32) -> bool;
     fn evict_pieces(&self, pieces: Vec<i32>, done: EvictDone);
     fn connect_peer(&self, address: SocketAddr);
