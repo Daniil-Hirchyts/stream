@@ -98,7 +98,7 @@ class SetupScreens(private val context: Context, private val nav: Navigator, pri
                     services.store.setPreference("interfaceSounds", if (sounds) "false" else "true")
                     tv.stream.app.ui.Sounds.get(context).setEnabled(!sounds); null
                 }) }),
-                // An explicit opt-in: with it on, the engine asks the router (NAT-PMP) to forward its port during playback.
+                // An explicit opt-in: with it on, the engine asks the router (PCP, NAT-PMP or UPnP) to forward its port during playback.
                 Item.row("port-mapping", 0, "Router port mapping", if (portMapping) "On" else "Off", Runnable { nav.mutate(Callable {
                     services.store.setPreference(PortMapping.PREFERENCE, if (portMapping) "false" else "true"); null
                 }) }),

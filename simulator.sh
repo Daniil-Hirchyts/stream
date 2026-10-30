@@ -306,7 +306,11 @@ case "${1:-up}" in
     run_data_tests tv.stream.app.SoakTest; status=$?
     # Keep the progress record and the emulator log even when a cycle times out: they show where a soak stopped.
     device exec-out run-as tv.stream.app cat files/validation-soak.json >"$SIM_DIR/.cache/evidence/soak.json" || status=1
-    [ "$status" -eq 0 ] || device logcat -d -t 4000 >"$SIM_DIR/.cache/evidence/soak-failure-logcat.txt"
+    if [ "$status" -ne 0 ]; then
+      device logcat -d -t 4000 >"$SIM_DIR/.cache/evidence/soak-failure-logcat.txt"
+      # The harness's screenshot of the moment the wait gave up.
+      device exec-out run-as tv.stream.app cat files/validation-failure.png >"$SIM_DIR/.cache/evidence/soak-failure.png" 2>/dev/null || true
+    fi
     exit "$status"
     ;;
   profile) profile_app ;;

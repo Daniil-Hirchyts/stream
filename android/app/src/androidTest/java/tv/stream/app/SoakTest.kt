@@ -27,7 +27,22 @@ class SoakTest : AppHarness() {
             val target: Long = if (cycles % 3 == 0) 35_000 else if (cycles % 3 == 1) 1000 else 15_000
             val seekStart = SystemClock.elapsedRealtime()
             instrumentation.runOnMainSync { AppFlowTest.session(activity).seekTo(target) }
-            AppHarness.waitUntil("soak seek $cycles", 30_000) { state() != null && state()!!.playing && state()!!.positionMs >= target + 1000 && state()!!.positionMs < target + 10_000 }
+            // While waiting, keep what the player and engine report every five seconds; a timed-out seek writes it
+            // out with the failure, so a stall can be explained afterwards (the historical seek-159 timeout left nothing).
+            val waiting = JSONArray()
+            var nextTrace = seekStart
+            try {
+                AppHarness.waitUntil("soak seek $cycles", 30_000) {
+                    if (SystemClock.elapsedRealtime() >= nextTrace) { waiting.put(snapshot(seekStart)); nextTrace += 5000 }
+                    state() != null && state()!!.playing && state()!!.positionMs >= target + 1000 && state()!!.positionMs < target + 10_000
+                }
+            } catch (failure: AssertionError) {
+                val record = JSONObject().put("cycle", cycles).put("targetMs", target).put("waiting", waiting).put("final", snapshot(seekStart))
+                val report = JSONObject().put("elapsedMs", SystemClock.elapsedRealtime() - started).put("cycles", cycles)
+                        .put("maxPssBytes", maxPss).put("maxAllocatedCacheBytes", maxCache).put("samples", samples).put("failure", record)
+                Files.write(evidence.toPath(), report.toString().toByteArray(StandardCharsets.UTF_8))
+                throw failure
+            }
             val recovered = SystemClock.elapsedRealtime() - seekStart
             val sample = diagnostics()
             val memory = Debug.MemoryInfo(); Debug.getMemoryInfo(memory)
@@ -48,5 +63,13 @@ class SoakTest : AppHarness() {
         val complete = JSONObject().put("complete", true).put("elapsedMs", SystemClock.elapsedRealtime() - started).put("cycles", cycles)
                 .put("maxPssBytes", maxPss).put("maxAllocatedCacheBytes", maxCache).put("samples", samples)
         Files.write(evidence.toPath(), complete.toString().toByteArray(StandardCharsets.UTF_8))
+    }
+
+    /** The player's state and the engine's diagnostics, `since` a seek began. */
+    private fun snapshot(since: Long): JSONObject {
+        val s = state()
+        return JSONObject().put("sinceSeekMs", SystemClock.elapsedRealtime() - since).put("positionMs", s?.positionMs ?: -1)
+            .put("playing", s?.playing ?: false).put("playWhenReady", s?.playWhenReady ?: false).put("buffering", s?.buffering ?: false)
+            .put("error", s?.error?.toString() ?: JSONObject.NULL).put("diagnostics", diagnostics())
     }
 }

@@ -391,7 +391,7 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
                         config.publicNetworkOnly = options.publicNetworkOnly
                         if (!options.localOnly && !options.publicNetworkOnly && PortMapping.enabled(services!!.store)) {
                             val gateway = PortMapping.gateway(this)
-                            if (gateway != null) { config.natpmp = true; config.natpmpGateway = gateway }
+                            if (gateway != null) { config.natpmp = true; config.upnp = true; config.natpmpGateway = gateway }
                         }
                         val roots = File(noBackupFilesDir, "native-trust.pem"); TrustRoots.writePem(roots); config.trustRootsFile = roots.path
                         coordinator.engine = TorrentEngine.create(config)
@@ -1018,7 +1018,7 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
                     .put("width", observedVideo!!.width).put("height", observedVideo!!.height)
             if (observedAudio != null) result.put("audioMime", observedAudio!!.sampleMimeType)
             if (session != null) { val s = session!!.snapshot(); result.put("positionMs", s.positionMs).put("durationMs", s.durationMs).put("renderedFirstFrame", s.renderedFirstFrame).put("playing", s.playing) }
-            for (key in arrayOf("verifiedReadBytes", "urgentReservationFailures", "obsoletePartials", "peers", "seeds", "totalDownload", "downloadRate", "hashFailures", "evictionsRequested", "cache", "disk")) if (nativeStats.has(key)) result.put(key, nativeStats.get(key))
+            for (key in arrayOf("verifiedReadBytes", "urgentReservationFailures", "obsoletePartials", "peers", "seeds", "totalDownload", "downloadRate", "hashFailures", "evictionsRequested", "evictionPendingMs", "cache", "disk")) if (nativeStats.has(key)) result.put(key, nativeStats.get(key))
         } catch (ignored: Exception) { /* diagnostics remain best effort */ }
         return result
     }

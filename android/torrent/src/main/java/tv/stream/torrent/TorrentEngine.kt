@@ -26,9 +26,9 @@ class TorrentEngine private constructor(private val id: Long, private val cacheD
         @JvmField var listenInterfaces: String = "0.0.0.0:0,[::]:0"
         @JvmField var dht: Boolean = true
         @JvmField var localDiscovery: Boolean = true
-        /** UPnP is not implemented by the engine; enabling it only logs that it stays off. */
+        /** UPnP IGD at [natpmpGateway] when PCP and NAT-PMP don't map: an explicit opt-in. */
         @JvmField var upnp: Boolean = false
-        /** NAT-PMP maps the listen port at [natpmpGateway] while the engine runs: an explicit opt-in. */
+        /** PCP, falling back to NAT-PMP, maps the listen port at [natpmpGateway] while the engine runs: an explicit opt-in. */
         @JvmField var natpmp: Boolean = false
         /** The default route's IPv4 gateway; a private or loopback address, optionally with a port. */
         @JvmField var natpmpGateway: String = ""
