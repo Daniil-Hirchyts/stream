@@ -202,6 +202,12 @@ Settings (commit b9528ec) with the Compose Settings: median category move 46 and
 on this emulator. The Compose pane is slower to move between categories in this
 debug build; a release or physical-TV measurement has not been made. Dropped frame
 metric reports indicate missing measurements, not necessarily dropped frames.
+After the remaining page blocks moved to Compose (same emulator, debug build, one
+run each, measured alone): Settings category moves median 55 → 54 ms, p95 281 →
+319 ms, frame p95 197 → 167 ms over 94 frames, final PSS 120 → 121 MiB; Home →
+Details median 49 → 57 ms (max 64 → 60), frame p95 41 → 47 ms, final PSS 126 →
+124 MiB. Single debug runs on a shared host are within run-to-run noise; they show
+no large regression, not a speed-up, and say nothing about release builds or TVs.
 The software profile forces FFmpeg video on a looped generated 1080p H.264
 fixture and samples process CPU, PSS, playback and dropped-frame telemetry every
 five seconds for a minute. Its local evidence is `software-performance.json`;
