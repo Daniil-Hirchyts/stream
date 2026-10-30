@@ -37,7 +37,8 @@ class DecoderPlaybackTest : AppHarness() {
         waitUntil("E-AC-3 decoded to audible PCM", 15_000) { audioRendered() }
         assertEquals("audio/eac3", state()!!.audioFormat!!.sampleMimeType)
         assertTrue("Software decoder selected automatically", diagnostics().optString("audioDecoder").startsWith("ffmpeg"))
-        assertTrue("The real torrent transferred bytes", diagnostics().getLong("totalDownload") > 0)
+        // Native counters are polled once a second and reset per attempt, so they may lag the first audio.
+        waitUntil("The real torrent transferred bytes", 5_000) { diagnostics().optLong("totalDownload") > 0 }
         assertEquals(1, diagnostics().getInt("sourceAttempts").toLong())
         assertEquals(0, diagnostics().getJSONArray("sourceFailures").length().toLong())
         controlsAndSeek(false)

@@ -34,8 +34,11 @@ The APK packages `libavcodec`, `libavutil`, `libswresample`, `libswscale`, NextL
 `NEEDED`, and none contains mbedTLS code: `setup.sh` builds libavformat (with its
 network protocols and statically linked mbedTLS), but `media3ext`'s CMake imports
 only the four libraries above, so libavformat is never packaged. The FFmpeg
-libraries embed their configure line (`avutil_configuration()`), which includes
-the absolute build paths of the machine that built them.
+libraries embed their configure line (`avutil_configuration()`);
+`0003-ffmpeg-configuration-paths.patch` rewrites the builder's checkout, NDK and
+home paths in it to `ffmpeg`, `ndk` and `~` after configure, so packaged
+libraries name no local paths. (The Rust engine's build remaps its source paths
+the same way; see `../android/torrent/build.gradle`.)
 
 ## Decoder-only evaluation
 
