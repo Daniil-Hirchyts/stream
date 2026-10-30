@@ -166,8 +166,10 @@ debug key for validation only (ordinary release output is unsigned), and runs
 code out of the shrunk app. It opens no owner database and uses local-only
 peers.
 
-The last soak failed after about 27 minutes (`Timed out: soak seek 159`); it
-hasn't been investigated. See [Known gaps](README.md#known-gaps).
+An earlier soak failed after about 27 minutes (`Timed out: soak seek 159`); its
+cause has not been established. A subsequent Rust-engine emulator run completed
+in 1,813.923 seconds with `OK (1 test)`; its local evidence is retained under
+`simulator/.cache/evidence/soak-rust/`. See [Known gaps](README.md#known-gaps).
 
 ## Live checks (optional, internet)
 
