@@ -62,6 +62,60 @@ no generated VC-1 decoding fixture is available. It records the initialized deco
 No public providers or swarms are needed. Hardware and format limits are
 listed under Known gaps in the [app guide](README.md#known-gaps).
 
+## Distribution and page alignment
+
+`-PabiSplits=true` adds armeabi-v7a, arm64-v8a and x86_64 APKs beside the
+universal APK; `:app:bundleRelease` builds the App Bundle. On 30 October 2026
+release outputs and bundletool 1.18.0 API 36 APK sets for each ABI were checked
+with NDK r29 `llvm-readelf -lW`, build-tools 35 `zipalign -c -P 16 -v 4` and
+`aapt2 dump xmltree`:
+
+| Output | Size (bytes) | `zipalign -P 16` | Native libraries |
+| --- | --- | --- | --- |
+| armeabi-v7a APK | 14,651,413 | OK | stored; LOAD 16 KiB except `libc++_shared.so` (4 KiB) |
+| arm64-v8a APK | 17,206,837 | OK | stored; every LOAD 16 KiB |
+| x86_64 APK | 21,515,653 | OK | stored; every LOAD 16 KiB |
+| Universal APK | 45,503,055 | OK | as per ABI above |
+| App Bundle | 31,461,652 | — | per-ABI splits as above, all OK |
+| Bundle sets: v7a / arm64 / x86_64 | 15,843,325 / 18,399,213 / 22,708,181 | OK | master, ABI, density and language splits |
+
+Every APK and split has `extractNativeLibs=false`. Bundle sets are larger than
+the ABI APKs mainly because bundletool stores `classes.dex` uncompressed for
+recent Android versions. Each ABI packages `libavcodec`, `libavutil`,
+`libswresample`, `libswscale`, `libmedia3ext`, `libc++_shared`, `libstream` and
+`libandroidx.graphics.path`.
+
+The armeabi-v7a `libc++_shared.so` is the NDK r29 (29.0.14206865) prebuilt from
+`sysroot/usr/lib/arm-linux-androideabi`; AGP only strips it, and its GNU build ID
+matches the prebuilt. (Its `.note.android.ident` says r28/13004108, so that note is
+not a reliable NDK version.) The NDK ships 4 KiB segments for both 32-bit ABIs and
+16 KiB segments for arm64-v8a and x86_64; its CMake toolchain only ever adds a
+page-size flag for the 64-bit ABIs. Android's 16 KiB page sizes exist only on
+64-bit devices, and Google Play's 16 KiB requirement covers 64-bit libraries, so no
+action is needed. Stream's own 32-bit libraries use 16 KiB segments, which 4 KiB
+devices also load.
+
+## Software video conversion
+
+In surface mode the decoder keeps the decoded `AVFrame` and converts it once, on
+the playback thread, directly into the locked `RGBA_8888` window buffer with a
+cached `SwsContext`. Nothing is copied in between, and the scaler is recreated only
+when size, format, matrix or range changes. For 8-bit 4:2:0 input whose width is a
+multiple of 16, FFmpeg 9.0.1 uses its unscaled NEON YUV-to-RGBA path on both ARM
+ABIs (SSSE3 on x86_64). Other widths use its C converter; 10-bit, 4:4:4 and
+full-range `yuvj` input use the general scaler. Rotated video adds a per-pixel
+copy.
+
+A host benchmark of the same libswscale configuration (FFmpeg 9.0.1 on an M1 Pro
+under load, best of 120 1080p frames) measured 0.39 ms for 8-bit 4:2:0, 1.7 ms
+for a width of 1916, and 4.0–4.2 ms for 10-bit 4:2:0. Two possible 10-bit changes
+are not applied. Converting to 8-bit 4:2:0 first and then using the NEON path
+took 1.4 ms, but adds dithering and loses precision, which changes the picture.
+Four swscale slice threads took 1.2–1.4 ms, but would compete with FFmpeg's
+decoder threads. TV CPUs are slower; neither result is a device measurement.
+`SoftwarePlaybackPerformanceTest` (`./simulator.sh software-profile`) covers
+only 8-bit H.264.
+
 ## Third-party notices
 
 NextLib is GPL-3.0. Its native build includes FFmpeg (LGPL-3.0), dav1d

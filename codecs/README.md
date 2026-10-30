@@ -27,20 +27,55 @@ its 1080p device budget. Native decoder discovery alone does not prove that a
 container extractor can deliver a particular format or that a TV can decode it
 fast enough. See `../android/DECODERS.md` for verified combinations and limits.
 
+## Packaged libraries
+
+The APK packages `libavcodec`, `libavutil`, `libswresample`, `libswscale`, NextLib's
+`libmedia3ext` and the NDK's `libc++_shared`. None of them lists `libavformat.so` as
+`NEEDED`, and none contains mbedTLS code: `setup.sh` builds libavformat (with its
+network protocols and statically linked mbedTLS), but `media3ext`'s CMake imports
+only the four libraries above, so libavformat is never packaged. The FFmpeg
+libraries embed their configure line (`avutil_configuration()`), which includes
+the absolute build paths of the machine that built them.
+
 ## Decoder-only evaluation
 
-An isolated arm64 FFmpeg 9.0.1 build on the development Mac compared the current
-configuration with the same decoder and parser list but FFmpeg's avformat and
-networking disabled. Using four build jobs and the same prebuilt dav1d inputs,
-configure plus build took 77 seconds for the current configuration and 67 seconds
-for the reduced one. These are single runs, not controlled benchmarks. The four
-stripped libraries used by the app totalled 8,241,272 bytes and 8,216,480 bytes
-respectively, a 24,792-byte difference. The current APK does not package the
-separately built libavformat, so its much larger scratch-build size is not an APK
-saving. This experiment did not build an APK with the reduced libraries or run
-playback, TLS or other ABI checks. The shipping configuration is unchanged;
-the reduced build requires those checks before adoption. Scratch build logs and
-outputs are retained locally via `simulator/.cache/evidence/ffmpeg-eval-path.txt`.
+The reduced configuration keeps the decoder, parser, dav1d and swresample/swscale
+options and drops `--enable-avformat`, `--enable-demuxers`, `--enable-protocol=...`
+and `--enable-mbedtls` (adding `--disable-network`), so mbedTLS is neither fetched
+nor built. Through the normal tooling this means changing the `ffmpeg/setup.sh`
+hunk of `patches/nextlib/0001-stream-codecs.patch`, the source links in
+`build-native.sh` and the mbedtls line of `deps.lock`; `build-native.sh` must
+also remove `ffmpeg/build` and `ffmpeg/output`, because `setup.sh` copies every
+library in its install prefix and would otherwise repackage a stale libavformat
+into `output/`.
+
+On 30 October 2026 both configurations were built for all three ABIs from a clean
+worktree on an M1 Pro (10 build jobs, NDK r29, FFmpeg 9.0.1), followed by
+`:app:assembleRelease -PabiSplits=true` and `:app:bundleRelease`. Concurrent
+Gradle and emulator work kept the load average between 19 and 44, so the times
+are only indicative:
+
+| | Current | Decoder-only |
+| --- | --- | --- |
+| `build-native.sh` (mbedTLS, dav1d, FFmpeg × 3 ABIs) | 241 s, 265 s | 198 s, 207 s |
+| armeabi-v7a APK | 14,651,413 B | 14,634,917 B (−16,496) |
+| arm64-v8a APK | 17,206,837 B | 17,173,973 B (−32,864) |
+| x86_64 APK | 21,515,653 B | 21,482,757 B (−32,896) |
+| Universal APK | 45,503,055 B | 45,421,007 B (−82,048) |
+| App Bundle | 31,461,652 B | 31,424,744 B (−36,908) |
+| arm64 bundle APK set (bundletool, API 36) | 18,399,213 B | 18,366,445 B (−32,768) |
+
+APKs are unsigned release outputs; bundle sets were signed by bundletool with the
+local debug key. Per ABI the four packaged FFmpeg libraries shrink by 22,836
+(armeabi-v7a) to 24,840 (arm64-v8a) bytes, almost all in libavcodec (arm64
+6,162,232 → 6,137,712 bytes). APK differences vary because each stored library
+is padded to a 16 KiB boundary.
+Repeated current builds produced byte-identical libraries. The saving is about
+0.1–0.2% of each APK, so the shipping configuration is unchanged. Adoption would
+be justified by roughly 20% less native build time and one fewer pinned
+dependency, not size, and needs the decoder, subtitle, seek and software-profile
+device tests first. Results are retained under the ignored
+`simulator/.cache/evidence/dist/`.
 
 NextLib is GPL-3.0; FFmpeg uses the LGPL-3.0 configuration, dav1d BSD-2-Clause,
 and mbedTLS Apache-2.0. Retain the license texts and corresponding source/build
