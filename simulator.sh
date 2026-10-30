@@ -147,6 +147,8 @@ run_data_tests() {
   (cd "$ANDROID_DIR" && ./gradlew -q :app:assembleDebug :app:assembleDebugAndroidTest) || return 1
   device install -r "$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk" || return 1
   device install -r -t "$ANDROID_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" || return 1
+  # Profile capture starts from an empty ART profile (see baseline_profile).
+  [ -z "${PROFILE_RESET:-}" ] || device shell cmd package compile --reset tv.stream.app >/dev/null || return 1
   instrument tv.stream.app.test -e class "$test_classes" \
     -e fixtures "$FIXTURE_URL" -e seeder "127.0.0.1:$SEEDER_PORT" -e badCertificate https://127.0.0.1:58135/manifest.json "$@"
   status=$?
@@ -228,6 +230,24 @@ profile_app() {
   printf 'Emulator measurements saved in %s\n' "$evidence"
 }
 
+# Baseline and Startup Profiles: each ProfileJourneyTest journey runs on local fixtures from an empty ART profile,
+# asks ART to save it, and the dumped classes/methods become the app's profile sources (android/TESTING.md).
+baseline_profile() {
+  evidence="$SIM_DIR/.cache/evidence/baseline-profile"
+  out="$ANDROID_DIR/app/src/main/baselineProfiles"
+  mkdir -p "$evidence" "$out" || return 1
+  for journey in startup browse; do
+    PROFILE_RESET=1 run_data_tests tv.stream.app.ProfileJourneyTest -e journey "$journey" || return 1
+    device shell pm dump-profiles --dump-classes-and-methods tv.stream.app >/dev/null || return 1
+    device exec-out cat /data/misc/profman/tv.stream.app-primary.prof.txt >"$evidence/$journey-raw.txt" || return 1
+    [ -s "$evidence/$journey-raw.txt" ] || { fail "ART saved no profile for the $journey journey."; return 1; }
+  done
+  LC_ALL=C sort -u "$evidence/startup-raw.txt" >"$out/startup-prof.txt" || return 1
+  LC_ALL=C sort -u "$evidence/startup-raw.txt" "$evidence/browse-raw.txt" >"$out/baseline-prof.txt" || return 1
+  printf 'Profiles: %s rules (startup), %s rules (baseline) in %s\n' "$(wc -l <"$out/startup-prof.txt" | tr -d ' ')" \
+    "$(wc -l <"$out/baseline-prof.txt" | tr -d ' ')" "$out"
+}
+
 show_status() {
   require_emulator || return 1
   printf 'AVD: %s (%s), Android %s (API %s)\n' "$AVD_NAME" "$SERIAL" "$(emulator_property ro.build.version.release)" \
@@ -287,6 +307,7 @@ case "${1:-up}" in
     exit "$status"
     ;;
   profile) profile_app ;;
+  baseline-profile) baseline_profile ;;
   status) show_status ;;
   logs)
     device logcat -d -t 400 -v time || exit $?

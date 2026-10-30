@@ -37,7 +37,10 @@ android {
         }
     }
     bundle { abi { enableSplit true } }
-    // Native libraries stay uncompressed and 16 KiB aligned in every APK and split, loaded in place.
+    // src/main/baselineProfiles holds the Baseline and Startup Profiles captured by `simulator.sh baseline-profile`;
+    // R8 also lays out release dex files so the startup classes load first.
+    experimentalProperties['android.experimental.r8.dex-startup-optimization'] = true
+    // Native libraries stay uncompressed and 16 KiB zip-aligned in every APK and split, loaded in place.
     packaging { jniLibs { useLegacyPackaging false } }
     // JVM tests of the add-on protocol code; Android stubs answer defaults and org.json comes from its own artifact.
     // Robolectric UI snapshots need the merged resources.
@@ -69,6 +72,8 @@ dependencies {
     // Match :playback's Media3 version. Includes native audio + video fallbacks for all app ABIs.
     implementation project(':codecs')
     implementation 'androidx.recyclerview:recyclerview:1.4.0'
+    // Installs the bundled Baseline Profile where the store doesn't (sideloaded APKs).
+    implementation 'androidx.profileinstaller:profileinstaller:1.4.1'
     implementation 'com.github.Dimezis:BlurView:version-3.2.0'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20250517'

@@ -34,7 +34,8 @@ Screen-state and Compose migration checks (JVM, no public providers):
   --tests tv.stream.app.BrowseViewModelTest --tests tv.stream.app.NavigationViewModelTest \
   --tests tv.stream.app.PlaybackViewModelTest --tests tv.stream.app.KotlinModelSnapshotsTest \
   --tests tv.stream.app.PlaybackPreparationTest --tests tv.stream.app.PageSnapshotTest \
-  --tests tv.stream.app.ui.ComposePageBlockTest --tests tv.stream.app.ui.ComposePlayerControlsTest)
+  --tests tv.stream.app.ui.ComposePageBlockTest --tests tv.stream.app.ui.ComposePlayerControlsTest \
+  --tests tv.stream.app.ui.PageRowsTest --tests tv.stream.app.SubtitleOffersTest)
 ```
 
 These cover cancelled/late provider deliveries, retained navigation without old
@@ -60,6 +61,29 @@ The generated six-second video tracks have independent eighteen-second audio
 and subtitle tails. The device tests exercise platform and FFmpeg renderers,
 wait beyond the stall interval, seek back into video and require normal completion.
 Run these device cases serially, without native compilation competing for graphics.
+
+## Baseline and Startup Profiles
+
+```sh
+./simulator.sh baseline-profile
+```
+
+Runs `ProfileJourneyTest` twice on local fixtures, each time from an empty ART
+profile (`cmd package compile --reset`): `journey=startup` (cold launch to Home)
+and `journey=browse` (Home, Details, Browse, Library, Settings panes, Search and
+fixture playback). The test asks ART to save its profile (SIGUSR1); the dumped
+classes and methods become `app/src/main/baselineProfiles/startup-prof.txt` and
+`baseline-prof.txt`. The journeys run on the debug build, so a few debug-only
+methods may be listed; AGP rewrites the rules through R8 for release. Raw dumps
+stay in `simulator/.cache/evidence/baseline-profile/`. Run it alone.
+
+On 30 October 2026 the capture produced 3,607 startup and 21,553 baseline rules.
+A release build merged them with the libraries' profiles (25,078 rules), kept
+13,416 after R8 (`assets/dexopt/baseline.prof`), and placed the startup classes
+in the first dex file (641 KB of 3.7 MB). No before/after startup time is
+recorded: debuggable builds don't use AOT profiles, and a release build ignores
+the local-only overrides, so launching it here would install the public
+starter add-ons.
 
 ## Routine
 
