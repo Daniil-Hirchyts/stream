@@ -7,5 +7,5 @@ https://android.googlesource.com/platform/frameworks/support/
 https://github.com/androidx/media
 
 Native dependency licenses in this directory are copied from the exact
-sources pinned in native/deps.lock. libtorrent.txt includes
-the notices for its bundled third-party code.
+sources pinned in native/deps.lock. Rust dependency notices are listed in
+streaming-engine.txt.

@@ -4,4 +4,5 @@
 }
 -keep class tv.stream.torrent.TorrentException {
     <init>(int, java.lang.String);
+    public int getKind();
 }
