@@ -8,23 +8,23 @@ computer.
 
 | Path | Role |
 | --- | --- |
-| `core/src/engine.rs` | Torrents, readers, the read-ahead window controller, eviction, errors and statistics, over a pluggable backend (`swarm.rs`) |
-| `core/src/cache.rs` | The piece cache: one preallocated file per torrent, divided into piece-sized slots; pins, verification, LRU eviction candidates |
-| `core/src/bt/` | The BitTorrent backend: wire protocol, peers, piece picker, hashing, uploads, metadata and piece-layer exchange, trackers, DHT, local discovery |
-| `core/src/api.rs`, `core/src/jni_bridge.rs` | The engine handles and `tv.stream.torrent.TorrentEngine`'s native methods |
-| `core/src/fixtures.rs`, `core/src/bin/stream-fixture.rs` | Reproducible content, torrents and a real loopback seeder for the tests and the simulator |
-| `core/tests/` | Integration tests against real seeders on loopback |
-| `core/examples/fetch.rs` | Streams a file from given peers and prints its SHA-256, for checks against other BitTorrent implementations |
-| `core/notices.py` | Writes the app's notice for the crates linked into `libstream.so` |
-| `eval/interop.sh` | Loopback interoperability checks against independent implementations (librqbit, optional libtorrent/aria2/Transmission/WebTorrent, HTTP/HTTPS) |
-| `eval/rqbit/` | Evaluation of librqbit against the fixtures, and `src/bin/interop.rs`, the librqbit peer `interop.sh` uses; never shipped (see its README) |
-| `SOAK_INVESTIGATION.md` | What is and isn't known about the emulator soak's `Timed out: soak seek 159` |
+| `native/core/src/engine.rs` | Torrents, readers, the read-ahead window controller, eviction, errors and statistics, over a pluggable backend (`swarm.rs`) |
+| `native/core/src/cache.rs` | The piece cache: one preallocated file per torrent, divided into piece-sized slots; pins, verification, LRU eviction candidates |
+| `native/core/src/bt/` | The BitTorrent backend: wire protocol, peers, piece picker, hashing, uploads, metadata and piece-layer exchange, trackers, DHT, local discovery |
+| `native/core/src/api.rs`, `native/core/src/jni_bridge.rs` | The engine handles and `tv.stream.torrent.TorrentEngine`'s native methods |
+| `native/core/src/fixtures.rs`, `native/core/src/bin/stream-fixture.rs` | Reproducible content, torrents and a real loopback seeder for the tests and the simulator |
+| `native/core/tests/` | Integration tests against real seeders on loopback |
+| `native/core/examples/fetch.rs` | Streams a file from given peers and prints its SHA-256, for checks against other BitTorrent implementations |
+| `native/core/notices.py` | Writes the app's notice for the crates linked into `libstream.so` |
+| `native/eval/interop.sh` | Loopback interoperability checks against independent implementations (librqbit, optional libtorrent/aria2/Transmission/WebTorrent, HTTP/HTTPS) |
+| `native/eval/rqbit/` | Evaluation of librqbit against the fixtures, and `src/bin/interop.rs`, the librqbit peer `interop.sh` uses; never shipped (see its README) |
+| [soak investigation](soak-investigation.md) | What is and isn't known about the emulator soak's `Timed out: soak seek 159` |
 
 ## Building
 
-The toolchain is pinned in `core/rust-toolchain.toml` (Rust 1.92.0 and the
+The toolchain is pinned in `native/core/rust-toolchain.toml` (Rust 1.92.0 and the
 three Android targets, which rustup installs on first use) and every crate in
-`core/Cargo.lock`; builds use `--locked`.
+`native/core/Cargo.lock`; builds use `--locked`.
 
 ```sh
 ./native/build-host.sh dev        # debug build of stream-fixture, then all tests
@@ -84,7 +84,7 @@ does not aim at, and does not have, libtorrent's feature set or its years of
 exposure to real swarms; nothing here should be read as parity with libtorrent
 or any other client.
 
-**Checked against independent implementations** (`eval/interop.sh`, loopback
+**Checked against independent implementations** (`native/eval/interop.sh`, loopback
 only, generated content, results from October 2026):
 
 | Direction | Passed | Failed as expected (the other side lacks it) |
@@ -122,12 +122,12 @@ must load before those optional rows run. The separately packaged npm
 `http-server` supplies an additional HTTP range-server check in every torrent
 version. Real public swarms are deliberately never used by these checks.
 
-**Checked only against this repository's own code** (tests in `core/tests/`):
+**Checked only against this repository's own code** (tests in `native/core/tests/`):
 lt_donthave and eviction behaviour, hostile peers and dropped requests,
 metadata recovery after corrupt or missing answers, bounded peer/control
 queues, trackers, and concurrent cache/reader lifecycle behaviour.
 
-**Scheduling, choking and seeding** (`tests/scheduling.rs`, `tests/super_seed.rs`, `src/bt/choker.rs`):
+**Scheduling, choking and seeding** (`native/core/tests/scheduling.rs`, `native/core/tests/super_seed.rs`, `native/core/src/bt/choker.rs`):
 
 - Urgent pieces go to the peers that deliver them soonest: a peer leaves an urgent piece to one with the piece that
   serves blocks at least twice as fast (measured per block, not by average rate) and in time for the deadline, as
@@ -155,7 +155,7 @@ queues, trackers, and concurrent cache/reader lifecycle behaviour.
 - A slow lone peer still limits playback to its speed: no scheduling can make
   one peer faster than it is.
 - The engine has passed the thirty-minute emulator soak; see
-  `SOAK_INVESTIGATION.md` for the earlier libtorrent-era timeout, the eviction
+  [the soak investigation](soak-investigation.md) for the earlier libtorrent-era timeout, the eviction
   defect found, and what a failing soak now records. It has not been validated
   on a physical TV or across platforms.
 - None of this is parity with libtorrent's feature set or its years of exposure
@@ -165,7 +165,7 @@ queues, trackers, and concurrent cache/reader lifecycle behaviour.
 the app, and is an explicit opt-in: Settings → Playback → Router port mapping.
 With it on, and only outside local-only and public-network-only sessions, the app
 passes the active network's default IPv4 gateway (private, link-local or loopback
-addresses only). `src/bt/portmap.rs` maps the listen port for TCP and uTP with a
+addresses only). `native/core/src/bt/portmap.rs` maps the listen port for TCP and uTP with a
 ten-minute lease, renews it at half the granted lease, announces a differing
 external TCP port to trackers, the DHT and peers, and deletes its mappings when
 the session closes:
@@ -183,7 +183,7 @@ the session closes:
    mappings (error 725) gets one, which is deleted on shutdown; a process that
    dies would leave that one behind until the router forgets it.
 
-`tests/portmap.rs` checks each method against fake gateways on loopback (PCP
+`native/core/tests/portmap.rs` checks each method against fake gateways on loopback (PCP
 renewal and nonce-matched deletion, a NAT-PMP-only gateway, a refusing gateway,
 UPnP leases, a permanent-only IGD, and a description pointing elsewhere); the
 multicast search is skipped for a loopback gateway. Real routers have not been
@@ -226,7 +226,7 @@ across an await or while hashing, and hashing runs on blocking threads.
 
 ## Testing
 
-`build-host.sh` runs the unit tests and `core/tests/` against real BitTorrent
+`./native/build-host.sh` runs the unit tests and `native/core/tests/` against real BitTorrent
 seeders on loopback (DHT, local discovery, port mapping and trackers off unless
 a test runs its own loopback tracker), with no internet or LAN:
 
@@ -260,10 +260,10 @@ a test runs its own loopback tracker), with no internet or LAN:
   offsets beyond 4 GiB, and concurrent readers.
 
 Interoperability with independent implementations is checked by
-`eval/interop.sh` (see above; not part of `build-host.sh`): it builds
-`stream-fixture`, `core/examples/fetch.rs` and the librqbit peer in `eval/rqbit`
+`native/eval/interop.sh` (see above; not part of `./native/build-host.sh`): it builds
+`stream-fixture`, `native/core/examples/fetch.rs` and the librqbit peer in `native/eval/rqbit`
 (`CARGO_OFFLINE=1` uses only the local Cargo cache), then runs each direction on
-127.0.0.1. `eval/setup-tools.sh <directory-outside-repository>` optionally
+127.0.0.1. `native/eval/setup-tools.sh <directory-outside-repository>` optionally
 installs the independent clients; `STREAM_INTEROP_TOOLS=<directory>` enables
 them. They are evaluation tools and are never linked into the app. Unavailable
 optional clients are reported as skipped. `STREAM_INTEROP_EVIDENCE=<directory>`

@@ -34,7 +34,7 @@ A new name must not reintroduce personal branding into source, paths or comments
 ## Verification and implementation
 
 Run focused checks needed for the change; do not run every suite routinely.
-See `android/TESTING.md` and `android/README.md` for device tests. Typical commands:
+See `docs/testing.md` and `docs/app.md` for device tests. Typical commands:
 
 ```sh
 sh simulator/tests/identity.sh

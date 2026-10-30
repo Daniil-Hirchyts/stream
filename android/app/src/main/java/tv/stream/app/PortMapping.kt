@@ -8,7 +8,7 @@ import tv.stream.app.data.TvStore
 /**
  * Router port mapping (PCP, NAT-PMP, then UPnP IGD) is off unless the viewer turns it on in Settings. The engine then
  * asks the default route's IPv4 gateway, and only that address, to forward the listen port while playback runs; see
- * native/README.md.
+ * docs/streaming-engine.md.
  */
 internal object PortMapping {
     const val PREFERENCE = "portMapping"

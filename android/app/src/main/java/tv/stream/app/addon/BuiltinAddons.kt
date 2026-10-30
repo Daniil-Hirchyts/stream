@@ -27,7 +27,7 @@ object BuiltinAddons {
     /** Wikimedia asks API clients to identify themselves, and refuses the add-on client's usual Accept list. In this order. */
     private val WIKIDATA_HEADERS: MutableMap<String, String> = java.util.LinkedHashMap()
     init {
-        WIKIDATA_HEADERS["User-Agent"] = "Stream/0.1 (Android TV; https://github.com/Stream-Hirchyts/stream)"
+        WIKIDATA_HEADERS["User-Agent"] = "Stream/0.1 (Android TV; https://github.com/Daniil-Hirchyts/stream)"
         WIKIDATA_HEADERS["Accept"] = "application/sparql-results+json"
     }
     private const val PAGE = 20

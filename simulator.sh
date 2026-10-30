@@ -7,6 +7,7 @@
 #   ./simulator.sh test            Engine, data and core app regressions (verified emulator only)
 #   ./simulator.sh engine-test | data-test
 #   ./simulator.sh live-film       Optional: real public-domain films from the internet through the store
+#   ./simulator.sh readme-media    Optional: README screenshots and GIFs of public-domain films (internet)
 #   ./simulator.sh live-addons     Optional: current public store manifests/resources/review installs
 #   ./simulator.sh requested-title tt1234567  Explicit title audit using currently accepted providers
 #   ./simulator.sh status | logs | stop-services
@@ -170,7 +171,7 @@ run_data_tests() {
 }
 
 # Keep routine runs focused on real playback and durable user outcomes. The remaining
-# UI/import/settings paths are available with acceptance; see android/TESTING.md.
+# UI/import/settings paths are available with acceptance; see docs/testing.md.
 run_core_app_tests() {
   core_tests=tv.stream.app.AppFlowTest,tv.stream.app.PlayerInteractionTest
   for method in directMp4MkvHlsAndDashRenderAndAdvance \
@@ -234,7 +235,7 @@ profile_app() {
 }
 
 # Baseline and Startup Profiles: each ProfileJourneyTest journey runs on local fixtures from an empty ART profile,
-# asks ART to save it, and the dumped classes/methods become the app's profile sources (android/TESTING.md).
+# asks ART to save it, and the dumped classes/methods become the app's profile sources (docs/testing.md).
 baseline_profile() {
   evidence="$SIM_DIR/.cache/evidence/baseline-profile"
   out="$ANDROID_DIR/app/src/main/baselineProfiles"
@@ -276,6 +277,8 @@ case "${1:-up}" in
   software-profile) sh "$SIM_DIR/decoder-fixtures.sh" && run_data_tests tv.stream.app.SoftwarePlaybackPerformanceTest ;;
   # Not a required suite: public services and swarms change. Uses the internet, never the LAN or a physical TV.
   live-film) run_data_tests tv.stream.app.LiveFilmTest ;;
+  # README screenshots and GIFs: the real interface with public-domain films from the internet, an isolated database.
+  readme-media) run_data_tests tv.stream.app.ReadmeCapture && sh "$SIM_DIR/readme-media.sh" ;;
   live-addons)
     run_data_tests tv.stream.app.LiveAddonTest
     result=$?

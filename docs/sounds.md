@@ -1,6 +1,6 @@
 # Interface sounds
 
-The app uses **Soft**, selected as B in the second listening study. Its 28 cues
+The app uses **Soft**, chosen over the earlier Glass set and the Felt alternative in listening tests. Its 28 cues
 include navigation, typing, choices, dialogs, player controls and startup.
 `sounds.py` is the production entry point; `palettes.py` defines the Soft and
 Felt voices, scores and mastering. Android resources are generated, not edited.
@@ -10,10 +10,10 @@ Felt voices, scores and mastering. Android resources are generated, not edited.
 From the repository root:
 
 ```sh
-python3 -m venv sounds/build/refinement-venv
-sounds/build/refinement-venv/bin/python -m pip install -r sounds/requirements.txt
-sounds/build/refinement-venv/bin/python sounds/sounds.py
-sounds/build/refinement-venv/bin/python sounds/verify.py
+python3 -m venv sounds/build/venv
+sounds/build/venv/bin/python -m pip install -r sounds/requirements.txt
+sounds/build/venv/bin/python sounds/sounds.py
+sounds/build/venv/bin/python sounds/verify.py
 ```
 
 Regeneration writes `android/app/src/main/res/raw/sfx_*.wav`.
@@ -25,25 +25,7 @@ files, a running server, or a previously built app. Android playback windows in
 set's longer sounds. One-voice priorities, throttling and the 0.7 playback gain
 are preserved.
 
-## Listening comparison
-
-```sh
-sounds/build/refinement-venv/bin/python sounds/refinement.py
-python3 -m http.server 58136 --bind 127.0.0.1 --directory sounds/build/refinement
-```
-
-Open `http://127.0.0.1:58136/`. A keeps the **previous Glass** set, B is the
-selected **Soft** set and C is the **Felt** alternative. The original Glass
-renderer reproduced all former app WAVs byte for byte, so it remains the
-baseline after adopting Soft. The comparison never overwrites app resources.
-
-Each has all 28 events and six sequences: Navigation, Quick browsing, Typing &
-results, Player, Confirmations and Startup. Repeated touches replace the
-previous touch in the rapid sequences; startup exit layers over the opening
-when it is still sounding, following the app's playback policy. Choose a
-comparison direction to hear Previous then Soft/Felt. Another control replaces
-playback; Stop or Escape cancels it. Default listening gain is 0.7, like the app.
-Computer and TV speakers will sound different.
+## Listening
 
 `sounds.py audition` also renders all six historical/current instruments to
 `build/index.html`. Its chosen markers show Soft.
@@ -75,12 +57,7 @@ reusing the old mastering fade would erase them.
 The focused emulator `tv.stream.app.ui.SoundAssetsTest` decodes every
 packaged resource through Android SoundPool and verifies each can start, at
 zero volume. It opens no activities, store, provider or owner preferences.
-See `android/TESTING.md` for device identity requirements.
-
-The comparison renderer separately checks deterministic synthesis and sequence
-peaks; its measurements are in `build/refinement/validation.json`. Browser
-checks cover file decoding, A/B/C playback, comparison, replacement, Stop/Escape
-and responsive layout. Technical checks do not replace listening.
+See [testing](testing.md) for device identity requirements.
 
 Generated previews, validation data, virtual environment and local server
 files live under ignored `build/`. The app WAVs and their generation/calibration

@@ -10,7 +10,7 @@ import java.util.Collections
 /**
  * Public scraper listings independent of Stremio's directory. These are browsing descriptions, never accepted
  * manifests: review fetches the selected provider's current manifest before an explicit installation.
- * Endpoints and setup pages are recorded in android/ADDON_STORE.md.
+ * Endpoints and setup pages are recorded in docs/addons.md.
  */
 object TorrentAddons {
     const val COLLECTION = "Torrent/P2P"

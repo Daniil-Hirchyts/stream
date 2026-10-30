@@ -7,7 +7,7 @@
 #   simulator/check-distribution.sh [outputs-dir]    # default: android/app/build/outputs
 #
 # Exits nonzero when anything fails. One known exception: the NDK's armeabi-v7a libc++_shared.so is a 4 KiB prebuilt,
-# and 16 KiB pages exist only on 64-bit Android (see android/DECODERS.md). Any other library below 16 KiB fails.
+# and 16 KiB pages exist only on 64-bit Android (see docs/decoders.md). Any other library below 16 KiB fails.
 set -u
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 outputs=${1:-$root/android/app/build/outputs}

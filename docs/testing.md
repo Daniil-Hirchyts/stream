@@ -72,7 +72,7 @@ Runs `ProfileJourneyTest` twice on local fixtures, each time from an empty ART
 profile (`cmd package compile --reset`): `journey=startup` (cold launch to Home)
 and `journey=browse` (Home, Details, Browse, Library, Settings panes, Search and
 fixture playback). The test asks ART to save its profile (SIGUSR1); the dumped
-classes and methods become `app/src/main/baselineProfiles/startup-prof.txt` and
+classes and methods become `android/app/src/main/baselineProfiles/startup-prof.txt` and
 `baseline-prof.txt`. The journeys run on the debug build, so a few debug-only
 methods may be listed; AGP rewrites the rules through R8 for release. Raw dumps
 stay in `simulator/.cache/evidence/baseline-profile/`. Run it alone.
@@ -120,11 +120,11 @@ sanitizer.
 | Focus growth never clipped; player timeline layout (Robolectric) | `FocusEffectsTest`, `PlayerTimelineLayoutTest` |
 
 Two are opt-in because they reach the internet: `-PuiSnapshots=true` renders
-the real screens at 1920×1080 into `app/build/ui-snapshots/` and fails on any
+the real screens at 1920×1080 into `android/app/build/ui-snapshots/` and fails on any
 control the D-pad can't reach (`UiSnapshotTest`, live Cinemeta and Internet
 Archive), and `-PliveAddons=true` resolves eight public-domain films through
 live add-ons, archive.org and Wikidata and decodes a frame 30 minutes in with
-FFmpeg (`RealFilmsLiveTest`, evidence in `app/build/live-evidence/`).
+FFmpeg (`RealFilmsLiveTest`, evidence in `android/app/build/live-evidence/`).
 
 ## Focused device selections
 
@@ -223,8 +223,8 @@ process CPU includes the whole app and instrumentation, not only conversion.
 `StartupTimingTest` targets, on fixtures: Details controls p95 ≤ 500 ms, HTTP
 first audio and video p95 ≤ 3 s, cold torrent p95 ≤ 5 s; traces go to
 app-private `files/validation-startup-timing.json`. They say nothing about public
-providers or swarms. See [playback preparation](../PLAYBACK_IMPLEMENTATION.md)
-and [decoders](DECODERS.md).
+providers or swarms. See [playback preparation](playback.md)
+and [decoders](decoders.md).
 
 `release-test` builds with `-PreleaseValidation=true`, signing with the local
 debug key for validation only (ordinary release output is unsigned), and runs
@@ -232,10 +232,11 @@ debug key for validation only (ordinary release output is unsigned), and runs
 code out of the shrunk app. It opens no owner database and uses local-only
 peers.
 
-An earlier soak failed after about 27 minutes (`Timed out: soak seek 159`); its
-cause has not been established. A subsequent Rust-engine emulator run completed
-in 1,813.923 seconds with `OK (1 test)`; its local evidence is retained under
-`simulator/.cache/evidence/soak-rust/`. See [Known gaps](README.md#known-gaps).
+An earlier libtorrent-era soak failed after about 27 minutes (`Timed out: soak
+seek 159`). Two Rust-engine runs have since passed (the second, after the
+scheduling and eviction fixes, in 1,829.992 s with `OK (1 test)`). A failing soak
+now writes a `failure` record with the player state and engine diagnostics; see
+[the soak investigation](soak-investigation.md).
 
 ## Live checks (optional, internet)
 
@@ -245,6 +246,7 @@ accounts or credentials.
 
 ```sh
 ./simulator.sh live-film       # films installed through the store play on the emulator
+./simulator.sh readme-media    # README screenshots and GIFs (docs/media), public-domain films only
 ./simulator.sh live-addons     # every current store entry: manifest, resources, review install
 ./simulator.sh live-torrents   # one public-domain torrent per sampled provider
 ./simulator.sh live-torrents Torrentio,Comet   # a subset; names without spaces
@@ -252,7 +254,7 @@ accounts or credentials.
 ```
 
 `live-addons` also covers the earlier Nuvio list in the test-only asset
-`app/src/androidTest/assets/nuvio-addon-audit.json`; source counts there are
+`android/app/src/androidTest/assets/nuvio-addon-audit.json`; source counts there are
 discovery, not playback. `live-torrents` and `requested-title` turn on an
 instrumentation-only public-network mode: no LAN discovery or port mapping, and
 peers, trackers and DHT nodes on private or reserved addresses are filtered

@@ -1,6 +1,6 @@
 # Playback preparation, startup and recovery
 
-The playback path remains Java/Media3 → the pinned NextLib renderer extension
+The playback path is Kotlin/Media3 → the pinned NextLib renderer extension
 and JNI/the Rust streaming engine (`native/core`). It needs no additional player, desktop conversion service,
 or persistent cache of playable provider addresses.
 
@@ -127,5 +127,22 @@ remain mandatory; no physical TV or public torrent is used by required tests.
 
 The last local run (25 October 2026, 20 starts per transport) met all three:
 HTTP first A/V p95 1.4 s, cold torrent p95 4.4 s, Details controls p95 under
-0.4 s. See `android/DECODERS.md` for format coverage, codec build inputs and
+0.4 s. See [decoders](decoders.md) for format coverage, codec build inputs and
 limitations.
+
+## The player library
+
+This repository owns this Kotlin/XML Media3 library, included as `:playback` by
+`android/settings.gradle`. PlaybackSession and PlayerScreen implement transport,
+tracks, subtitle compatibility, overlays, menu, pointer and remote controls.
+The app supplies resource overrides and its own codec policy. No external app
+checkout is required, and changes here are validated by Stream's tests.
+
+SubtitlePlayback retains complete external subtitle timelines through seeks and
+late selections; PausedSubtitleCues keeps active cues visible while paused.
+Do not remove these compatibility paths without the real playback regressions.
+Keep captions above the entire toolbar, including the 48 dp timeline touch target.
+
+Run focused player cases with `./simulator.sh data-test` and an explicit class or
+method; see [testing](testing.md). Keep native decoder and player
+failures distinct from source/network failures.

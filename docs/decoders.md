@@ -3,7 +3,7 @@
 Stream builds the pinned NextLib **1.11.1-0.16.0** sources in `:codecs`,
 matching the shared player's Media3 **1.11.1**. `../codecs/deps.lock` pins the
 upstream revision and checksums; `../codecs/patches/nextlib/` contains the local
-changes. See [build instructions](../codecs/README.md). ARMv7, ARM64 and x86_64
+changes. See [the codec build](codec-build.md). ARMv7, ARM64 and x86_64
 libraries are packaged in the APK; playback needs no helper or codec download.
 
 | Media | Bundled software fallback |
@@ -60,7 +60,7 @@ forward/backward seeks requiring fresh frames, PCM output, late captions and
 bounded runtime recovery. VC-1 currently has native discovery coverage only;
 no generated VC-1 decoding fixture is available. It records the initialized decoder names in private local evidence.
 No public providers or swarms are needed. Hardware and format limits are
-listed under Known gaps in the [app guide](README.md#known-gaps).
+listed under Known gaps in the [app guide](app.md#known-gaps).
 
 ## Distribution and page alignment
 

@@ -40,7 +40,7 @@ def main():
 
     crates = sorted((packages[i] for i in shipped), key=lambda p: (p["name"], p["version"]))
     lines = [
-        "Stream's streaming engine (libstream.so) is Stream's own Rust code (BSD-3-Clause) built with these crates.",
+        "Stream's streaming engine (libstream.so) is Stream's own Rust code (GPL-3.0-or-later) built with these crates.",
         "",
     ]
     lines += [f"  {p['name']} {p['version']}: {p['license']}" for p in crates]

@@ -1,0 +1,96 @@
+# Fonts and icons
+
+## Geist interface font and icons
+
+Stream bundles Geist Sans and icons from the open-source Geist UI collection.
+All assets are local; text and icons need no runtime network request or React dependency.
+
+### Font
+
+- Source: [vercel/geist-font](https://github.com/vercel/geist-font), revision
+  `b5d164a0c066c2c9bfcd5ab65dd8244551f0ac06`.
+- Files: `fonts/Geist/ttf/Geist-{Regular,Medium,SemiBold}.ttf`, unmodified.
+- License: SIL Open Font License 1.1, bundled in `android/app/src/main/assets/notices/geist.txt`
+  and accessible in Settings → About → Developer → Open source notices.
+- Regular (400) serves body text and supporting values; Medium (500) serves controls,
+  row labels, captions and small metadata; SemiBold (600) serves section headings,
+  primary actions, titles and the launcher banner wordmark. `Tv.Type` defines the
+  repeated roles; app resource styles mirror them for the player.
+- All upstream glyphs and OpenType features are retained, including tabular numbers.
+  Android supplies fallback fonts for scripts absent from Geist. Subtitle typeface
+  preferences remain independent of the interface font.
+
+### Icons
+
+- Source: [geist-org/icons](https://github.com/geist-org/icons), revision
+  `5937509f49f82f82e7b28147ec729a9cfa6d0483`, its published `.source` collection.
+- License: MIT, bundled in `android/app/src/main/assets/notices/geist-icons.txt` and the
+  app's Open source notices menu.
+- This is the community Geist UI package (`@geist-ui/icons`), separate from
+  Vercel's private Geist design-system icon library.
+- `make_geist.py` contains the explicit icon-to-resource mapping. The converter
+  preserves the 24-unit canvas and filled state variants. TV outlines use 2-unit
+  round strokes instead of the upstream 1.5; filled transport/heart glyphs retain
+  their lighter original rim. `OPTICAL_SCALE` reduces naturally broad or dense
+  silhouettes (gear, film, layers, etc.) around the canvas centre while compensating
+  stroke width, so changing geometry doesn't make strokes thin again.
+  Compact SVG arc flags are expanded for Android's native path parser.
+- Typical glyph boxes are 20 dp in the 44 dp rail/actions, 18 dp in utility and
+  settings controls, 16 dp for row chevrons, and 14 dp for popup trailing marks.
+  The control's focus/touch area is independent of the glyph size.
+- Keyboard and subtitle glyphs are original Stream drawings on the same grid,
+  because those concepts are absent from the collection. The launcher play mark
+  remains Stream's own brand geometry.
+- Shared player glyphs are replaced through app resources; `android/playback`
+  keeps its own reusable behavior and default styling.
+
+### Regeneration
+
+From `android/`, using Python 3's standard library:
+
+```sh
+python3 branding/make_geist.py all
+# Or fonts / icons separately:
+sh branding/make_fonts.sh
+python3 branding/make_geist.py icons
+```
+
+Downloads use immutable revisions and verify a pinned SHA-256 before writing.
+Updating upstream assets requires explicitly updating the revisions and hashes.
+To regenerate launcher banners, use Pillow:
+
+```sh
+python3 branding/make_brand.py app/src/main/res /tmp/stream-brand-preview
+```
+
+## Subtitle fonts
+
+Stream bundles Noto Sans Medium (500) as its Standard/default subtitle face,
+and Atkinson Hyperlegible Next Medium (500) as an optional accessibility face.
+Both families include real medium italics. Atkinson's Latin-only coverage is
+supplemented with explicit Noto Sans runs for Cyrillic; other writing systems
+retain Android's system fallback. The old eight font preference keys/indices
+are preserved, and System sans-serif exposes the previous Standard face.
+
+The font selector, preview, and renderer are app-owned. The shared receiver's
+font choices and rendering are unchanged. Cue italic/bold emphasis survives;
+provider font, size, and colour overrides do not replace the viewer's choices.
+Existing subtitle sizes, colours, backgrounds, and positions are preserved.
+
+The four static TTF files are generated from checksum-verified Google Fonts
+sources at commit `e7db6ca603fd4862010383ff17ffd6cc4ffac1c0`:
+
+```sh
+python3 -m venv /tmp/stream-subtitle-font-tools
+/tmp/stream-subtitle-font-tools/bin/pip install fonttools==4.60.1
+/tmp/stream-subtitle-font-tools/bin/python android/branding/make_subtitle_fonts.py
+```
+
+The build and installed app use committed font resources without Python or
+network access. Upstream SIL Open Font License 1.1 notices ship in
+`android/app/src/main/assets/notices/` and are listed in Settings → Open source notices.
+
+`SubtitleFontsTest` checks saved-choice compatibility, emphasis, and explicit
+Cyrillic fallback on API 26 and 36. `SubtitleFontRenderingTest` exercises the
+Settings chooser and renders English, French, and Russian through Media3 on the
+verified emulator, matching lowercase height for its comparison image.

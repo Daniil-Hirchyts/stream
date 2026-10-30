@@ -1,4 +1,4 @@
-Stream's streaming engine (libstream.so) is Stream's own Rust code (BSD-3-Clause) built with these crates.
+Stream's streaming engine (libstream.so) is Stream's own Rust code (GPL-3.0-or-later) built with these crates.
 
   backon 1.6.0: Apache-2.0
   bitvec 1.1.1: MIT

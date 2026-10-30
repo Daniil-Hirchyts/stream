@@ -7,8 +7,7 @@ backups/
 # Machine-local Android and build output; component ignores cover their own caches.
 **/local.properties
 sounds/build/
-# Native and Gradle build output, and simulator caches stay local. native/.deps held the former C++ engine's sources.
-native/.deps/
+# Native and Gradle build output and simulator caches stay local.
 native/build/
 # Cargo output of the Rust engine and evaluation crates.
 native/core/target/
@@ -19,7 +18,10 @@ simulator/.cache/
 local.properties
 android/**/.cxx*/
 
+# Editor and coding-agent workspaces are per machine.
 .claude/
+.vscode/
+.idea/
 
 # Kotlin compiler session files and Python interpreter caches are machine local.
 android/.kotlin/

@@ -1628,7 +1628,7 @@ mod tests {
 
     #[test]
     fn port_mapping_is_off_unless_asked_for() {
-        // Port mapping is an explicit opt-in (see native/README.md); the defaults ask for none of it.
+        // Port mapping is an explicit opt-in (see docs/streaming-engine.md); the defaults ask for none of it.
         let config = Config::default();
         assert!(!config.upnp && !config.natpmp && config.natpmp_gateway.is_empty());
     }
