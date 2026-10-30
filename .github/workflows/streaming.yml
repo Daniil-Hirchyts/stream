@@ -18,16 +18,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [dev, asan, tsan, checks]
+        variant: [dev, release]
     steps:
       - uses: actions/checkout@v4
-      - name: Pinned native sources
+      - name: Pinned crates
         uses: actions/cache@v4
         with:
-          path: native/.deps
-          key: native-deps-${{ runner.os }}-${{ hashFiles('native/deps.lock', 'native/patches/**', 'native/build-openssl.sh') }}
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build
-      # Real seeders on loopback only: DHT, local discovery, port mapping and trackers stay off.
+          path: ~/.cargo/registry
+          key: cargo-${{ runner.os }}-${{ hashFiles('native/core/Cargo.lock') }}
+      # rustup installs the toolchain native/core/rust-toolchain.toml pins. Real seeders on loopback only: DHT,
+      # local discovery, port mapping and trackers stay off.
       - run: ./native/build-host.sh ${{ matrix.variant }}
   simulator-safety:
     runs-on: ubuntu-latest
@@ -55,11 +55,11 @@ jobs:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
       - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;29.0.14206865' 'cmake;3.31.6'
-      - name: Pinned native sources
+      - name: Pinned crates
         uses: actions/cache@v4
         with:
-          path: native/.deps
-          key: native-deps-android-${{ hashFiles('native/deps.lock', 'native/patches/**', 'native/build-openssl.sh') }}
+          path: ~/.cargo/registry
+          key: cargo-android-${{ hashFiles('native/core/Cargo.lock') }}
       # armeabi-v7a (Fire TV Stick), arm64-v8a (local emulator) and x86_64 (Linux emulators).
       - run: ./gradlew :torrent:assembleDebug :torrent:assembleDebugAndroidTest :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:testDebugUnitTest :app:lintDebug :app:lintRelease
       - uses: actions/upload-artifact@v4
@@ -86,12 +86,12 @@ jobs:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
       - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;29.0.14206865' 'cmake;3.31.6'
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg ninja-build && sudo chmod 666 /dev/kvm
-      - name: Pinned native sources
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg && sudo chmod 666 /dev/kvm
+      - name: Pinned crates
         uses: actions/cache@v4
         with:
-          path: native/.deps
-          key: native-deps-emulator-${{ hashFiles('native/deps.lock', 'native/patches/**', 'native/build-openssl.sh') }}
+          path: ~/.cargo/registry
+          key: cargo-emulator-${{ hashFiles('native/core/Cargo.lock') }}
       - name: Real local BitTorrent and Stream playback
         env:
           STREAM_CI_SOAK: ${{ inputs.soak || false }}

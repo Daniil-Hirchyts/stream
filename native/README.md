@@ -1,67 +1,85 @@
 # Stream streaming engine
 
-C++17 code that lets the TV play a torrent while it downloads, keeping only a
-bounded window of it on disk. Built into `libstream.so` for the app (through
-`android/torrent`) and into `dtv-fixture` and `dtv-tests` for this
+Rust code that lets the TV play a torrent while it downloads, keeping only a
+bounded window of it on disk. It is its own BitTorrent implementation: there is
+no C++ and no libtorrent. Built into `libstream.so` for the app (through
+`android/torrent`) and into the `stream-fixture` tool and the tests for this
 computer.
 
 | Path | Role |
 | --- | --- |
-| `core/` | Rust engine core. `cache.rs` is the piece cache: one preallocated file per torrent, divided into piece-sized slots; pins, verification, LRU eviction candidates. Also a handle-based engine (`engine.rs`, `api.rs`) over a pluggable backend (`swarm.rs`), unit-tested against a fake backend, not yet used by the app |
-| `include/stream_core.h` | The Rust core's C ABI |
-| `src/piece_cache.*` | The C++ face of the Rust cache that libtorrent's disk subsystem uses |
-| `src/cache_disk_io.*` | libtorrent's disk subsystem over the cache; one worker for writes, reads, clears and releases in order, one for hashes |
-| `src/engine.*` | The session, readers, the read-ahead window controller, eviction, errors and statistics |
-| `jni/jni_bridge.cpp` | `tv.stream.torrent.TorrentEngine`'s native methods |
-| `patches/libtorrent/` | The eviction patch (see [THIRD_PARTY.md](THIRD_PARTY.md)) |
-| `tools/` | `dtv-fixture` (content, torrents, a real seeder) and shared test fixtures |
-| `tests/` | Host tests: cache units, eviction regressions, streaming against real seeders |
-| `eval/rqbit/` | Evaluation of librqbit as a libtorrent replacement against the fixtures; never shipped (see its README) |
+| `core/src/engine.rs` | Torrents, readers, the read-ahead window controller, eviction, errors and statistics, over a pluggable backend (`swarm.rs`) |
+| `core/src/cache.rs` | The piece cache: one preallocated file per torrent, divided into piece-sized slots; pins, verification, LRU eviction candidates |
+| `core/src/bt/` | The BitTorrent backend: wire protocol, peers, piece picker, hashing, uploads, metadata and piece-layer exchange, trackers, DHT, local discovery |
+| `core/src/api.rs`, `core/src/jni_bridge.rs` | The engine handles and `tv.stream.torrent.TorrentEngine`'s native methods |
+| `core/src/fixtures.rs`, `core/src/bin/stream-fixture.rs` | Reproducible content, torrents and a real loopback seeder for the tests and the simulator |
+| `core/tests/` | Integration tests against real seeders on loopback |
+| `core/examples/fetch.rs` | Streams a file from given peers and prints its SHA-256, for checks against other BitTorrent implementations |
+| `core/notices.py` | Writes the app's notice for the crates linked into `libstream.so` |
+| `eval/rqbit/` | Evaluation of librqbit against the fixtures; never shipped (see its README) |
 
 ## Building
 
-The Rust core is built by Cargo from CMake, with the toolchain pinned in
-`core/rust-toolchain.toml` (Rust 1.92.0 and the three Android targets, which
-rustup installs on first use) and dependencies locked in `core/Cargo.lock`. Its
-own unit tests run with `cargo test --no-default-features` in `core/`.
+The toolchain is pinned in `core/rust-toolchain.toml` (Rust 1.92.0 and the
+three Android targets, which rustup installs on first use) and every crate in
+`core/Cargo.lock`; builds use `--locked`.
 
 ```sh
-./native/build-host.sh dev        # debug build, then all tests
-./native/build-host.sh asan       # AddressSanitizer + UndefinedBehaviorSanitizer
-./native/build-host.sh tsan       # ThreadSanitizer
-./native/build-host.sh checks     # libtorrent asserts and full invariant checks
+./native/build-host.sh dev        # debug build of stream-fixture, then all tests
+./native/build-host.sh release    # optimized, as the app ships
+./native/build-host.sh dev v2_    # only tests whose names contain "v2_"
 ```
 
-They fetch and verify the pinned sources (`fetch-deps.sh`), build OpenSSL for
-the host (`build-openssl.sh host`), then build and run. Android builds go
-through Gradle in `android`, which runs `build-openssl.sh` for each
-ABI first. The pinned NDK and CMake come from the SDK:
+Android builds go through Gradle in `android`: `:torrent` runs Cargo for each
+ABI with the pinned NDK's clang as linker and copies the result in as
+`libstream.so`. The NDK comes from the SDK:
 
 ```sh
-sdkmanager --install "ndk;29.0.14206865" "cmake;3.31.6"
+sdkmanager --install "ndk;29.0.14206865"
 ```
+
+## The BitTorrent implementation
+
+- **Torrents**: v1, v2 and hybrid (BEP 3, 47, 52), with bounded parsing of
+  torrent files and peer data. v2 pieces are checked against their file's
+  piece layer (SHA-256 Merkle trees over 16 KiB blocks); hybrids by their v1
+  hashes. Torrent files written back carry the piece layers known.
+- **Sources**: torrent files, magnet links (`btih` in hex or base32, `btmh`,
+  `tr`, `x.pe`) and bare info hashes. Metadata comes from peers by ut_metadata
+  (BEP 9), checked against the info hash; a v2 torrent's piece layers come by
+  hash requests (BEP 52) and are checked against each file's root.
+- **Peers**: TCP, the fast extension (BEP 6), the extension protocol (BEP 10),
+  peer exchange (BEP 11) and lt_donthave (BEP 54). A hybrid's peers may upgrade
+  to v2 in the handshake. Peers that send data failing its hash are banned.
+- **Discovery**: HTTP, HTTPS and UDP trackers (BEP 3, 15), the DHT (BEP 5,
+  IPv4), and local service discovery (BEP 14). HTTPS uses rustls with the trust
+  roots the app writes from Android's store; certificates are always verified.
+  `public_network_only` keeps peers, trackers and DHT nodes off loopback and
+  private networks.
+- **Not implemented**: uTP, protocol encryption (MSE/PE), web seeds, and port
+  mapping (UPnP/NAT-PMP, which the app never enables). Peers that insist on
+  any of these are not reachable.
 
 ## How streaming works
 
-1. A torrent is added with nothing to download (`default_dont_download`). For
-   a magnet link or info hash, its metadata comes from peers over BitTorrent.
+1. A torrent is added with nothing to download. For a magnet link or info
+   hash, its metadata comes from peers.
 2. Choosing a file starts the read-ahead controller. From the most recent
    reader's position it keeps about 45 seconds of media (from the bitrate the app
    reports, bounded by the cache) at download priority; pieces a reader is
-   waiting for, and the next two, get deadlines. Partial pieces that leave the
-   window finish at the lowest priority, then become evictable. Nothing outside
-   the window downloads.
+   waiting for, and the next two, get deadlines and may be asked of a second
+   peer when the first is slow. Partial pieces that leave the window finish at
+   the lowest priority, then become evictable. Nothing outside the window
+   downloads.
 3. A piece needs a cache slot before it may download. When none is free the
    least recently used verified pieces are evicted, except the window, the piece
    behind the reader, and (in caches of 8+ slots) the file's first and last
    pieces, where containers keep their headers and indexes.
-4. Eviction runs on libtorrent's network thread
-   (`torrent_handle::evict_pieces`): the pieces go back to the piece picker as
-   never downloaded, queued uploads of them are rejected, peers supporting
-   lt_donthave (BEP 54) are told, and downloading peers without it are
-   reconnected so they get a fresh bitfield. Readers stop using a piece before
-   the torrent forgets it; its slot is freed after every disk job queued before
-   then and once no reader pins it.
+4. Eviction makes the torrent forget the pieces: requests for them are rejected,
+   peers supporting lt_donthave are told, and downloading peers without it are
+   disconnected so they reconnect with a fresh bitfield; seeds stay. Readers
+   stop using a piece before the torrent forgets it, and its slot is freed once
+   no read pins it.
 5. A reader waits until the piece it needs is verified, then copies from the
    cache. Missing data is waited for and downloaded: never zeros, never an early
    end of file.
@@ -69,51 +87,40 @@ sdkmanager --install "ndk;29.0.14206865" "cmake;3.31.6"
 The cache file is preallocated, so it never grows past `slots × piece length`.
 Slot calculation leaves 64 KiB for filesystem metadata inside the configured
 budget: Android's ext4 includes extent blocks in allocated-byte accounting.
-Allocation failures are reported before payload writes. libtorrent asks for a piece's hash as soon as the last block is queued
-for writing; the hash waits until the piece is complete in the cache.
-`close_redundant_connections` is off: a streaming torrent counts as finished
-whenever its window is complete, and announcing upload-only then would make
-seeds drop it just before the window moves on. `min_reconnect_time` is five
-seconds, so seeds that dropped a client which once had every piece come back
-quickly after an eviction.
+Allocation failures are reported before payload writes. A streaming torrent
+never announces itself as finished, so seeds keep it as a peer while the window
+moves on.
+
+The network runs on a small Tokio runtime per engine; its locks are never held
+across an await or while hashing, and hashing runs on blocking threads.
 
 ## Testing
 
-`dtv-tests` runs against real BitTorrent seeders on loopback (DHT, local
-discovery, port mapping and trackers off), with no internet or LAN:
+`build-host.sh` runs the unit tests and `core/tests/` against real BitTorrent
+seeders on loopback (DHT, local discovery, port mapping and trackers off unless
+a test runs its own loopback tracker), with no internet or LAN:
 
+- protocol units: bencoding limits, torrent and magnet parsing in every
+  version, Merkle trees and hash-request answers, wire messages, the address
+  policy, tracker responses and refusal of untrusted HTTPS;
 - cache units: slots, reservation, pads, waits and cancellation, 64-bit offsets;
-- eviction regressions on plain sessions: v1, v2 and hybrid seeds re-download
-  evicted pieces; a finished torrent stays finished until it wants a piece; a
-  libtorrent leecher learns by lt_donthave and stays connected; queued upload
-  requests are rejected; downloading peers without lt_donthave are
-  disconnected and seeds are not; root-only v2 metadata completing adjacent
-  pieces while one still owns an outstanding hash callback (deterministic
-  ordering with generated bytes and actual Merkle verification);
+- eviction: v1, v2 and hybrid seeds re-download evicted pieces; a finished
+  torrent stays finished until it wants a piece; a peer learns by lt_donthave,
+  stays connected and has requests for evicted pieces rejected; downloading
+  peers without lt_donthave are disconnected and seeds are not;
 - streaming through the engine: several cache turnovers within the bound,
   rewind into evicted data, seeks, multi-file v1/v2/hybrid torrents, metadata
-  from magnets, timeouts, cancellation, corrupt peers, refusals, offsets beyond
-  4 GiB, and concurrent readers.
+  from magnets and info hashes (v2 piece layers included), an HTTP tracker,
+  timeouts, cancellation, shutdown during transfers, corrupt peers, refusals,
+  offsets beyond 4 GiB, and concurrent readers.
 
-On the emulator, `./simulator.sh test` runs the same engine through
-JNI (with CheckJNI) and Media3 against the host's seeder.
-The fixture seeder is limited to 4 MiB/s, so the short generated film can prove
-first-frame playback before its full payload arrives even on fast loopback.
-Repeated shutdown during transfer is covered on host and Android. Disk workers
-hold the network event loop alive with an Asio work guard until all completions
-are posted, so callbacks cannot outlive libtorrent's session/peer allocator.
-CheckJNI is explicitly enabled during instrumentation; the prior emulator-only
-setting is restored afterward. Runner output is retained in the ignored
-`simulator/.cache/evidence/` directory.
+Interoperability with other implementations is checked by hand: `core/examples/fetch.rs`
+streams the simulator's libtorrent-made v1, v2 and hybrid torrents (and their
+magnets) from a libtorrent seeder, and `eval/rqbit` downloads them from
+`stream-fixture seed`.
 
-## Known upstream issues
-
-With `close_redundant_connections` off, libtorrent 2.1.2's `torrent::finished()`
-skips the `send_not_interested()` that normally clears interest. A magnet
-torrent added with `default_dont_download` is finished as soon as its metadata
-arrives and keeps its peers marked interesting until the next interest update.
-In builds with invariant checks this trips
-`!is_interesting() || m_need_interest_update` in `peer_connection.cpp`; it
-happens with stock code paths and no eviction. Release builds only keep a stale
-"interested" flag, which costs nothing. `build-host.sh checks` therefore runs
-the cache and eviction regressions, which pass under full invariant checks.
+On the emulator, `./simulator.sh test` runs the same engine through JNI and
+Media3 against the host's `stream-fixture` seeder. The seeder is limited to
+4 MiB/s, so the short generated film can prove first-frame playback before its
+full payload arrives even on fast loopback. Runner output is retained in the
+ignored `simulator/.cache/evidence/` directory.

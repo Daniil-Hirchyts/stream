@@ -320,5 +320,5 @@ pub extern "system" fn Java_tv_stream_torrent_TorrentEngine_nativeDiagnostics(mu
 
 #[no_mangle]
 pub extern "system" fn Java_tv_stream_torrent_TorrentEngine_nativeVersion(mut env: JNIEnv, _: JClass) -> jstring {
-    guarded(&mut env, std::ptr::null_mut(), |env| java_string(env, &crate::libtorrent::version()))
+    guarded(&mut env, std::ptr::null_mut(), |env| java_string(env, crate::bt::backend::VERSION))
 }

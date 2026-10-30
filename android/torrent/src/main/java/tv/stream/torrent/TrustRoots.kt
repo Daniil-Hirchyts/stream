@@ -16,7 +16,7 @@ import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
 /**
- * The trust roots this app accepts, for the native TLS of HTTPS trackers and web seeds. OpenSSL can't read Android's
+ * The trust roots this app accepts, for the native TLS (rustls) of HTTPS trackers. It can't read Android's
  * certificate store, and must never fall back to unverified connections, so the roots the platform trust manager
  * accepts (honouring the app's network security configuration) are written as a PEM file the engine loads.
  */

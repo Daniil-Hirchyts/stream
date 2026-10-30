@@ -1,17 +1,17 @@
-//! Stream's streaming engine core.
+//! Stream's streaming engine: a BitTorrent client that streams through a bounded cache, in Rust.
 //!
 //! - [`cache`]: the bounded piece cache every torrent downloads into.
 //! - [`engine`]: torrents, readers, the read-ahead window and eviction, over a [`swarm::Swarm`] backend.
-//! - [`swarm`]: the BitTorrent backend interface; [`libtorrent`] implements it through the C++ shim.
-//! - [`api`]: the handle-based C ABI; [`cache_ffi`]: the cache's C ABI for libtorrent's disk subsystem.
-//! - `jni`: `tv.stream.torrent.TorrentEngine`'s native methods.
+//! - [`swarm`]: the backend interface; [`bt`] implements it with Stream's own BitTorrent session.
+//! - [`api`]: the registry of engines behind the app's handles; `jni_bridge`: `tv.stream.torrent.TorrentEngine`'s
+//!   native methods.
+//! - [`fixtures`]: reproducible content, torrents and loopback seeders for tests and the simulator (host only).
 
 pub mod api;
+pub mod bt;
 pub mod cache;
-pub mod cache_ffi;
 pub mod engine;
-#[cfg(feature = "libtorrent")]
+#[cfg(not(target_os = "android"))]
+pub mod fixtures;
 mod jni_bridge;
-#[cfg(feature = "libtorrent")]
-pub mod libtorrent;
 pub mod swarm;

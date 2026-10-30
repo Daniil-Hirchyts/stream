@@ -1,5 +1,5 @@
 // Stream's local fixture service on 127.0.0.1:58133, reached from the emulator through adb reverse. It serves the
-// generated torrents and their expected contents; the real BitTorrent seeder (dtv-fixture seed) runs separately on
+// generated torrents and their expected contents; the real BitTorrent seeder (stream-fixture seed) runs separately on
 // 58134. Nothing here runs in the app's process, so it never counts toward the app's memory.
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';

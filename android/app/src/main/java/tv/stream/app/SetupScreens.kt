@@ -192,7 +192,7 @@ class SetupScreens(private val context: Context, private val nav: Navigator, pri
         page.add(Item.text("Storage", (context.filesDir.usableSpace / (1 shl 20)).toString() + " MiB free · " + services.cacheBytes() / (1 shl 20)
                 + " MiB playback cache · 512 MiB kept free"))
         for (a in services.store.addons()) page.add(Item.text(a.manifest.name, a.address.toString()))
-        page.add(Item.text("Third-party software", "Media3 and ZXing (Apache-2.0), libtorrent and Boost (BSD/Boost), OpenSSL (Apache-2.0)."))
+        page.add(Item.text("Third-party software", "Media3 and ZXing (Apache-2.0); the streaming engine's Rust crates (permissive licenses, listed in the notices)."))
         page.add(Item.row("notices", 0, "Open source notices", "", Runnable { nav.notices() }))
         return page
     }

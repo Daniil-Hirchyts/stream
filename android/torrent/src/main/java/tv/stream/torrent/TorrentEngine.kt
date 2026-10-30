@@ -10,7 +10,7 @@ import java.io.IOException
 import java.io.InterruptedIOException
 
 /**
- * The native streaming engine: one libtorrent session whose torrents download into a bounded cache, a read-ahead
+ * The native streaming engine (native/core, Rust): one BitTorrent session whose torrents download into a bounded cache, a read-ahead
  * window at a time. Torrents and readers are 64-bit handles that are never reused. Blocking calls wait in short
  * slices and give up when their thread is interrupted, as Media3 does to cancel a load. Thread-safe.
  */
@@ -26,6 +26,7 @@ class TorrentEngine private constructor(private val id: Long, private val cacheD
         @JvmField var listenInterfaces: String = "0.0.0.0:0,[::]:0"
         @JvmField var dht: Boolean = true
         @JvmField var localDiscovery: Boolean = true
+        /** Port mapping is not implemented by the engine; enabling it only logs that it stays off. */
         @JvmField var upnp: Boolean = false
         @JvmField var natpmp: Boolean = false
         @JvmField var peerExchange: Boolean = true
@@ -108,7 +109,7 @@ class TorrentEngine private constructor(private val id: Long, private val cacheD
                                 for (part in host.split(".")) if (Integer.parseInt(part) > 255) numeric = false
                             }
                             if (numeric) peers.add(peer)
-                        } catch (ignored: IllegalArgumentException) { /* Optional malformed peer; libtorrent validates the magnet too. */ }
+                        } catch (ignored: IllegalArgumentException) { /* Optional malformed peer; the engine validates the magnet too. */ }
                     }
                 } catch (ignored: IllegalArgumentException) { /* Invalid magnet is rejected when added. */
                 } catch (ignored: java.io.UnsupportedEncodingException) { /* Invalid magnet is rejected when added. */ }
@@ -252,7 +253,7 @@ class TorrentEngine private constructor(private val id: Long, private val cacheD
                     c.trustRootsFile, c.readAheadSeconds), c.cacheDirectory)
         }
 
-        /** The libtorrent version and the eviction patch it carries. */
+        /** The streaming engine's BitTorrent implementation and version. */
         @JvmStatic
         fun version(): String {
             return nativeVersion()

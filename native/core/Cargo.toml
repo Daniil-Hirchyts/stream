@@ -4,23 +4,26 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.92"
 license = "BSD-3-Clause"
-description = "Stream's streaming engine core: bounded piece cache, read-ahead window, handle-based API and JNI bridge."
+description = "Stream's streaming engine: its own BitTorrent implementation, bounded piece cache, read-ahead window and JNI bridge."
 publish = false
 
 [lib]
 name = "stream_core"
-# staticlib: linked into libstream.so (Android) and dtv-tests (host) together with the libtorrent shim.
-# rlib: the crate's own unit tests.
-crate-type = ["staticlib", "rlib"]
-
-[features]
-default = ["libtorrent"]
-# The libtorrent backend links against native/shim; the crate's own unit tests run without it.
-libtorrent = ["dep:jni"]
+# cdylib: the app's libstream.so (Gradle renames it). rlib: the tests and the stream-fixture tool.
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-jni = { version = "=0.21.1", default-features = false, optional = true }
+jni = { version = "=0.21.1", default-features = false }
 libc = "=0.2.177"
+sha1 = "0.10"
+sha2 = "0.10"
+getrandom = "0.3"
+tokio = { version = "1.47", features = ["rt-multi-thread", "net", "time", "sync", "io-util", "macros"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls-pki-types = { version = "1.12", features = ["std"] }
+webpki-roots = "1"
+socket2 = { version = "0.6", features = ["all"] }
 
 [profile.release]
 # The engine runs inside the app process: an abort on panic would take the player down without a report.

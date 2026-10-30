@@ -1,14 +1,25 @@
 plugins { id 'com.android.library'; id 'org.jetbrains.kotlin.android' }
 
-// The streaming engine (native) built for each ABI: armeabi-v7a for the Fire TV Stick, arm64-v8a for
-// the local emulator, x86_64 for Linux emulators in CI. Versions come from the native dependency lock.
+// The streaming engine (native/core, Rust) built for each ABI: armeabi-v7a for the Fire TV Stick, arm64-v8a for
+// the local emulator, x86_64 for Linux emulators in CI. The NDK version comes from the native lock; the Rust
+// toolchain and crates from native/core's rust-toolchain.toml and Cargo.lock.
 def nativeDir = file('../../native')
+def coreDir = new File(nativeDir, 'core')
 def lockedVersion = { String name ->
     def line = new File(nativeDir, 'deps.lock').readLines().find { it.startsWith(name + ' ') }
     if (line == null) throw new GradleException("deps.lock has no $name")
     line.split(/\s+/)[1]
 }
 def abis = ['armeabi-v7a', 'arm64-v8a', 'x86_64']
+// ABI: Rust target, NDK compiler prefix.
+def rustTargets = [
+    'armeabi-v7a': ['armv7-linux-androideabi', 'armv7a-linux-androideabi'],
+    'arm64-v8a'  : ['aarch64-linux-android', 'aarch64-linux-android'],
+    'x86_64'     : ['x86_64-linux-android', 'x86_64-linux-android'],
+]
+def minApi = 26
+def rustOut = layout.buildDirectory.dir('rust')
+def jniOut = layout.buildDirectory.dir('generated/rustJniLibs')
 
 android {
     namespace 'tv.stream.torrent'
@@ -19,19 +30,8 @@ android {
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         consumerProguardFiles 'consumer-rules.pro'
         ndk { abiFilters(*abis) }
-        externalNativeBuild {
-            cmake {
-                arguments '-DDTV_JNI=ON', "-DDTV_DEPS_DIR=${nativeDir}/.deps", '-DANDROID_STL=c++_static'
-                targets 'stream'
-            }
-        }
     }
-    externalNativeBuild {
-        cmake {
-            path new File(nativeDir, 'CMakeLists.txt')
-            version lockedVersion('cmake')
-        }
-    }
+    sourceSets { main { jniLibs.srcDirs += jniOut } }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -50,15 +50,29 @@ dependencies {
     androidTestImplementation 'androidx.test:core:1.6.1'
 }
 
-// Pinned sources and OpenSSL for every ABI exist before CMake configures; both scripts skip finished work.
-def nativeDeps = tasks.register('nativeDeps', Exec) {
-    commandLine new File(nativeDir, 'fetch-deps.sh')
-}
-def opensslTasks = abis.collect { abi ->
-    tasks.register("openssl-$abi", Exec) {
-        dependsOn nativeDeps
-        environment 'ANDROID_HOME', android.sdkDirectory.absolutePath
-        commandLine new File(nativeDir, 'build-openssl.sh'), abi
+// Cargo builds libstream_core.so per ABI with the NDK's clang as linker (and as C compiler for ring); the app
+// loads it as libstream.so. Pages are 16 KiB aligned for Android 15 devices. Cargo decides what is up to date.
+def cargoBin = new File(System.getProperty('user.home'), '.cargo/bin/cargo')
+def rustTasks = abis.collect { abi ->
+    def (target, prefix) = rustTargets[abi]
+    def cargoTask = tasks.register("cargo-$abi", Exec) {
+        def host = org.gradle.internal.os.OperatingSystem.current().isMacOsX() ? 'darwin-x86_64' : 'linux-x86_64'
+        def toolchain = new File(android.sdkDirectory, "ndk/${lockedVersion('ndk')}/toolchains/llvm/prebuilt/$host/bin")
+        def clang = new File(toolchain, "${prefix}${minApi}-clang").absolutePath
+        def envTarget = target.replace('-', '_')
+        workingDir coreDir
+        environment 'CARGO_TARGET_DIR', rustOut.get().asFile.absolutePath
+        environment "CC_$envTarget", clang
+        environment "AR_$envTarget", new File(toolchain, 'llvm-ar').absolutePath
+        environment "CARGO_TARGET_${envTarget.toUpperCase()}_LINKER", clang
+        environment "CARGO_TARGET_${envTarget.toUpperCase()}_RUSTFLAGS", '-C link-arg=-Wl,-z,max-page-size=16384'
+        commandLine cargoBin.exists() ? cargoBin.absolutePath : 'cargo', 'build', '--release', '--locked', '--lib', '--target', target
+    }
+    tasks.register("rustLib-$abi", Copy) {
+        dependsOn cargoTask
+        from(rustOut.map { it.file("$target/release/libstream_core.so") })
+        into(jniOut.map { it.dir(abi) })
+        rename { 'libstream.so' }
     }
 }
-tasks.named('preBuild') { dependsOn opensslTasks }
+tasks.named('preBuild') { dependsOn rustTasks }

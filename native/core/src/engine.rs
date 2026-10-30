@@ -81,7 +81,7 @@ pub struct Config {
     pub public_network_only: bool,
     /// Tests run several local peers on one address.
     pub multiple_connections_per_ip: bool,
-    /// PEM file with the trust roots for HTTPS trackers and web seeds; empty uses OpenSSL's defaults.
+    /// PEM file with the trust roots for HTTPS trackers; empty uses the bundled Mozilla roots.
     pub ca_file: String,
     pub user_agent: String,
     pub read_ahead_seconds: i32,
@@ -304,7 +304,7 @@ struct Stream {
     urgent_reservation_failures: AtomicI32,
     obsolete_partials: AtomicI32,
     evicting: AtomicBool,
-    /// An eviction can reset priorities (a seed's rebuilt picker starts at the default), so they are re-applied.
+    /// After an eviction the priorities are applied again, so the evicted pieces are wanted afresh where needed.
     priorities_stale: AtomicBool,
     hash_failures: AtomicI32,
     evictions: AtomicI32,
@@ -353,11 +353,10 @@ pub struct Engine {
 pub const WOULD_BLOCK: i32 = -1;
 
 impl Engine {
-    /// An engine over libtorrent.
-    #[cfg(feature = "libtorrent")]
+    /// An engine over Stream's own BitTorrent session.
     pub fn new(config: Config) -> Result<Engine> {
         Engine::with_swarm(config, |config, wake| {
-            crate::libtorrent::LibtorrentSwarm::create(config, wake).map(|s| Box::new(s) as Box<dyn Swarm>)
+            crate::bt::backend::RustSwarm::create(config, wake).map(|s| Box::new(s) as Box<dyn Swarm>)
         })
     }
 
@@ -889,23 +888,31 @@ impl Shared {
             self.wake.wake();
         }
 
-        let Some(cache) = cache else {
-            // The torrent's storage appears right after its metadata; wait for the controller to find it.
-            let st = t.lock();
-            let (st, _) = t
-                .changed
-                .wait_timeout_while(st, wait, |st| st.cache.is_none() && !st.failed && !r.cancelled.load(Ordering::SeqCst))
-                .unwrap_or_else(|e| e.into_inner());
-            if st.failed {
-                return Err(Stream::failure(&st));
+        let deadline = Instant::now() + wait;
+        let cache = match cache {
+            Some(cache) => cache,
+            None => {
+                // The torrent's storage appears right after its metadata; wait for the controller to find it, then
+                // for the data in the rest of the wait.
+                let st = t.lock();
+                let (st, _) = t
+                    .changed
+                    .wait_timeout_while(st, wait, |st| st.cache.is_none() && !st.failed && !r.cancelled.load(Ordering::SeqCst))
+                    .unwrap_or_else(|e| e.into_inner());
+                if st.failed {
+                    return Err(Stream::failure(&st));
+                }
+                if r.cancelled.load(Ordering::SeqCst) {
+                    return Err(cancelled_error());
+                }
+                match st.cache.clone() {
+                    Some(cache) => cache,
+                    None => return Ok(WOULD_BLOCK),
+                }
             }
-            if r.cancelled.load(Ordering::SeqCst) {
-                return Err(cancelled_error());
-            }
-            return Ok(WOULD_BLOCK);
         };
 
-        match cache.wait_verified(piece, Instant::now() + wait, &r.cancelled) {
+        match cache.wait_verified(piece, deadline, &r.cancelled) {
             WaitResult::Cancelled => return Err(cancelled_error()),
             WaitResult::Closed => {
                 let st = t.lock();
@@ -1249,10 +1256,13 @@ mod tests {
     const SIZE: i64 = PIECES as i64 * PIECE as i64 - 100;
 
     type Queue = Arc<Mutex<Vec<Event>>>;
+    /// Writes that found no free slot, retried at every poll as a real swarm requests the blocks again.
+    type Retries = Arc<Mutex<Vec<(u64, Arc<PieceCache>, i32, Vec<u8>)>>>;
 
     /// A swarm whose torrents "download" a piece the moment it is prioritized, from deterministic bytes.
     struct FakeSwarm {
         events: Queue,
+        retries: Retries,
         wake: Arc<Wake>,
         dir: std::path::PathBuf,
         slots: i32,
@@ -1261,8 +1271,9 @@ mod tests {
     struct FakeTorrent {
         tag: u64,
         meta: Arc<Metadata>,
-        /// The backend's own reference, dropped at removal like libtorrent's disk storage.
+        /// The backend's own reference, dropped at removal like the swarm's storage.
         storage: Mutex<Option<Arc<PieceCache>>>,
+        retries: Retries,
         events: Queue,
         wake: Arc<Wake>,
     }
@@ -1294,6 +1305,8 @@ mod tests {
                 let data: Vec<u8> = (0..self.meta.piece_size(p) as i64).map(|i| byte(i64::from(p), i)).collect();
                 if cache.write(p, 0, &data).unwrap() {
                     self.events.lock().unwrap().push(Event::PieceFinished { tag: self.tag, piece: p });
+                } else {
+                    self.retries.lock().unwrap().push((self.tag, cache.clone(), p, data));
                 }
             }
             self.wake.wake();
@@ -1321,6 +1334,7 @@ mod tests {
         fn pause(&self) {}
         fn remove(&self) {
             drop(self.storage.lock().unwrap().take());
+            self.retries.lock().unwrap().retain(|r| r.0 != self.tag);
             self.events.lock().unwrap().push(Event::Removed { tag: self.tag });
             self.wake.wake();
         }
@@ -1338,9 +1352,26 @@ mod tests {
             });
             let path = self.dir.join(format!("{tag}.cache"));
             let cache = Arc::new(PieceCache::new(path, PIECE, sizes, Vec::new(), self.slots, true).unwrap());
-            Ok(Box::new(FakeTorrent { tag, meta, storage: Mutex::new(Some(cache)), events: self.events.clone(), wake: self.wake.clone() }))
+            Ok(Box::new(FakeTorrent {
+                tag,
+                meta,
+                storage: Mutex::new(Some(cache)),
+                retries: self.retries.clone(),
+                events: self.events.clone(),
+                wake: self.wake.clone(),
+            }))
         }
         fn poll(&self, out: &mut Vec<Event>) {
+            self.retries.lock().unwrap().retain(|(tag, cache, p, data)| {
+                if cache.complete(*p) {
+                    return false;
+                }
+                let written = cache.write(*p, 0, data).unwrap_or(false);
+                if written {
+                    self.events.lock().unwrap().push(Event::PieceFinished { tag: *tag, piece: *p });
+                }
+                !written
+            });
             out.append(&mut self.events.lock().unwrap());
         }
         fn disk_stats(&self) -> DiskStats {
@@ -1357,7 +1388,7 @@ mod tests {
         let cache_dir = temp_dir(&format!("{name}-storage"));
         Engine::with_swarm(config, move |config, wake| {
             let slots = cache_slots(config.cache_bytes, PIECE);
-            Ok(Box::new(FakeSwarm { events: Arc::default(), wake, dir: cache_dir, slots }) as Box<dyn Swarm>)
+            Ok(Box::new(FakeSwarm { events: Arc::default(), retries: Arc::default(), wake, dir: cache_dir, slots }) as Box<dyn Swarm>)
         })
         .unwrap()
     }

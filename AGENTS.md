@@ -18,8 +18,9 @@ authorization. Preserve other AVDs, owner data, ADB preferences and TLS checking
 - `android/playback`: this repository's Media3 player, subtitle compatibility,
   menus, overlays and resources; package `tv.stream.playback`.
 - `android/torrent`: JNI/Media3 data source, package `tv.stream.torrent`.
-- `native`: C++17 engine, Rust core (`native/core`: bounded piece cache, pinned
-  toolchain and Cargo.lock) and pinned libtorrent 2.1.2.
+- `native`: the Rust streaming engine (`native/core`): its own BitTorrent
+  implementation, bounded piece cache, JNI bridge and fixture tool; pinned
+  toolchain and Cargo.lock. No C++ and no libtorrent.
 - `android/codecs` and `codecs`: pinned software decoder integration/build tools.
 - `sounds`: deterministic generated UI sounds; regenerate rather than hand-edit.
 - `simulator.sh` and `simulator`: generated local media, real loopback BitTorrent
@@ -46,10 +47,11 @@ node --test simulator/tests/*.test.mjs
 Every required fixture test uses generated media, loopback peers and the verified
 emulator: no public torrents, trackers, DHT, LAN peers or physical TV. Keep piece
 hash checks enabled and never replace BitTorrent with HTTP in a torrent test.
-Native dependencies are pinned in `native/deps.lock` and fetched into ignored
-`native/.deps`; change libtorrent only through `native/patches` (its checkout is
-reset). Keep eviction regressions passing under dev/asan/tsan/checks variants
-before changing the patch or moving the upstream dependency. Do not disable TLS
+Engine crates are pinned in `native/core/Cargo.lock` (build with `--locked`) and
+the NDK in `native/deps.lock`; after changing Cargo.lock regenerate the app's
+notice with `python3 native/core/notices.py`. Keep the eviction and streaming
+regressions in `native/core/tests` passing under `build-host.sh dev` and
+`release` before changing the swarm, cache or engine. Do not disable TLS
 to make the untrusted certificate regression pass. Android instrumentation may
 exit zero on failure: retain and check the runner's `OK (...)` result.
 

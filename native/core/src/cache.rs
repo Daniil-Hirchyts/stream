@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Instant;
 
-/// libtorrent's transfer unit (`lt::default_block_size`).
+/// The BitTorrent transfer unit: 16 KiB blocks.
 pub const BLOCK_SIZE: i32 = 0x4000;
 /// Room left for filesystem allocation metadata (ext4 includes extent blocks in `st_blocks`).
 pub const STORAGE_OVERHEAD: i64 = 64 << 10;
@@ -489,7 +489,7 @@ impl PieceCache {
                 || offset < 0
                 || i64::from(offset) + out.len() as i64 > i64::from(self.piece_size(p))
             {
-                // libtorrent only reads pieces it has, which are never freed before it forgets them.
+                // The swarm only reads pieces it has, which are never freed before it forgets them.
                 return Err(IoError::Eof);
             }
             inner.slots[s as usize].pins += 1;

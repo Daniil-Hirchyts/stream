@@ -1056,8 +1056,8 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         }) })
     }
     override fun notices() {
-        val files = arrayOf("androidx.txt", "libtorrent.txt", "boost.txt", "openssl.txt", "ed25519.txt", "try-signal.txt", "geist.txt", "geist-icons.txt", "zxing.txt", "material-icons.txt", "noto-sans.txt", "atkinson-hyperlegible.txt")
-        choose("Open source notices", arrayOf("AndroidX / Media3", "libtorrent", "Boost", "OpenSSL", "Ed25519", "try_signal", "Geist Sans", "Geist UI icons", "ZXing", "Material Icons", "Noto Sans", "Atkinson Hyperlegible Next"), Consumer { which -> work(Callable {
+        val files = arrayOf("androidx.txt", "streaming-engine.txt", "geist.txt", "geist-icons.txt", "zxing.txt", "material-icons.txt", "noto-sans.txt", "atkinson-hyperlegible.txt")
+        choose("Open source notices", arrayOf("AndroidX / Media3", "Streaming engine (Rust crates)", "Geist Sans", "Geist UI icons", "ZXing", "Material Icons", "Noto Sans", "Atkinson Hyperlegible Next"), Consumer { which -> work(Callable {
             assets.open("notices/" + files[which]).use { input -> java.io.ByteArrayOutputStream().use { bytes ->
                 val buffer = ByteArray(8192)
                 var count: Int

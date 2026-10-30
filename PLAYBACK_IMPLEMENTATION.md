@@ -1,7 +1,7 @@
 # Playback preparation, startup and recovery
 
 The playback path remains Java/Media3 → the pinned NextLib renderer extension
-and JNI/libtorrent. It needs no additional player, desktop conversion service,
+and JNI/the Rust streaming engine (`native/core`). It needs no additional player, desktop conversion service,
 or persistent cache of playable provider addresses.
 
 ## Discovery and navigation
@@ -112,8 +112,7 @@ Use test filters; a full suite is unnecessary for these changes:
 ./simulator.sh data-test 'tv.stream.app.StartupPipelineTest'
 ./simulator.sh decoder-test
 ./simulator.sh data-test 'tv.stream.app.StartupTimingTest'
-./native/build-host.sh asan startup_ blocked_reads_wake shutdown_with_inflight_hashes
-./native/build-host.sh tsan startup_ blocked_reads_wake shutdown_with_inflight_hashes
+./native/build-host.sh release shutdown_ blocked_reads_wake
 ```
 
 `StartupTimingTest` records 20 prepared HTTP and 20 cold torrent player/engine

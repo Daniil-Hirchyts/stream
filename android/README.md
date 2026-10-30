@@ -14,8 +14,9 @@ Kotlin with Compose/View interoperability, minimum API 26, compile/target API 36
 From the repository root: `./simulator.sh up`. The launcher starts or
 verifies `Stream_Local_TV` / `emulator-5558`, builds the standalone app and
 installs/opens it. No helper, extension, pairing, debrid account or home server
-is needed. Development requires Java 21/17, Node, FFmpeg, a C++ toolchain and
-Android SDK/NDK/CMake versions pinned in `native/deps.lock`.
+is needed. Development requires Java 21/17, Node, FFmpeg, Rust (rustup installs
+the toolchain `native/core/rust-toolchain.toml` pins) and the Android SDK/NDK/CMake
+versions pinned in `native/deps.lock`.
 
 The launcher label is Stream; the application ID is `tv.stream.app`. It opens
 straight on Home without onboarding. First launch installs the owner-approved

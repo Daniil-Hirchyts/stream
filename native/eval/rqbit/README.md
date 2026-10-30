@@ -19,6 +19,7 @@ bytes with the seeder's source file. It is never part of the app.
 | Pure v2 torrent (`film-v2`) | Fail: refused while parsing (`missing field pieces`). BEP 52 support upstream is error types only, with no Merkle verification ([issue 546](https://github.com/ikatson/rqbit/issues/546)) |
 | Piece eviction: forget a verified piece, re-download it, tell peers (BEP 54) | Missing: no API to forget a piece; storage is per-file `pread`/`pwrite`, not per piece |
 
-librqbit does not meet the engine's requirements, so libtorrent stays. Rerun this
-evaluation when librqbit ships v2 verification; eviction would still need a
-patch of its piece tracking, like `patches/libtorrent`.
+librqbit did not meet the engine's requirements. Stream replaced libtorrent with
+its own BitTorrent implementation instead (`native/core/src/bt`), which handles v2
+and eviction. This crate stays as an independent client for interoperability: it
+downloads the v1 and hybrid fixtures intact from `stream-fixture seed`.

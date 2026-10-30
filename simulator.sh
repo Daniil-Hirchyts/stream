@@ -23,7 +23,7 @@ STATE_DIR="${TMPDIR:-/tmp}/stream-simulator"
 FIXTURE_PORT=58133
 SEEDER_PORT=58134
 FIXTURE_URL="http://127.0.0.1:$FIXTURE_PORT"
-FIXTURE_TOOL="$NATIVE_DIR/build/host-dev/dtv-fixture"
+FIXTURE_TOOL="$NATIVE_DIR/build/host-dev/stream-fixture"
 
 prepare_java() {
   if [ -x /usr/libexec/java_home ]; then

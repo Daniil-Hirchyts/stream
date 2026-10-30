@@ -1,13 +1,13 @@
 //! The BitTorrent backend the engine drives. The engine owns policy (which pieces, when, what to evict) and every
 //! handle; a backend only speaks the protocol and writes verified-or-not pieces into the torrent's [`PieceCache`].
-//! [`crate::libtorrent`] implements it over libtorrent; tests use an in-memory fake.
+//! [`crate::bt`] implements it; the engine's tests use an in-memory fake.
 
 use crate::cache::PieceCache;
 use crate::engine::{EngineError, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-/// Piece priorities, as libtorrent numbers them.
+/// Piece priorities, numbered as BitTorrent clients commonly do (0 skips a piece, 7 is the most urgent).
 pub const DONT_DOWNLOAD: u8 = 0;
 pub const LOW_PRIORITY: u8 = 1;
 pub const DEFAULT_PRIORITY: u8 = 4;

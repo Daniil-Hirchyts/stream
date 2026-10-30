@@ -220,7 +220,7 @@ class AcceptanceTest : AppHarness() {
         }
         tap("Playback", false); tap("Playback cache", false); tap("128 MiB", true); waitUntil("cache preference", 5000) { services.cacheBytes() == (128L shl 20) }
         tap("Play next episode", false); waitUntil("autoplay preference", 5000) { services.store.preference("autoplay", "true") == "false" }
-        tap("Clear app playback and metadata cache", true); tap("About", false); tap("Developer mode", false); tap("Developer", false); tap("Open source notices", true); tap("libtorrent", false)
+        tap("Clear app playback and metadata cache", true); tap("About", false); tap("Developer mode", false); tap("Developer", false); tap("Open source notices", true); tap("Streaming engine (Rust crates)", false)
         waitUntil("license text", 5000) { visible("Open source notices") }; instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         tap("Settings", false); tap("Add-ons", false); tap("Local fixtures", true); tap("Remove add-on", false)
         waitUntil("addon removed", 5000) { services.store.addons().isEmpty() }

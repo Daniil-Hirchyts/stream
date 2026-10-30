@@ -1,36 +1,32 @@
 # Third-party code in the streaming engine
 
-Everything below is compiled into `libstream.so` (and the host tools) from the
-sources pinned in [`deps.lock`](deps.lock). `fetch-deps.sh` verifies each
-archive's SHA-256 against upstream's published value, or each repository's
-commit, before anything is built. Nothing is downloaded at runtime.
+`libstream.so` is Stream's own Rust code (BSD-3-Clause) built with crates from
+crates.io, each pinned with its checksum in [`core/Cargo.lock`](core/Cargo.lock)
+and built with `--locked`. Nothing is downloaded at runtime.
 
-| Component | Version | Pin | License | License text |
-| --- | --- | --- | --- | --- |
-| libtorrent (rasterbar) | 2.1.2 | commit `6da363d2994f17c0b3c0450d124cf73a31a73847` | BSD-3-Clause, with bundled parts under zlib-style, Boost and public-domain terms | `libtorrent/COPYING`, `libtorrent/LICENSE` |
-| try_signal (libtorrent submodule) | at libtorrent's recorded commit `105cce59972f925a33aa6b1c3109e4cd3caf583d` | — | BSD-3-Clause | `libtorrent/deps/try_signal/LICENSE` |
-| ed25519 (in libtorrent) | — | — | Public domain | `libtorrent/src/ed25519/LICENSE` |
-| Boost (headers only) | 1.90.0 | SHA-256 `5e93d582aff26868d581a52ae78c7d8edf3f3064742c6e77901a1f18a437eea9` | BSL-1.0 | `boost/LICENSE_1_0.txt` |
-| libc (Rust crate) | 0.2.177 | `core/Cargo.lock` checksum | MIT OR Apache-2.0 | crate's `LICENSE-MIT`, `LICENSE-APACHE` |
-| OpenSSL (libssl, libcrypto) | 3.5.9 | SHA-256 `603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a` | Apache-2.0 | `openssl/LICENSE.txt` |
+The main ones:
 
-Paths are relative to `.deps/`. Build tools, not shipped: Android NDK
-29.0.14206865 and CMake 3.31.6, installed through `sdkmanager`.
+| Crate | Role | License |
+| --- | --- | --- |
+| tokio, mio, socket2 | The network runtime and sockets | MIT; MIT OR Apache-2.0 |
+| rustls, tokio-rustls, rustls-webpki, rustls-pki-types | TLS for HTTPS trackers, always verifying certificates | Apache-2.0 OR ISC OR MIT; ISC; MIT OR Apache-2.0 |
+| ring | Cryptography under rustls (includes C and assembly, built with the NDK's clang) | Apache-2.0 AND ISC |
+| webpki-roots | Mozilla's roots, used only when the app gives no trust roots | CDLA-Permissive-2.0 |
+| sha1, sha2 | Piece and info hashes | MIT OR Apache-2.0 |
+| jni | The Java bridge | MIT OR Apache-2.0 |
+| libc, getrandom | System calls and random numbers | MIT OR Apache-2.0 |
 
-## Local changes
+`core/notices.py` lists every crate linked into the Android library (normal
+dependencies only: build scripts and procedural macros don't ship) with its
+license and license files, writing
+`android/app/src/main/assets/notices/streaming-engine.txt`. Run it after any
+change to `Cargo.lock`.
 
-`patches/libtorrent/0001-evict-pieces.patch` adds piece eviction
-(`torrent_handle::evict_pieces`); its header explains the change. It is applied
-to a clean checkout by `fetch-deps.sh`, and the build refuses a libtorrent
-without it. `0002-pending-adjacent-hash.patch` preserves a v2 piece's download
-state while its own hash callback is pending, even when another piece's hashes
-also validate it. A deterministic callback-order regression reproduces the
-original assertion and verifies completion without weakening hash checks.
-Moving to another libtorrent version means re-porting the patches and
-passing the regressions in `tests/test_eviction.cpp` under every
-`build-host.sh` variant first.
+Build tools, not shipped: the Rust toolchain pinned in
+`core/rust-toolchain.toml`, and Android NDK 29.0.14206865 installed through
+`sdkmanager`.
 
 ## Distribution
 
-An app shipping `libstream.so` must show these licenses and copyright
-notices; the Stream app bundles them in its licenses screen.
+An app shipping `libstream.so` must show these licenses and copyright notices;
+the Stream app bundles the generated notice in its open source notices screen.

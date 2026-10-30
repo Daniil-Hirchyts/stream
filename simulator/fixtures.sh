@@ -1,6 +1,6 @@
 #!/bin/sh
 # Generates Stream's local test media and torrents in .cache/: no third-party content, nothing downloaded.
-# Media come from FFmpeg test sources; torrents from dtv-fixture, built from native.
+# Media come from FFmpeg test sources; torrents from stream-fixture, built from native/core.
 set -eu
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cache="$here/.cache"
@@ -19,7 +19,7 @@ if ! "$here/../native/build-host.sh" dev --no-test >"$cache/native-build.log" 2>
   cat "$cache/native-build.log" >&2
   exit 1
 fi
-fixture="$here/../native/build/host-dev/dtv-fixture"
+fixture="$here/../native/build/host-dev/stream-fixture"
 
 # A subtitle file both the MKV and the series embed.
 subs="$cache/subtitles.srt"
