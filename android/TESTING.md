@@ -186,9 +186,21 @@ Home shelf transitions and movement back through a scrolled shelf before enterin
 ```
 
 The navigation performance test records ten Home → Details → Home journeys,
-per-open latency, process PSS samples and window frame durations to
+per-open latency, process PSS samples and window frame durations, and a
+`settings` journey (six category moves down and up, three times, by remote:
+per-move focus latency, frame durations and PSS) to
 `simulator/.cache/evidence/navigation-performance.json`. Run it alone; its
-debug-build emulator numbers are not a real-device benchmark. Dropped frame
+debug-build emulator numbers are not a real-device benchmark, and debuggable
+builds run the app's Compose code without AOT compilation while View toolkit
+code is precompiled in the platform.
+
+On 30 October 2026 two runs each on the verified emulator compared the View
+Settings (commit b9528ec) with the Compose Settings: median category move 46 and
+48 ms vs 60 and 55 ms, p95 271 and 321 ms vs 140 and 281 ms, frame p95 67 and
+67 ms vs 84 and 197 ms over 126–130 vs 94–95 frames; final PSS 140 and 133 MiB vs
+133 and 120 MiB. Every frame exceeded 16.7 ms in both
+on this emulator. The Compose pane is slower to move between categories in this
+debug build; a release or physical-TV measurement has not been made. Dropped frame
 metric reports indicate missing measurements, not necessarily dropped frames.
 The software profile forces FFmpeg video on a looped generated 1080p H.264
 fixture and samples process CPU, PSS, playback and dropped-frame telemetry every

@@ -68,6 +68,62 @@ class NavigationPerformanceTest : AppHarness() {
             .put("detailsMs", JSONArray(elapsed)).put("pssKiB", JSONArray(pss))
             .put("frameCount", sorted.size).put("frameP95Ms", p95 / 1_000_000.0)
             .put("framesOver16_7ms", measured.count { it > 16_666_667L }).put("droppedMetricReports", droppedReports)
-        File(context.filesDir, "validation-navigation-performance.json").writeText(report.toString(2))
+        merge(report)
+    }
+
+    /** Settings by remote: category moves (each re-renders the pane) and their frame times. */
+    @Test fun settingsCategoryNavigationAndFrameTimes() {
+        launch()
+        waitUntil("home ready", 10_000) { visible("Make yourself at home") }
+        browse!!.onActivity { it.root("Settings") }
+        waitUntil("Settings category", 10_000) { focusedTag() == "settings:addons" }
+        val frames = mutableListOf<Long>()
+        val metricsThread = HandlerThread("settings-frame-metrics").apply { start() }
+        val listener = Window.OnFrameMetricsAvailableListener { _, metrics, _ ->
+            val duration = metrics.getMetric(FrameMetrics.TOTAL_DURATION)
+            synchronized(frames) { if (duration > 0) frames.add(duration) }
+        }
+        browse!!.onActivity { it.window.addOnFrameMetricsAvailableListener(listener, Handler(metricsThread.looper)) }
+        val moves = mutableListOf<Long>()
+        val pss = mutableListOf<Int>()
+        try {
+            repeat(3) {
+                for (code in IntArray(6) { android.view.KeyEvent.KEYCODE_DPAD_DOWN } + IntArray(6) { android.view.KeyEvent.KEYCODE_DPAD_UP }) {
+                    val before = focusedTag()
+                    val start = SystemClock.elapsedRealtime()
+                    instrumentation.sendKeyDownUpSync(code)
+                    waitUntil("focus moved", 5_000) { focusedTag() != before }
+                    instrumentation.waitForIdleSync()
+                    moves.add(SystemClock.elapsedRealtime() - start)
+                }
+                val memory = Debug.MemoryInfo(); Debug.getMemoryInfo(memory); pss.add(memory.totalPss)
+            }
+        } finally {
+            browse!!.onActivity { it.window.removeOnFrameMetricsAvailableListener(listener) }
+            metricsThread.quitSafely(); metricsThread.join()
+        }
+        val measured = synchronized(frames) { frames.toList() }.sorted()
+        assertTrue("FrameMetrics delivered no frames", measured.isNotEmpty())
+        val movesSorted = moves.sorted()
+        merge(JSONObject().put("settings", JSONObject().put("journey", "settings-categories-down-up-x3")
+            .put("moveMs", JSONArray(moves)).put("moveP50Ms", movesSorted[movesSorted.size / 2])
+            .put("moveP95Ms", movesSorted[(movesSorted.size * 95 + 99) / 100 - 1]).put("pssKiB", JSONArray(pss))
+            .put("frameCount", measured.size).put("frameP95Ms", measured[(measured.size * 95 + 99) / 100 - 1] / 1_000_000.0)
+            .put("framesOver16_7ms", measured.count { it > 16_666_667L })))
+    }
+
+    private fun focusedTag(): String? {
+        val tag = java.util.concurrent.atomic.AtomicReference<String?>()
+        browse!!.onActivity { tag.set(it.currentFocus?.tag as? String) }
+        return tag.get()
+    }
+
+    /** Both journeys share one report, whichever runs first. */
+    private fun merge(part: JSONObject) {
+        val file = File(context.filesDir, "validation-navigation-performance.json")
+        val report = if (file.exists()) JSONObject(file.readText()) else JSONObject()
+        for (key in part.keys()) report.put(key, part.get(key))
+        report.put("measuredAtMs", System.currentTimeMillis())
+        file.writeText(report.toString(2))
     }
 }
