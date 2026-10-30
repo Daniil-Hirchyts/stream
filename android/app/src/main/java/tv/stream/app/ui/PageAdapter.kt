@@ -17,6 +17,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.compose.ui.unit.dp
 import androidx.recyclerview.widget.RecyclerView
 import java.util.Collections
 import tv.stream.app.R
@@ -210,10 +211,11 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
             val fillViewport = item.kind == Item.Kind.KEYBOARD || item.kind == Item.Kind.SPLIT || item.kind == Item.Kind.LOADING
             box.layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                     if (fillViewport) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT)
-            val native = build(item)
-            val content = if (composeBlock(item.kind)) ComposePageBlock(context, item, native, this::build) { view, next ->
+            val drawn = composeBlock(item.kind) && declarative(item) != null
+            val native = if (drawn) null else build(item)
+            val content = if (composeBlock(item.kind)) ComposePageBlock(context, item, native, this::build, this::declarative) { view, next ->
                 (view.getTag(R.id.page_binding) as? Binding)?.update(next) == true
-            } else native
+            } else native!!
             // A block with a fixed height (the Home spotlight) keeps it; everything else wraps its content.
             val own: ViewGroup.LayoutParams? = content.layoutParams
             val height = if (fillViewport) ViewGroup.LayoutParams.MATCH_PARENT else if (own != null && own.height > 0) own.height else ViewGroup.LayoutParams.WRAP_CONTENT
@@ -235,6 +237,31 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
         Item.Kind.ACTIONS, Item.Kind.CHIPS, Item.Kind.MESSAGE, Item.Kind.NOTICE, Item.Kind.TEXT -> true
         // Artwork shelves, the on-screen keyboard and player controls retain their existing custom parents.
         else -> false
+    }
+
+    /**
+     * The Compose implementation of a block, where one exists: text-only blocks. Blocks that need a platform drawable
+     * (the glass notice's blur, the animated loading indicator) or that take focus still render natively.
+     */
+    private fun declarative(item: Item): (@androidx.compose.runtime.Composable () -> Unit)? {
+        val layout = TextBlocks.Layout(Tv.px(context, gutterStart), Tv.px(context, gutterEnd), ROW_INSET.dp)
+        return when (item.kind) {
+            Item.Kind.HEADER -> {
+                val section = listFollows(item)
+                val (title, detail) = item.title to item.detail
+                ({ TextBlocks.Header(title, detail, section, if (section) 22 else 20, layout) })
+            }
+            Item.Kind.TEXT -> {
+                val inList = inList(item)
+                val (title, detail) = item.title to item.detail
+                ({ TextBlocks.Paragraph(title, detail, inList, layout) })
+            }
+            Item.Kind.MESSAGE -> if (item.icon == 0 && item.actions.isEmpty()) {
+                val (title, detail) = item.title to item.detail
+                ({ TextBlocks.QuietMessage(title, detail, layout) })
+            } else null
+            else -> null
+        }
     }
 
     private fun restoreLater(view: View, key: String) {
@@ -1065,7 +1092,8 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
             if (row.childCount > 0) (button.layoutParams as LinearLayout.LayoutParams).leftMargin = dp(12)
             val focus = button.onFocusChangeListener
             button.setOnFocusChangeListener { view, has ->
-                if (has && !replacingFocus) select.accept(action.key)
+                // A temporary focus on the first season during episode restoration must not change the pane.
+                if (has && !replacingFocus && !restore.startsWith("episode:")) select.accept(action.key)
                 focus.onFocusChange(view, has)
             }
             button.setOnHoverListener { view, event ->
@@ -2136,7 +2164,8 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
             val children = item.children
             if (children != null) for (child in children) state.add(snapshot(child))
             val panes = item.panes
-            if (panes != null) for (pane in panes.entries) {
+            if (panes is LazyPanes) state.add(panes.signature)
+            else if (panes != null) for (pane in panes.entries) {
                 state.add(pane.key); for (row in pane.value) state.add(snapshot(row))
             }
             val prefs = item.playerPreferences
@@ -2149,6 +2178,7 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
             for (t in item.tiles) if (t.key.equals(key)) return true
             for (a in item.actions) if (a.key.equals(key)) return true
             val panes = item.panes
+            if (panes is LazyPanes) return panes.rowKeys.contains(key)
             if (panes != null) for (pane in panes.values)
                 for (child in pane) if (contains(child, key)) return true
             return false

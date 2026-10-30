@@ -16,6 +16,7 @@ import tv.stream.app.data.TvStore
 import tv.stream.app.ui.Item
 import tv.stream.app.ui.Item.Action
 import tv.stream.app.ui.Item.Tile
+import tv.stream.app.ui.LazyPanes
 import tv.stream.app.ui.Page
 import tv.stream.app.ui.Sounds
 
@@ -131,38 +132,23 @@ class TitleScreens(private val nav: Navigator, private val services: TvApplicati
             for (e in title.episodes) if (e.id == route.video) route.season = e.season
         }
         val tabs: MutableList<Action> = ArrayList()
-        val panes: MutableMap<String, List<Item>> = java.util.LinkedHashMap()
         for (season in seasons) {
-            val key = "season:" + season
-            tabs.add(Action(key, Action.Style.CHIP, if (season == 0) "Specials" else "Season " + season, Runnable {})
+            tabs.add(Action("season:" + season, Action.Style.CHIP, if (season == 0) "Specials" else "Season " + season, Runnable {})
                     .selected(season == route.season))
-            val tiles: MutableList<Tile> = ArrayList()
-            for (e in title.episodes) if (e.season == season) {
-                val p = saved[e.id]
-                val watched = p != null && p.watched
-                val resume = p != null && !watched && p.positionMs > 0
-                val options = Runnable { nav.choose("Episode " + e.number + " · " + e.name,
-                        arrayOf(if (resume) "Resume" else "Play", "Choose source", if (watched) "Mark unwatched" else "Mark watched"), Consumer { which ->
-                            if (which == 2) {
-                                Sounds.play(if (watched) Sounds.Sound.WATCHED_OFF else Sounds.Sound.WATCHED_ON)
-                                nav.mutateEpisode(Callable { services.store.watched(title, e.id, !watched); null }, route, e.season, e.id)
-                                return@Consumer
-                            }
-                            if (route.video != e.id) route.cache = null
-                            route.video = e.id
-                            if (which == 0) nav.play(title, e.id, "")
-                            else nav.sources(title, e.id)
-                        }) }
-                val tile = Tile("episode:" + e.id, Tile.Style.LANDSCAPE, e.name, "",
-                        if (e.thumbnail != null) e.thumbnail else title.background, null, options)
-                        .episode(e.number, e.overview).released(episodeDate(e.released))
-                        .description("Episode " + e.number + ". " + e.name + (if (watched) ". Watched" else ""))
-                if (watched) tile.badge(R.drawable.ic_tv_check)
-                if (!watched && p != null && p.durationMs > 0) tile.progress(p.positionMs / p.durationMs.toFloat())
-                if (notice != null && notice.episodes.contains(e.id)) tile.flag("New")
-                tiles.add(tile)
-            }
-            panes[key] = java.util.Collections.singletonList(Item.shelf("episodes:" + season, "", "", Tile.Style.LANDSCAPE, tiles))
+        }
+        val panes = seasonPanes(title, seasons, HashMap(saved), notice?.episodes?.toSet() ?: emptySet()) { e, watched, resume ->
+            Runnable { nav.choose("Episode " + e.number + " · " + e.name,
+                    arrayOf(if (resume) "Resume" else "Play", "Choose source", if (watched) "Mark unwatched" else "Mark watched"), Consumer { which ->
+                        if (which == 2) {
+                            Sounds.play(if (watched) Sounds.Sound.WATCHED_OFF else Sounds.Sound.WATCHED_ON)
+                            nav.mutateEpisode(Callable { services.store.watched(title, e.id, !watched); null }, route, e.season, e.id)
+                            return@Consumer
+                        }
+                        if (route.video != e.id) route.cache = null
+                        route.video = e.id
+                        if (which == 0) nav.play(title, e.id, "")
+                        else nav.sources(title, e.id)
+                    }) }
         }
         page.add(Item.episodes(tabs, panes, "season:" + route.season,
                 Consumer { key -> route.season = Integer.parseInt(key.substring("season:".length)) }))
@@ -294,6 +280,47 @@ class TitleScreens(private val nav: Navigator, private val services: TvApplicati
         fun pendingTitle(page: Page, title: Title) {
             if (title.logo == null && title.provider != "local")
                 for (item in page.items) if (item.kind == Item.Kind.DETAILS) item.loading = true
+        }
+
+        /**
+         * One pane per season, each built only when shown: a long series' other seasons cost a key and a few values
+         * in the signature, not their tiles. The inputs are copies, so the panes never see a worker's later changes.
+         */
+        fun seasonPanes(title: Title, seasons: Collection<Int>, saved: Map<String, TvStore.Progress>, fresh: Set<String>,
+                        options: (Title.Episode, Boolean, Boolean) -> Runnable): LazyPanes {
+            val bySeason = title.episodes.groupBy { it.season }
+            val builders = LinkedHashMap<String, () -> List<Item>>()
+            val signature = ArrayList<Any?>(title.episodes.size * 5 + 2)
+            val rows = HashSet<String>()
+            signature.add(title.cacheJson())
+            for (season in seasons) {
+                val episodes = bySeason[season].orEmpty()
+                rows.add("episodes:" + season)
+                signature.add(season)
+                for (e in episodes) {
+                    rows.add("episode:" + e.id)
+                    val p = saved[e.id]
+                    signature.add(e.id); signature.add(p?.watched); signature.add(p?.positionMs); signature.add(p?.durationMs); signature.add(fresh.contains(e.id))
+                }
+                builders["season:" + season] = {
+                    val tiles: MutableList<Tile> = ArrayList(episodes.size)
+                    for (e in episodes) {
+                        val p = saved[e.id]
+                        val watched = p != null && p.watched
+                        val resume = p != null && !watched && p.positionMs > 0
+                        val tile = Tile("episode:" + e.id, Tile.Style.LANDSCAPE, e.name, "",
+                                if (e.thumbnail != null) e.thumbnail else title.background, null, options(e, watched, resume))
+                                .episode(e.number, e.overview).released(episodeDate(e.released))
+                                .description("Episode " + e.number + ". " + e.name + (if (watched) ". Watched" else ""))
+                        if (watched) tile.badge(R.drawable.ic_tv_check)
+                        if (!watched && p != null && p.durationMs > 0) tile.progress(p.positionMs / p.durationMs.toFloat())
+                        if (fresh.contains(e.id)) tile.flag("New")
+                        tiles.add(tile)
+                    }
+                    java.util.Collections.singletonList(Item.shelf("episodes:" + season, "", "", Tile.Style.LANDSCAPE, tiles))
+                }
+            }
+            return LazyPanes(builders, signature, rows)
         }
 
         /** Keep the provider's broadcast day; converting a midnight UTC stamp can move it to yesterday. */

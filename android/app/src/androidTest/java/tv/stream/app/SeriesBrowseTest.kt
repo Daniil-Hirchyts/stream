@@ -258,7 +258,7 @@ class SeriesBrowseTest : AppHarness() {
     }
     private fun focused(key: String): Boolean {
         val result = AtomicBoolean()
-        browse!!.onActivity { activity -> result.set(activity.currentFocus != null && key == activity.currentFocus!!.tag) }
+        browse!!.onActivity { activity -> result.set(activity.hasWindowFocus() && activity.currentFocus != null && key == activity.currentFocus!!.tag) }
         return result.get()
     }
     private fun shown(key: String): Boolean {

@@ -85,6 +85,8 @@ object Tv {
         view.letterSpacing = if (sp >= TITLE_SP) -0.015f else -0.005f
         return view
     }
+    /** Pixels as density-independent pixels, for Compose layouts that share the View gutters. */
+    fun px(context: Context, px: Int): androidx.compose.ui.unit.Dp = (px / context.resources.displayMetrics.density).let { androidx.compose.ui.unit.Dp(it) }
     /**
      * Text that can sit over artwork gets a soft dark shadow, so it stays readable on light frames the scrim doesn't
      * fully darken. On the plain canvas the shadow is invisible.

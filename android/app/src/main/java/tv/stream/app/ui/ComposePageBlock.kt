@@ -5,6 +5,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.AbstractComposeView
@@ -12,20 +13,25 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.viewinterop.AndroidView
 
 /**
- * The composition boundary for a migrated page block. RecyclerView still owns page/shelf scroll and identity;
- * native controls inside AndroidView keep the app's established drawing, accessibility and remote focus rules.
- * This lets individual blocks move to Compose without replacing the complete TV focus tree in one release.
+ * The composition boundary for a page block. Blocks with a declarative implementation ([declarative] returns one)
+ * are drawn by Compose alone; the others still host their native controls inside AndroidView, which keeps the app's
+ * drawing, accessibility and remote focus rules while blocks move to Compose one at a time. RecyclerView still owns
+ * page/shelf scroll and identity.
  */
 internal class ComposePageBlock(
     context: Context,
     initialItem: Item,
-    initialContent: View,
+    initialContent: View?,
     private val render: (Item) -> View,
-    private val rebind: (View, Item) -> Boolean
+    private val declarative: (Item) -> (@Composable () -> Unit)? = { null },
+    private val rebind: (View, Item) -> Boolean,
 ) : AbstractComposeView(context) {
     private data class Model(val revision: Long, val item: Item)
     private val model = mutableStateOf(Model(0, initialItem))
-    private val slot = NativeSlot(context, initialContent)
+    private var nativeSlot: NativeSlot? = initialContent?.let { NativeSlot(context, it) }
+    private val slot: NativeSlot get() = nativeSlot ?: NativeSlot(context, render(model.value.item)).also { nativeSlot = it }
+    /** The revision a declarative block last drew. */
+    private var drawnRevision = 0L
 
     init {
         clipChildren = false
@@ -33,7 +39,9 @@ internal class ComposePageBlock(
         isFocusable = false
         // In RecyclerView a detached, cached holder keeps its composition; released holders dispose it.
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
-        layoutParams = initialContent.layoutParams
+        // Declarative blocks fill the page's width and wrap their height, as the text blocks they replace did.
+        layoutParams = initialContent?.layoutParams
+                ?: ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
     /** RecyclerView publishes a model; the composition owns rendering and rebinding it. */
@@ -44,17 +52,24 @@ internal class ComposePageBlock(
     }
 
     val hasPendingBinding: Boolean
-        get() = model.value.revision != slot.shownRevision
+        get() = model.value.revision != (nativeSlot?.shownRevision ?: drawnRevision)
 
-    // These compositions contain native controls only. Expose their focus targets directly so the
-    // Compose owner never becomes an extra D-pad stop between a page control and the toolbar/rail.
+    // Native controls are exposed as focus targets directly, so the Compose owner never becomes an extra D-pad stop
+    // between a page control and the toolbar/rail. Declarative blocks so far are text, which takes no focus.
     override fun addFocusables(views: ArrayList<View>, direction: Int, focusableMode: Int) {
-        if (slot.isAttachedToWindow) slot.addFocusables(views, direction, focusableMode)
+        val native = nativeSlot
+        if (native != null && native.isAttachedToWindow) native.addFocusables(views, direction, focusableMode)
     }
 
     @Composable
     override fun Content() {
         val current = model.value
+        val block = declarative(current.item)
+        if (block != null) {
+            block()
+            SideEffect { drawnRevision = current.revision }
+            return
+        }
         AndroidView(
             factory = { slot },
             modifier = Modifier,

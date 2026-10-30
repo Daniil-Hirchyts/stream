@@ -109,7 +109,8 @@ class Item private constructor(val kind: Kind, val key: String) {
         copy.keyboardLanguage = keyboardLanguage; copy.keyboardVisible = keyboardVisible
         copy.keyboardLanguageChanged = keyboardLanguageChanged; copy.loading = loading
         copy.children = children?.map { it.snapshot() }
-        copy.panes = panes?.mapValues { (_, rows) -> rows.map { it.snapshot() } }
+        // Lazy panes are already detached: they build fresh items from immutable inputs.
+        copy.panes = panes.let { p -> if (p is LazyPanes) p else p?.mapValues { (_, rows) -> rows.map { it.snapshot() } } }
         copy.playerPreferences = playerPreferences
     }
 

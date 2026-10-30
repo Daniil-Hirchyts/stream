@@ -707,17 +707,15 @@ with platform and FFmpeg video renderers.
 
 ## Known gaps
 
-- **Endurance:** the last thirty-minute soak on the emulator failed after about
-  27 minutes (`Timed out: soak seek 159`); the cause hasn't been investigated.
+- **Endurance:** a thirty-minute Rust-engine emulator soak passed, but an earlier
+  run timed out at seek 159 after about 27 minutes; its cause is still unknown.
 - **Formats:** VC-1 has decoder-discovery coverage only. Small 10-bit fixtures
   prove decoding and seeking, not full-resolution throughput on a TV; HDR
   output, Dolby Vision, unsupported extractors, damaged files and DRM can fail.
 - **Devices and providers:** nothing has run on the physical stick. Public
   provider latency, expiring links and swarm health are outside the fixtures.
-- **Series loading:** Details parses a series' whole episode list and builds
-  every season's card models up front; building the selected season on demand
-  would save work on long series. Concurrent requests for the same uncached
-  image aren't combined, and rebinding an image doesn't cancel its download.
+- **Series loading:** Details still parses the provider's whole episode list,
+  though it builds season card models on demand.
 - **Metadata:** reopening Details fetches its metadata again after the 60-second
   preparation window; showing the cache first and revalidating would be faster.
   `Title` keeps no network/studio or person data, so the app can't show the
