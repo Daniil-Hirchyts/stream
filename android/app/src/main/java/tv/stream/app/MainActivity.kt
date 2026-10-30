@@ -990,58 +990,10 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
      * The starter page's Install: adds each listed add-on that isn't installed yet, reading its current manifest
      * first. One that can't be reached is skipped and named, and can be added later.
      */
-    override fun installStarters(addons: List<String>) {
-        if (shownPage != null) {
-            val partial = shownPage!!.copy(); partial.items.removeIf { item -> item.key == "starter-actions" }
-            showPartial(partial.add(Item.notice(R.drawable.ic_tv_refresh, "Installing add-ons", "")))
-        }
-        work(Callable {
-            val missed: MutableList<String> = ArrayList()
-            for (url in addons) {
-                if (StoreScreens.installed(url, "", services!!.store.addons()) != null) continue
-                // Installing cancels open requests, so each add-on is read with a request of its own.
-                try { services!!.addons.newRequest().use { request -> services!!.addons.install(url, services!!.addons.preview(url, request)) } }
-                catch (e: AddonException) { missed.add(StarterAddons.describe(url)[0]) }
-            }
-            missed
-        }, Consumer { missed ->
-            Sounds.play(if (missed.isEmpty()) Sounds.Sound.INSTALLED else Sounds.Sound.WARNING)
-            root("Home")
-            if (!missed.isEmpty()) alert("Some add-ons weren't added", missed.joinToString(", ") + " didn't respond. Try again from the add-on store.")
-        })
-    }
-    override fun addAddon() {
-        edit("Add add-on", "Connect a catalogue or source using its manifest address.", "https://… or stremio://…/manifest.json", "", Consumer { address -> previewAddon(address) })
-    }
-    override fun previewAddon(address: String) {
-        val input = address
-        val normalized = AddonUrl.normalize(input)
-        if (shownPage != null) showPartial(shownPage!!.copy().add(Item.notice(R.drawable.ic_tv_info,
-                "Loading add-on details", "")))
-        val mine = generation
-        val request = scope
-        work(Callable { services!!.addons.preview(normalized, request!!) }, Consumer { manifest ->
-            if (shownPage != null) {
-                val restored = shownPage!!.copy(); restored.items.removeIf { item -> item.key == "notice:Loading add-on details" }
-                showPartial(restored)
-            }
-            if (manifest.configurationRequired) {
-                val review = Route("Add-on review"); review.value = normalized; push(review); return@Consumer
-            }
-            val supplies = StoreScreens.supplies(manifest)
-            val torrents = manifest.p2p || tv.stream.app.addon.TorrentAddons.find(normalized) != null
-            val details = ((if (manifest.description.isEmpty()) "" else manifest.description + "\n\n") + supplies
-                    + (if (torrents) "\nTorrent sources play directly on this TV and share data with peers." else "")
-                    + "\n\n" + manifest.catalogs.size + " catalogues. The provider receives your searches and the titles you open.")
-            showGlassConfirmation("Install " + manifest.name + "?", details, "Install", Runnable { then(Callable {
-                        services!!.addons.install(normalized, manifest); null
-                    }, Runnable { Sounds.play(Sounds.Sound.INSTALLED); rememberFocus(); render() }) }, Runnable { if (mine == generation) render() })
-        })
-    }
-    override fun importAddress() {
-        edit("Import torrent", "Paste a magnet link or a torrent URL.", "magnet:?xt=… or https://…torrent", "", Consumer { address ->
-                edit("Name this import", NAME_HINT, "Title", "Imported torrent", Consumer { name -> mutate(Callable { services!!.imports.addAddress(name, address) }) }) })
-    }
+    override fun installStarters(addons: List<String>) = addonFlows.installStarters(addons)
+    override fun addAddon() = addonFlows.addAddon()
+    override fun previewAddon(address: String) = addonFlows.previewAddon(address)
+    override fun importAddress() = addonFlows.importAddress()
     @Suppress("DEPRECATION")
     override fun importFile() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE)
@@ -1050,24 +1002,27 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
             alert("Open a torrent file", "No file picker on this TV. Share a .torrent to " + getString(R.string.app_name) + " from a file manager, or add a magnet link.")
         }
     }
-    private fun importFile(uri: Uri) {
-        edit("Name this import", NAME_HINT, "Title", "Imported torrent", Consumer { name -> then(Callable { services!!.imports.addFile(name, uri, scope!!) }, Runnable {
-            if (!stack.isEmpty() && route().screen == "Imports") render() else openImports()
-        }) })
-    }
-    override fun notices() {
-        val files = arrayOf("androidx.txt", "streaming-engine.txt", "geist.txt", "geist-icons.txt", "zxing.txt", "material-icons.txt", "noto-sans.txt", "atkinson-hyperlegible.txt")
-        choose("Open source notices", arrayOf("AndroidX / Media3", "Streaming engine (Rust crates)", "Geist Sans", "Geist UI icons", "ZXing", "Material Icons", "Noto Sans", "Atkinson Hyperlegible Next"), Consumer { which -> work(Callable {
-            assets.open("notices/" + files[which]).use { input -> java.io.ByteArrayOutputStream().use { bytes ->
-                val buffer = ByteArray(8192)
-                var count: Int
-                while (input.read(buffer).also { count = it } != -1) bytes.write(buffer, 0, count)
-                bytes.toString("UTF-8")
-            } }
-        }, Consumer { text ->
-            showGlassMessage("Open source notices", text, true, Runnable { render() })
-        }) })
-    }
+    private fun importFile(uri: Uri) = addonFlows.importFile(uri)
+    override fun notices() = addonFlows.notices()
+
+    /** The add-on and import journeys, run against this screen. */
+    private val addonFlows = AddonFlows(object : AddonFlows.Host {
+        override val services: TvApplication.Services get() = this@MainActivity.services!!
+        override val generation: Int get() = this@MainActivity.generation
+        override val scope: tv.stream.app.addon.Cancellation? get() = this@MainActivity.scope
+        override val navigator: Navigator get() = this@MainActivity
+        override fun <T> work(task: Callable<T>, done: Consumer<T>) = this@MainActivity.work(task, done)
+        override fun shownPage(): Page? = this@MainActivity.shownPage
+        override fun showPartial(page: Page) = this@MainActivity.showPartial(page)
+        override fun confirm(title: String, message: CharSequence, action: String, accept: Runnable, cancel: Runnable?) =
+            showGlassConfirmation(title, message, action, accept, cancel)
+        override fun message(title: String, message: CharSequence, scroll: Boolean, close: Runnable?) =
+            showGlassMessage(title, message, scroll, close)
+        override fun render() = this@MainActivity.render()
+        override fun rememberFocus() = this@MainActivity.rememberFocus()
+        override fun readAsset(path: String): String = assets.open(path).use { it.readBytes().toString(Charsets.UTF_8) }
+        override fun isShowing(screen: String): Boolean = !stack.isEmpty() && route().screen == screen
+    })
 
     // Incoming .torrent files.
     override fun onNewIntent(intent: Intent) {
