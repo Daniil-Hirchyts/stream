@@ -149,6 +149,8 @@ run_data_tests() {
   device install -r -t "$ANDROID_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" || return 1
   # Profile capture starts from an empty ART profile (see baseline_profile).
   [ -z "${PROFILE_RESET:-}" ] || device shell cmd package compile --reset tv.stream.app >/dev/null || return 1
+  # COMPILE_SPEED=1 compiles the (debuggable) app ahead of time first, so measurements don't time ART's JIT warm-up.
+  [ -z "${COMPILE_SPEED:-}" ] || device shell cmd package compile -m speed -f tv.stream.app >/dev/null || return 1
   instrument tv.stream.app.test -e class "$test_classes" \
     -e fixtures "$FIXTURE_URL" -e seeder "127.0.0.1:$SEEDER_PORT" -e badCertificate https://127.0.0.1:58135/manifest.json "$@"
   status=$?
@@ -161,6 +163,7 @@ run_data_tests() {
   } ;; esac
   case "$test_classes" in *SoftwarePlaybackPerformanceTest*) [ "$status" -ne 0 ] || {
     device exec-out run-as tv.stream.app cat files/validation-software-performance.json >"$SIM_DIR/.cache/evidence/software-performance.json" || status=1
+    device exec-out run-as tv.stream.app cat files/validation-software-performance-10bit.json >"$SIM_DIR/.cache/evidence/software-performance-10bit.json" || status=1
   } ;; esac
   clear_test_mode
   return "$status"

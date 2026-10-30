@@ -182,7 +182,7 @@ Home shelf transitions and movement back through a scrolled shelf before enterin
 ./simulator.sh soak             # thirty real minutes of playback and seeks
 ./simulator.sh profile          # dumpsys memory/graphics and a screenshot
 ./simulator.sh data-test tv.stream.app.NavigationPerformanceTest  # isolated navigation timings and frame metrics
-./simulator.sh software-profile  # one minute of generated 1080p software video and memory samples
+./simulator.sh software-profile  # a minute each of generated 1080p 8-bit and 10-bit software video
 ```
 
 The navigation performance test records ten Home → Details → Home journeys,
@@ -208,9 +208,16 @@ run each, measured alone): Settings category moves median 55 → 54 ms, p95 281 
 Details median 49 → 57 ms (max 64 → 60), frame p95 41 → 47 ms, final PSS 126 →
 124 MiB. Single debug runs on a shared host are within run-to-run noise; they show
 no large regression, not a speed-up, and say nothing about release builds or TVs.
+`COMPILE_SPEED=1` compiles the debuggable app ahead of time before a data test.
+With it, the same journeys measured Settings median 67 ms, p95 389 ms, frame p95
+163 ms over 113 frames, final PSS 95 MiB, and Home → Details median 57.5 ms (max
+72), frame p95 50 ms, PSS 86 MiB: no faster than JIT, with every frame still over
+16.7 ms, so this emulator's latency is not explained by JIT warm-up and gives no
+evidence for a Compose change. A non-debuggable build would lose `run-as`, which
+the evidence copies and test-store cleanup rely on, so none is measured here.
 The software profile forces FFmpeg video on a looped generated 1080p H.264
 fixture and samples process CPU, PSS, playback and dropped-frame telemetry every
-five seconds for a minute. Its local evidence is `software-performance.json`;
+five seconds for a minute. Its local evidence is `software-performance.json` and `software-performance-10bit.json`;
 process CPU includes the whole app and instrumentation, not only conversion.
 
 `StartupTimingTest` targets, on fixtures: Details controls p95 ≤ 500 ms, HTTP

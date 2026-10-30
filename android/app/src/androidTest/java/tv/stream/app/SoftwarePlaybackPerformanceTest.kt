@@ -19,11 +19,17 @@ import tv.stream.playback.PlaybackRequest
 /** Repeated local 1080p software playback, sampled over a real minute; run alone on the verified emulator. */
 @RunWith(AndroidJUnit4::class)
 class SoftwarePlaybackPerformanceTest : AppHarness() {
-    @Test fun software1080pMemoryAndCpu() {
+    @Test fun software1080pMemoryAndCpu() = profile("sdr-1080.mkv", "generated 1080p H.264, 24 fps", "validation-software-performance.json")
+
+    /** 10-bit 4:2:0 takes libswscale's general converter rather than its NEON path. */
+    @Test fun software1080p10BitMemoryAndCpu() =
+        profile("hdr10-1080.mkv", "generated 1080p HEVC Main 10, 24 fps", "validation-software-performance-10bit.json")
+
+    private fun profile(fixture: String, label: String, output: String) {
         playFilm()
         val session = AppFlowTest.session(watch())
         instrumentation.runOnMainSync {
-            session.load(PlaybackRequest.Builder(Uri.parse("$origin/media/codecs/sdr-1080.mkv"), "software-profile").build())
+            session.load(PlaybackRequest.Builder(Uri.parse("$origin/media/codecs/$fixture"), "software-profile").build())
             val decoders = field(session, "decoders")
             (field(decoders, "manager") as DecoderManager).selectVideoDecoder(DecoderMode.FFMPEG)
             session.player().repeatMode = Player.REPEAT_MODE_ONE
@@ -51,9 +57,9 @@ class SoftwarePlaybackPerformanceTest : AppHarness() {
                 .put("droppedFrames", diagnostic.optInt("droppedFrames")))
         }
         val report = JSONObject().put("model", android.os.Build.MODEL).put("api", android.os.Build.VERSION.SDK_INT)
-            .put("abi", android.os.Build.SUPPORTED_ABIS[0]).put("fixture", "generated 1080p H.264, 24 fps")
+            .put("abi", android.os.Build.SUPPORTED_ABIS[0]).put("fixture", label)
             .put("videoDecoder", diagnostics().optString("videoDecoder")).put("samples", samples)
-        File(context.filesDir, "validation-software-performance.json").writeText(report.toString(2))
+        File(context.filesDir, output).writeText(report.toString(2))
     }
 
     private fun field(owner: Any, name: String): Any = owner.javaClass.getDeclaredField(name).let {

@@ -113,8 +113,13 @@ are not applied. Converting to 8-bit 4:2:0 first and then using the NEON path
 took 1.4 ms, but adds dithering and loses precision, which changes the picture.
 Four swscale slice threads took 1.2–1.4 ms, but would compete with FFmpeg's
 decoder threads. TV CPUs are slower; neither result is a device measurement.
-`SoftwarePlaybackPerformanceTest` (`./simulator.sh software-profile`) covers
-only 8-bit H.264.
+`SoftwarePlaybackPerformanceTest` (`./simulator.sh software-profile`) plays a
+generated 1080p H.264 (8-bit) and a 1080p HEVC Main 10 file through FFmpeg for a
+minute each. On the arm64 emulator (30 October 2026) the whole process used about
+28% and 39% of one core, with no dropped frames or rebuffering and 201–214 vs
+228–246 MiB PSS. That includes decoding, so the 10-bit conversion is not shown to
+limit playback there, and the conversion stays as it is; a slower TV CPU may
+differ and has not been measured.
 
 ## Third-party notices
 

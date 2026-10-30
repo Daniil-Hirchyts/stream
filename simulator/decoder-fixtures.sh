@@ -67,4 +67,10 @@ if [ ! -s "$media/sdr-1080.mkv" ]; then
     -c:v libx264 -preset veryfast -crf 24 -g 24 -bf 3 -pix_fmt yuv420p -c:a aac -b:a 128k "$media/sdr-1080.tmp.mkv"
   mv "$media/sdr-1080.tmp.mkv" "$media/sdr-1080.mkv"
 fi
+# The software profile's 10-bit case: Main 10 HEVC goes through libswscale's general (non-NEON) converter.
+if [ ! -s "$media/hdr10-1080.mkv" ]; then
+  ff -f lavfi -i 'testsrc2=size=1920x1080:rate=24:duration=14' -f lavfi -i 'sine=frequency=660:sample_rate=48000:duration=14' \
+    -c:v libx265 -preset ultrafast -crf 26 -x265-params log-level=error:keyint=24 -pix_fmt yuv420p10le -c:a aac -b:a 128k "$media/hdr10-1080.tmp.mkv"
+  mv "$media/hdr10-1080.tmp.mkv" "$media/hdr10-1080.mkv"
+fi
 printf 'Decoder samples ready in %s\n' "$media"
