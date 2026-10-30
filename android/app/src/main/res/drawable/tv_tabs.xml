@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- The tab bar's material: tint over the live blur (Android 12+) or on its own. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@color/tv_material_thin" />
-    <corners android:radius="@dimen/tv_radius_capsule" />
-</shape>

@@ -625,6 +625,9 @@ retains route scroll and focus. Each block's composables own its layout:
   (`TitleBlocks`); the Home spotlight, shelves, grids and the episode browser with
   its seasons (`TileBlocks`); skeletons and loading (`SkeletonBlocks`). Shelves
   and Search results keep their scroll per key in the route's memory.
+  Up and Down move between blocks in page order: on a title without a source
+  add-on, Down from the actions reaches the notice's Get add-ons button before
+  the seasons.
 - **Search** (`SearchBlocks`): keyboard, query, results grid and the reflow
   between the split and full grid. Provider answers replace values in the live
   composition; the keyboard page and the last result survive Back.

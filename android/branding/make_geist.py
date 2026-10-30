@@ -59,13 +59,11 @@ ICONS = {
     'ic_tv_search': 'search', 'ic_tv_settings': 'settings', 'ic_tv_unwatched': 'eye-off',
     'ic_play': 'play-fill', 'ic_pause': 'pause-fill', 'ic_forward': 'fast-forward',
     'ic_rewind': 'rewind', 'ic_chevron_left': 'chevron-left', 'ic_chevron_right': 'chevron-right',
-    'ic_check': 'check', 'ic_menu': 'menu', 'ic_alert': 'alert-triangle',
+    'ic_check': 'check', 'ic_alert': 'alert-triangle',
 }
 
 # These concepts are absent upstream. Original drawings share its 24-unit grid and round 1.5 stroke.
 SUPPLEMENTS = {
-    'ic_tv_keyboard': '<rect x="2" y="5" width="20" height="14" rx="2"/>'
-        '<path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/>',
     'ic_tv_subtitles': '<rect x="2" y="5" width="20" height="14" rx="2"/>'
         '<path d="M6 11h4M14 11h4M6 15h7M16 15h2"/>',
 }
