@@ -24,17 +24,19 @@ class PlaybackPreparation(private val addons: AddonRepository) : AutoCloseable {
             false
         }
         if (current != null && current!!.matches(title, video, addons.configuration(), now)) return current!!
-        val cached: Title? = if (current != null && current!!.metadataReady && current!!.configuration == addons.configuration()
+        val forceFresh = revalidate.remove(title.key())
+        val cached: Title? = if (!forceFresh && current != null && current!!.metadataReady && current!!.configuration == addons.configuration()
                 && current!!.titleKey.equals(title.key()) && now - current!!.created < 60_000) current!!.title else null
         discard()
         val entry = Entry(title, video, addons.configuration(), now, addons.newRequest(), addons.newRequest())
         current = entry
         if (cached != null) { entry.title = cached; entry.metadataReady = true; entry.metadataScope.close() }
-        else entry.metadataTask = workers.submit(Runnable {
+        val maxAge = if (forceFresh) 0L else AddonRepository.METADATA_FRESH_MS
+        if (cached == null) entry.metadataTask = workers.submit(Runnable {
             try {
                 addons.metadata(title.provider, title.type, title.id, entry.metadataScope, Consumer { result ->
                     result.items.firstOrNull()?.let { entry.publishMetadata(it.withProvider(title.provider)) }
-                })
+                }, maxAge)
             } catch (ignored: AddonException) { /* cached details remain useful */ }
             finally { entry.finishMetadata(); entry.metadataScope.close() }
         })
@@ -68,7 +70,11 @@ class PlaybackPreparation(private val addons: AddonRepository) : AutoCloseable {
     private fun promote(entry: Entry) {
         entry.metadataScope.priority(0); addons.prioritize(entry.scope)
     }
+    /** Titles whose next details load must ask providers again (Refresh details). */
+    private val revalidate = HashSet<String>()
+
     @Synchronized fun invalidate(title: Title, video: String?) {
+        if (video == null) revalidate.add(title.key())
         if (current != null && current!!.titleKey.equals(title.key()) && (video == null || current!!.video.equals(video))) discard()
     }
     @Synchronized fun leave() { discard() }

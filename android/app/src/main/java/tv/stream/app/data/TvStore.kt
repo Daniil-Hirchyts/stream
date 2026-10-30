@@ -297,6 +297,17 @@ class TvStore(context: Context, database: String?) : SQLiteOpenHelper(context.ap
             throw unreadable
         }
     }
+    /** Cached metadata no older than [maxAgeMs], by when it was saved; null when missing, older or unreadable. */
+    fun cachedWithin(requestKey: String, maxAgeMs: Long): String? {
+        if (maxAgeMs <= 0) return null
+        val key = hash(requestKey)
+        val updated = readableDatabase.query("metadata_cache", arrayOf("updated"), "id=?", arrayOf(key), null, null, null).use { c ->
+            if (c.moveToFirst()) c.getLong(0) else return null
+        }
+        val age = System.currentTimeMillis() - updated
+        if (age < 0 || age > maxAgeMs) return null
+        return cached(requestKey)
+    }
     @Synchronized
     fun clearMetadata() { writableDatabase.delete("metadata_cache", null, null) }
 

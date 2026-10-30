@@ -192,7 +192,7 @@ object NewEpisodes {
                 val checked: MutableList<String> = ArrayList()
                 for (entry in due.subList(0, Math.min(CHECKS_PER_RUN, due.size))) {
                     val saved = entry.title
-                    val found: AddonRepository.Result<Title> = try { addons.metadata(saved.provider, saved.type, saved.id, scope) }
+                    val found: AddonRepository.Result<Title> = try { addons.metadata(saved.provider, saved.type, saved.id, scope, 0L) }
                     catch (cancelled: AddonException) { break }
                     // A saved copy offered while the provider is unavailable is no news: ask again next time.
                     if (found.items.isEmpty() || found.stale) continue

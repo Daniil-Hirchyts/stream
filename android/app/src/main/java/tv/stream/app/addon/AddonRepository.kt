@@ -55,6 +55,9 @@ class AddonRepository : AutoCloseable {
         val saved: Long = SystemClock.elapsedRealtime()
     }
     private val catalogPages: MutableMap<String, CachedCatalog> = LinkedHashMap(16, .75f, true)
+    /** Details served from a fresh saved copy, and details asked of a provider, for measurements and tests. */
+    val freshHits = java.util.concurrent.atomic.AtomicInteger()
+    val metadataRequests = java.util.concurrent.atomic.AtomicInteger()
     fun configuration(): Long { return configuration }
     fun prioritize(wanted: Cancellation) {
         wanted.priority(0)
@@ -265,11 +268,17 @@ class AddonRepository : AutoCloseable {
         } catch (e: JSONException) { return Part(key, Collections.emptyList(), AddonException.Kind.MALFORMED, false) }
     }
     @Throws(AddonException::class)
-    fun metadata(provider: String, type: String, id: String, scope: Cancellation): Result<Title> {
-        return metadata(provider, type, id, scope, java.util.function.Consumer { })
+    fun metadata(provider: String, type: String, id: String, scope: Cancellation, maxAgeMs: Long = METADATA_FRESH_MS): Result<Title> {
+        return metadata(provider, type, id, scope, java.util.function.Consumer { }, maxAgeMs)
     }
+    /**
+     * A title's details. Freshness rule: a provider's saved response younger than [maxAgeMs] is used without asking it
+     * again; older ones are revalidated, and kept as a stale fallback when the provider fails. Pass 0 to always ask
+     * (Refresh details, new-episode checks). Saved responses never hold playable addresses.
+     */
     @Throws(AddonException::class)
-    fun metadata(provider: String, type: String, id: String, scope: Cancellation, progress: java.util.function.Consumer<Result<Title>>): Result<Title> {
+    fun metadata(provider: String, type: String, id: String, scope: Cancellation, progress: java.util.function.Consumer<Result<Title>>,
+                 maxAgeMs: Long = METADATA_FRESH_MS): Result<Title> {
         val deadline = AddonClient.deadline()
         val tasks: MutableList<Callable<Part<Title>>> = ArrayList(); val keys: MutableList<String> = ArrayList()
         // Origin first; other matching providers may enrich common identifiers.
@@ -280,7 +289,16 @@ class AddonRepository : AutoCloseable {
             tasks.add(object : Callable<Part<Title>> {
                 override fun call(): Part<Title> {
                     val address = a.address.resource("meta", type, id, Collections.emptyMap())
+                    val fresh = try { store.cachedWithin(address, maxAgeMs) } catch (ignored: Exception) { null }
+                    if (fresh != null) try {
+                        val cached = Title.parse(a.id, JSONObject(fresh))
+                        if (cached != null && cached.id == id && cached.type == type) {
+                            freshHits.incrementAndGet()
+                            return Part(a.id, Collections.singletonList(cached), null, false)
+                        }
+                    } catch (ignored: JSONException) { /* asked again below */ }
                     try {
+                        metadataRequests.incrementAndGet()
                         val t = Title.parse(a.id, client.json(address, scope, deadline).optJSONObject("meta"))
                         if (t == null || t.id != id || t.type != type) throw AddonException(AddonException.Kind.MALFORMED, "Invalid title metadata")
                         synchronized(this@AddonRepository) { scope.check(); store.cache(address, t.cacheJson()) }
@@ -452,6 +470,8 @@ class AddonRepository : AutoCloseable {
         const val DIRECTORY = AddonUrl.CINEMETA
         private val DIRECTORY_LISTS = arrayOf(arrayOf("official", "Official"), arrayOf("community", "Community"))
         private const val CATALOG_FRESH_MS = 5 * 60_000L
+        /** Details change rarely (new episodes, artwork); after this a title's saved details are revalidated. */
+        const val METADATA_FRESH_MS = 6 * 60 * 60_000L
         private const val CATALOG_CACHE_PAGES = 12
 
         private fun mergeCatalogParts(parts: MutableMap<Int, Part<Title>>, positions: Map<String, Int>, update: Result<Part<Title>>) {
