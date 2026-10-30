@@ -274,7 +274,9 @@ class AddonRepository : AutoCloseable {
     /**
      * A title's details. Freshness rule: a provider's saved response younger than [maxAgeMs] is used without asking it
      * again; older ones are revalidated, and kept as a stale fallback when the provider fails. Pass 0 to always ask
-     * (Refresh details, new-episode checks). Saved responses never hold playable addresses.
+     * (Refresh details, new-episode checks). Saved responses never hold playable addresses, so one that came with inline
+     * streams is only ever a fallback: reusing it as fresh would lose that title's sources. A fresh copy from any
+     * provider answers without a request to any of them.
      */
     @Throws(AddonException::class)
     fun metadata(provider: String, type: String, id: String, scope: Cancellation, progress: java.util.function.Consumer<Result<Title>>,
@@ -285,23 +287,24 @@ class AddonRepository : AutoCloseable {
         val addons: MutableList<InstalledAddon> = ArrayList(store.addons())
         addons.sortWith(java.util.Comparator.comparingInt { a: InstalledAddon -> if (a.id == provider) 0 else 1 })
         for (a in addons) if (a.enabled && a.manifest.handles("meta", type, id)) {
+            scope.check()
+            val saved = freshTitle(a, type, id, maxAgeMs) ?: continue
+            freshHits.incrementAndGet()
+            val result = snapshot(Collections.singletonMap(0, Part(a.id, Collections.singletonList(saved), null, false)))
+            progress.accept(result)
+            return result
+        }
+        for (a in addons) if (a.enabled && a.manifest.handles("meta", type, id)) {
             keys.add(a.id)
             tasks.add(object : Callable<Part<Title>> {
                 override fun call(): Part<Title> {
                     val address = a.address.resource("meta", type, id, Collections.emptyMap())
-                    val fresh = try { store.cachedWithin(address, maxAgeMs) } catch (ignored: Exception) { null }
-                    if (fresh != null) try {
-                        val cached = Title.parse(a.id, JSONObject(fresh))
-                        if (cached != null && cached.id == id && cached.type == type) {
-                            freshHits.incrementAndGet()
-                            return Part(a.id, Collections.singletonList(cached), null, false)
-                        }
-                    } catch (ignored: JSONException) { /* asked again below */ }
                     try {
                         metadataRequests.incrementAndGet()
                         val t = Title.parse(a.id, client.json(address, scope, deadline).optJSONObject("meta"))
                         if (t == null || t.id != id || t.type != type) throw AddonException(AddonException.Kind.MALFORMED, "Invalid title metadata")
-                        synchronized(this@AddonRepository) { scope.check(); store.cache(address, t.cacheJson()) }
+                        val reusable = t.episodes.all { it.streams.isEmpty() }
+                        synchronized(this@AddonRepository) { scope.check(); store.cache(address, t.cacheJson(), reusable) }
                         return Part(a.id, Collections.singletonList(t), null, false)
                     } catch (e: AddonException) {
                         val saved = if (e.kind == AddonException.Kind.CANCELLED) null else store.cached(address)
@@ -325,6 +328,12 @@ class AddonRepository : AutoCloseable {
             start += 2
         }
         return Result(Collections.emptyList(), failures, false)
+    }
+    private fun freshTitle(a: InstalledAddon, type: String, id: String, maxAgeMs: Long): Title? {
+        try {
+            val fresh = store.cachedWithin(a.address.resource("meta", type, id, Collections.emptyMap()), maxAgeMs) ?: return null
+            return Title.parse(a.id, JSONObject(fresh))?.takeIf { it.id == id && it.type == type }
+        } catch (unusable: Exception) { return null } // Whatever is wrong with the copy, the provider can answer instead.
     }
     /**
      * The add-on store, by list: built-in add-ons, curated torrent scrapers when using the public directory, then each list that installed add-ons publish through

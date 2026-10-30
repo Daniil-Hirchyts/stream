@@ -271,11 +271,17 @@ class TvStore(context: Context, database: String?) : SQLiteOpenHelper(context.ap
     @Synchronized
     fun removeImport(id: String) { writableDatabase.delete("imports", "id=?", arrayOf(id)) }
 
+    /**
+     * @param reusable false when the saved copy isn't the whole answer: it remains a fallback for a failed request, but
+     * [cachedWithin] never counts it as fresh, and it is the first to go when the cache is over its bounds.
+     */
     @Synchronized
-    fun cache(requestKey: String, metadata: String) {
+    fun cache(requestKey: String, metadata: String, reusable: Boolean = true) {
         if (metadata.toByteArray(StandardCharsets.UTF_8).size > (2 shl 20)) return
-        save("metadata_cache", "id", hash(requestKey), metadata)
+        val id = hash(requestKey)
+        save("metadata_cache", "id", id, metadata)
         val db = writableDatabase
+        if (!reusable) db.execSQL("UPDATE metadata_cache SET updated=0 WHERE id=?", arrayOf(id))
         db.execSQL("DELETE FROM metadata_cache WHERE id NOT IN (SELECT id FROM metadata_cache ORDER BY updated DESC LIMIT 256)")
         while (true) {
             val small = db.rawQuery("SELECT COALESCE(SUM(length(data)),0) FROM metadata_cache", null).use { c ->
@@ -304,6 +310,7 @@ class TvStore(context: Context, database: String?) : SQLiteOpenHelper(context.ap
         val updated = readableDatabase.query("metadata_cache", arrayOf("updated"), "id=?", arrayOf(key), null, null, null).use { c ->
             if (c.moveToFirst()) c.getLong(0) else return null
         }
+        if (updated <= 0) return null // A descriptive fallback stripped of inline streams is never a fresh answer.
         val age = System.currentTimeMillis() - updated
         if (age < 0 || age > maxAgeMs) return null
         return cached(requestKey)

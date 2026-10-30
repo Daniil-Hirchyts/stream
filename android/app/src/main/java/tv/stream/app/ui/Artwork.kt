@@ -11,8 +11,6 @@ import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.security.MessageDigest
-import java.util.Arrays
-import java.util.Comparator
 import java.util.function.Consumer
 import tv.stream.app.addon.AddonClient
 import tv.stream.app.addon.Cancellation
@@ -21,9 +19,11 @@ import tv.stream.app.addon.Cancellation
  * Optional, bounded image work: 8 MiB of decoded bitmaps in memory, and the downloaded bytes in a bounded disk cache so
  * scrolling back or reopening a page never downloads artwork again. A failed image never blocks a catalogue or playback.
  *
- * Requests for the same image and size share one download and decode ([SharedRequests]). Rebinding a view cancels only
- * that view's request; the work stops when nothing else waits for it. Downloads are capped at 4 MiB and decodes are
- * subsampled to twice the target size, so neither memory nor time grows with the source image.
+ * Requests for the same image and size share one decode ([SharedRequests]), and every size of an image shares one
+ * download ([SharedWork]). Rebinding a view cancels only that view's request; the work stops when nothing else waits for
+ * it. Downloads are capped at 4 MiB and decodes are subsampled to twice the target size, so neither memory nor time grows
+ * with the source image. Only bytes that read as an image are saved, and a saved file that stops doing so is discarded
+ * and fetched again, so no failure outlives its attempt.
  */
 class Artwork
 /** @param disk this app's private cache directory for downloaded artwork, or null for memory only */
@@ -33,6 +33,7 @@ constructor(private val disk: File?) : AutoCloseable {
     }
     private val main = Handler(Looper.getMainLooper())
     private val requests = SharedRequests<Bitmap>(48, 2) { r -> main.post(r) }
+    private val downloads = SharedWork<ByteArray>()
     private val client = AddonClient()
     private var diskBytes = -1L
     /** Each bound view's outstanding request, cancelled when the view shows something else. */
@@ -43,14 +44,54 @@ constructor(private val disk: File?) : AutoCloseable {
     /** Requests that ran and requests that joined one already running, for measurements. */
     val started: Int get() = requests.started
     val joined: Int get() = requests.joined
+    /** How many images were read from disk or downloaded, however many sizes wanted them. */
+    val downloaded: Int get() = downloads.runs
+    internal val memoryBytes: Int get() = cache.size()
+    internal val boundViews: Int get() = bindings.size
 
     fun load(image: ImageView, url: String?) {
         bindings.remove(image)?.cancel()
         image.setImageDrawable(null); image.tag = url
         if (url == null) return
-        val ticket = fetch(url, THUMBNAIL, false, Consumer { bitmap -> bindings.remove(image); if (url == image.tag) image.setImageBitmap(bitmap) })
+        // The request's callbacks hold the view, so the entry must go when it ends or the weak map keeps the view alive.
+        val ticket = fetch(url, THUMBNAIL, false, SHARP, Consumer { bitmap -> bindings.remove(image); if (url == image.tag) image.setImageBitmap(bitmap) },
+                Runnable { bindings.remove(image) })
         if (ticket != null) bindings[image] = ticket
     }
+
+    /** What a request is for, which fixes its decoded size and format. */
+    enum class Purpose(internal val maxSide: Int, internal val transparent: Boolean, internal val mode: Int) {
+        THUMBNAIL(Artwork.THUMBNAIL, false, SHARP),
+        LOGO(Artwork.LOGO, true, SHARP),
+        BACKDROP(Artwork.BACKDROP, false, SHARP),
+        BLURRED(Artwork.BLURRED, false, BLUR),
+        SOFTENED(Artwork.BLURRED, false, SOFT),
+    }
+
+    /** One caller's interest in an image. After [cancel] neither callback runs; other callers' requests carry on. */
+    class Handle internal constructor() {
+        internal var ticket: SharedRequests<Bitmap>.Ticket? = null
+        @Volatile internal var cancelled = false
+        fun cancel() { cancelled = true; ticket?.cancel() }
+    }
+
+    /**
+     * For bindings without a view, such as a composable's DisposableEffect: call [Handle.cancel] from onDispose. Call on
+     * the main thread, where the callbacks run too: a memory hit calls [done] before this returns, and a null [url] calls
+     * [failed] later. Exactly one of them runs unless cancelled, including by [cancel] when the screen stops, after which
+     * an unfinished image needs requesting again. Bitmaps are shared with the cache: never recycle or mutate them.
+     */
+    fun request(url: String?, purpose: Purpose, done: Consumer<Bitmap>): Handle = request(url, purpose, done, Runnable {})
+    fun request(url: String?, purpose: Purpose, done: Consumer<Bitmap>, failed: Runnable): Handle {
+        val handle = Handle()
+        handle.ticket = fetch(url, purpose.maxSide, purpose.transparent, purpose.mode,
+                Consumer { bitmap -> if (!handle.cancelled) done.accept(bitmap) }, Runnable { if (!handle.cancelled) failed.run() })
+        return handle
+    }
+
+    /** The image if it is already decoded in memory, to draw the first frame without waiting for a callback. */
+    fun peek(url: String?, purpose: Purpose): Bitmap? =
+            if (url == null) null else cache.get(key(url, purpose.maxSide, purpose.transparent, purpose.mode))
 
     /**
      * Decodes {@code url} no larger than {@code maxSide} pixels and calls {@code done} on the main thread.
@@ -91,62 +132,99 @@ constructor(private val disk: File?) : AutoCloseable {
         return fetch(url, maxSide, transparent, mode, done, Runnable {})
     }
     private fun fetch(url: String?, maxSide: Int, transparent: Boolean, mode: Int, done: Consumer<Bitmap>, failed: Runnable): SharedRequests<Bitmap>.Ticket? {
-        if (url == null) { main.post(failed); return null }
-        val key = url + "@" + maxSide + (if (transparent) "@alpha" else "") + (if (mode == BLUR) "@blur" else if (mode == SOFT) "@soft" else "")
+        if (url == null) {
+            val generation = this.generation
+            main.post { if (generation == this.generation) failed.run() }
+            return null
+        }
+        val key = key(url, maxSide, transparent, mode)
         val known = cache.get(key)
         if (known != null) { done.accept(known); return null }
         return requests.request(key, { request -> decode(url, key, maxSide, transparent, mode, request) }, { bitmap -> done.accept(bitmap) }, { failed.run() })
     }
 
+    private fun key(url: String, maxSide: Int, transparent: Boolean, mode: Int): String =
+            url + "@" + maxSide + (if (transparent) "@alpha" else "") + (if (mode == BLUR) "@blur" else if (mode == SOFT) "@soft" else "")
+
     @Throws(Exception::class)
     private fun decode(url: String, key: String, maxSide: Int, transparent: Boolean, mode: Int, request: Cancellation): Bitmap {
-        val bytes = bytes(url, request) ?: throw java.io.IOException("Empty artwork")
+        // An identical request may have finished between the caller's look at the cache and this job starting.
+        cache.get(key)?.let { return it }
+        val bytes = bytes(url, request)
         request.check()
-        val options = BitmapFactory.Options()
-        options.inJustDecodeBounds = true
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-        if (options.outWidth <= 0 || options.outHeight <= 0) throw java.io.IOException("Invalid artwork")
+        val options = bounds(bytes) ?: throw java.io.IOException("Invalid artwork")
         options.inSampleSize = 1
         while (Math.max(options.outWidth, options.outHeight) / options.inSampleSize > maxSide * 2) options.inSampleSize *= 2
         options.inJustDecodeBounds = false
         options.inPreferredConfig = if (transparent || mode != SHARP) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565
-        val decoded: Bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: throw java.io.IOException("Invalid artwork")
+        val decoded: Bitmap? = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        if (decoded == null) { forget(url); throw java.io.IOException("Invalid artwork") }
         request.check()
         var bitmap = fit(decoded, maxSide)
         if (transparent) bitmap = trim(bitmap)
         if (mode != SHARP) bitmap = blur(bitmap, mode == SOFT)
+        // A PNG with an alpha channel can ignore inPreferredConfig even when this purpose is opaque.
+        if (!transparent && mode == SHARP && bitmap.config != Bitmap.Config.RGB_565) {
+            val opaque = bitmap.copy(Bitmap.Config.RGB_565, false) ?: throw java.io.IOException("Invalid artwork")
+            bitmap.recycle(); bitmap = opaque
+        }
         cache.put(key, bitmap)
         return bitmap
     }
 
-    /** The image's bytes from the disk cache, else downloaded and saved there. */
+    /** An image's size, or null when the bytes don't read as an image. */
+    private fun bounds(bytes: ByteArray): BitmapFactory.Options? {
+        val options = BitmapFactory.Options()
+        options.inJustDecodeBounds = true
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        return if (options.outWidth > 0 && options.outHeight > 0) options else null
+    }
+
+    /**
+     * The image's bytes from the disk cache, else downloaded and saved there; one read or download per image at a time,
+     * for every size waiting. Only an image is saved: an error page or damaged file must not fail every later attempt.
+     */
     @Throws(Exception::class)
-    private fun bytes(url: String?, request: Cancellation): ByteArray? {
-        val file = if (disk == null) null else File(disk, name(url!!))
+    private fun bytes(url: String, request: Cancellation): ByteArray = downloads.get(url, request) { shared ->
+        val file = if (disk == null) null else File(disk, name(url))
+        var saved: ByteArray? = null
         if (file != null && file.isFile) {
-            try { val saved = Files.readAllBytes(file.toPath()); file.setLastModified(System.currentTimeMillis()); return saved }
-            catch (damaged: Exception) { file.delete() }
+            saved = try { Files.readAllBytes(file.toPath()) } catch (damaged: Exception) { null }
+            if (saved == null || bounds(saved) == null) { saved = null; forget(file) }
+            else file.setLastModified(System.currentTimeMillis())
         }
-        val bytes = client.fetch(url!!, 4 shl 20, request, AddonClient.deadline())
-        if (file != null && bytes.size > 0) store(file, bytes)
-        return bytes
+        saved ?: client.fetch(url, MAX_DOWNLOAD, shared, AddonClient.deadline()).also { bytes ->
+            if (bounds(bytes) == null) throw java.io.IOException("Invalid artwork")
+            if (file != null) store(file, bytes)
+        }
+    }
+
+    private fun forget(url: String) { if (disk != null) forget(File(disk, name(url))) }
+    @Synchronized private fun forget(file: File) {
+        val size = file.length()
+        if (file.delete() && diskBytes >= 0) diskBytes -= size
     }
 
     @Synchronized private fun store(file: File, bytes: ByteArray) {
+        val disk = disk!!
+        val partial = File(disk, file.name + ".part")
         try {
-            val disk = disk!!
             if (!disk.isDirectory && !disk.mkdirs()) return
-            val partial = File(disk, file.name + ".part")
             FileOutputStream(partial).use { out -> out.write(bytes) }
-            if (!partial.renameTo(file)) { partial.delete(); return }
+            val replaced = file.length()
+            if (!partial.renameTo(file)) return
             if (diskBytes < 0) { diskBytes = 0; val all = disk.listFiles(); if (all != null) for (f in all) diskBytes += f.length() }
-            else diskBytes += bytes.size.toLong()
+            else diskBytes += bytes.size.toLong() - replaced
             if (diskBytes <= DISK_LIMIT) return
-            // Least recently shown first, down to the trim size.
+            // Least recently shown first, down to the trim size. Times are read once: readers touch them during the sort.
             val all = disk.listFiles() ?: return
-            Arrays.sort(all, Comparator.comparingLong<File> { it.lastModified() })
-            for (old in all) { if (diskBytes <= DISK_TRIM) break; val size = old.length(); if (old.delete()) diskBytes -= size }
+            for (old in all.map { it to it.lastModified() }.sortedBy { it.second }.map { it.first }) {
+                if (diskBytes <= DISK_TRIM) break
+                val size = old.length()
+                if (old.delete()) diskBytes -= size
+            }
         } catch (ignored: Exception) { /* the cache is optional */ }
+        finally { partial.delete() }
     }
 
     fun cancel() { generation++; bindings.clear(); requests.cancelAll() }
@@ -161,6 +239,7 @@ constructor(private val disk: File?) : AutoCloseable {
         const val BACKDROP = 1280
         /** Blurred backdrops are rendered tiny and scaled up: the scaling itself is most of the blur. */
         private const val BLURRED = 96
+        private const val MAX_DOWNLOAD = 4 shl 20
         private const val DISK_LIMIT = 40L shl 20
         private const val DISK_TRIM = 30L shl 20
 

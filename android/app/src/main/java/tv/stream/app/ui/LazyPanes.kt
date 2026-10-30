@@ -36,4 +36,5 @@ class LazyPanes(
     // Two lazy maps are the same content when their signatures are.
     override fun equals(other: Any?): Boolean = other is LazyPanes && other.keys == keys && other.signature == signature
     override fun hashCode(): Int = signature.hashCode()
+    override fun toString(): String = "LazyPanes(${keys.size})" // The inherited one would build every pane.
 }
