@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <item name="page_binding" type="id" />
     <item type="id" name="popup_navigation" />
     <item type="id" name="popup_anchor" />
-    <!-- The query text in Search's keyboard field. -->
-    <item type="id" name="search_query" />
 </resources>

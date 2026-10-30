@@ -1072,8 +1072,6 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         if (!adapter.leadingEdge(focused?.tag as? String ?: "")) return false
         var child: View? = focused
         while (child != null && child !== list) {
-            if (child.parent is PageAdapter.GridRow
-                    && (child.parent as PageAdapter.GridRow).indexOfChild(child) > 0) return false
             if (child.parent is RecyclerView) {
                 val row = child.parent as RecyclerView
                 val layout = row.layoutManager
