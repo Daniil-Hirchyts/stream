@@ -13,9 +13,6 @@ import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.Arrays
 import java.util.Comparator
-import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.ThreadPoolExecutor
-import java.util.concurrent.TimeUnit
 import java.util.function.Consumer
 import tv.stream.app.addon.AddonClient
 import tv.stream.app.addon.Cancellation
@@ -23,6 +20,10 @@ import tv.stream.app.addon.Cancellation
 /**
  * Optional, bounded image work: 8 MiB of decoded bitmaps in memory, and the downloaded bytes in a bounded disk cache so
  * scrolling back or reopening a page never downloads artwork again. A failed image never blocks a catalogue or playback.
+ *
+ * Requests for the same image and size share one download and decode ([SharedRequests]). Rebinding a view cancels only
+ * that view's request; the work stops when nothing else waits for it. Downloads are capped at 4 MiB and decodes are
+ * subsampled to twice the target size, so neither memory nor time grows with the source image.
  */
 class Artwork
 /** @param disk this app's private cache directory for downloaded artwork, or null for memory only */
@@ -30,33 +31,41 @@ constructor(private val disk: File?) : AutoCloseable {
     private val cache = object : LruCache<String, Bitmap>(8 shl 20) {
         override fun sizeOf(key: String, value: Bitmap): Int { return value.allocationByteCount }
     }
-    private val workers = ThreadPoolExecutor(2, 2, 0, TimeUnit.MILLISECONDS,
-            ArrayBlockingQueue<Runnable>(32), ThreadPoolExecutor.DiscardOldestPolicy())
+    private val main = Handler(Looper.getMainLooper())
+    private val requests = SharedRequests<Bitmap>(48, 2) { r -> main.post(r) }
     private val client = AddonClient()
     private var diskBytes = -1L
-    private var cancellation = Cancellation()
-    private val main = Handler(Looper.getMainLooper())
+    /** Each bound view's outstanding request, cancelled when the view shows something else. */
+    private val bindings = java.util.WeakHashMap<ImageView, SharedRequests<Bitmap>.Ticket>()
 
     constructor() : this(null)
 
+    /** Requests that ran and requests that joined one already running, for measurements. */
+    val started: Int get() = requests.started
+    val joined: Int get() = requests.joined
+
     fun load(image: ImageView, url: String?) {
+        bindings.remove(image)?.cancel()
         image.setImageDrawable(null); image.tag = url
         if (url == null) return
-        fetch(url, THUMBNAIL, false, Consumer { bitmap -> if (url == image.tag) image.setImageBitmap(bitmap) })
+        val ticket = fetch(url, THUMBNAIL, false, Consumer { bitmap -> bindings.remove(image); if (url == image.tag) image.setImageBitmap(bitmap) })
+        if (ticket != null) bindings[image] = ticket
     }
 
     /**
      * Decodes {@code url} no larger than {@code maxSide} pixels and calls {@code done} on the main thread.
      * Opaque artwork uses RGB_565; logos keep their transparency and lose transparent margins, so they align with text.
      */
-    fun fetch(url: String?, maxSide: Int, transparent: Boolean, done: Consumer<Bitmap>) { fetch(url, maxSide, transparent, SHARP, done) }
+    fun fetch(url: String?, maxSide: Int, transparent: Boolean, done: Consumer<Bitmap>): SharedRequests<Bitmap>.Ticket? {
+        return fetch(url, maxSide, transparent, SHARP, done)
+    }
 
     /** Resolve a title once before revealing it; a slow/failed logo keeps the text fallback for this binding. */
     fun titleLogo(url: String?, done: Consumer<Bitmap>, failed: Runnable) {
-        val request = cancellation
+        val generation = this.generation
         val settled = booleanArrayOf(false) // All completions run on the main thread, including memory-cache hits.
         val timeout = Runnable {
-            if (settled[0] || request.isCancelled()) return@Runnable
+            if (settled[0] || generation != this.generation) return@Runnable
             settled[0] = true; failed.run()
         }
         main.postDelayed(timeout, 2000)
@@ -75,38 +84,39 @@ constructor(private val disk: File?) : AutoCloseable {
      */
     fun softened(url: String?, done: Consumer<Bitmap>) { fetch(url, BLURRED, false, SOFT, done) }
 
-    private fun fetch(url: String?, maxSide: Int, transparent: Boolean, mode: Int, done: Consumer<Bitmap>) {
-        fetch(url, maxSide, transparent, mode, done, Runnable {})
+    /** Bumped by [cancel]: timeouts of an earlier screen do nothing. */
+    private var generation = 0
+
+    private fun fetch(url: String?, maxSide: Int, transparent: Boolean, mode: Int, done: Consumer<Bitmap>): SharedRequests<Bitmap>.Ticket? {
+        return fetch(url, maxSide, transparent, mode, done, Runnable {})
     }
-    private fun fetch(url: String?, maxSide: Int, transparent: Boolean, mode: Int, done: Consumer<Bitmap>, failed: Runnable) {
-        val key = url + "@" + maxSide + (if (mode == BLUR) "@blur" else if (mode == SOFT) "@soft" else "")
+    private fun fetch(url: String?, maxSide: Int, transparent: Boolean, mode: Int, done: Consumer<Bitmap>, failed: Runnable): SharedRequests<Bitmap>.Ticket? {
+        if (url == null) { main.post(failed); return null }
+        val key = url + "@" + maxSide + (if (transparent) "@alpha" else "") + (if (mode == BLUR) "@blur" else if (mode == SOFT) "@soft" else "")
         val known = cache.get(key)
-        if (known != null) { done.accept(known); return }
-        val request = cancellation
-        workers.execute {
-            try {
-                val bytes = bytes(url, request)
-                if (request.isCancelled()) return@execute
-                if (bytes == null) throw java.io.IOException("Empty artwork")
-                val options = BitmapFactory.Options()
-                options.inJustDecodeBounds = true
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-                if (options.outWidth <= 0 || options.outHeight <= 0) throw java.io.IOException("Invalid artwork")
-                options.inSampleSize = 1
-                while (Math.max(options.outWidth, options.outHeight) / options.inSampleSize > maxSide * 2) options.inSampleSize *= 2
-                options.inJustDecodeBounds = false
-                options.inPreferredConfig = if (transparent || mode != SHARP) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565
-                val decoded: Bitmap? = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-                if (request.isCancelled()) return@execute
-                if (decoded == null) throw java.io.IOException("Invalid artwork")
-                var bitmap = fit(decoded, maxSide)
-                if (transparent) bitmap = trim(bitmap)
-                if (mode != SHARP) bitmap = blur(bitmap, mode == SOFT)
-                val ready = bitmap
-                cache.put(key, ready)
-                main.post { if (!request.isCancelled()) done.accept(ready) }
-            } catch (ignored: Exception) { main.post { if (!request.isCancelled()) failed.run() } }
-        }
+        if (known != null) { done.accept(known); return null }
+        return requests.request(key, { request -> decode(url, key, maxSide, transparent, mode, request) }, { bitmap -> done.accept(bitmap) }, { failed.run() })
+    }
+
+    @Throws(Exception::class)
+    private fun decode(url: String, key: String, maxSide: Int, transparent: Boolean, mode: Int, request: Cancellation): Bitmap {
+        val bytes = bytes(url, request) ?: throw java.io.IOException("Empty artwork")
+        request.check()
+        val options = BitmapFactory.Options()
+        options.inJustDecodeBounds = true
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        if (options.outWidth <= 0 || options.outHeight <= 0) throw java.io.IOException("Invalid artwork")
+        options.inSampleSize = 1
+        while (Math.max(options.outWidth, options.outHeight) / options.inSampleSize > maxSide * 2) options.inSampleSize *= 2
+        options.inJustDecodeBounds = false
+        options.inPreferredConfig = if (transparent || mode != SHARP) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565
+        val decoded: Bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: throw java.io.IOException("Invalid artwork")
+        request.check()
+        var bitmap = fit(decoded, maxSide)
+        if (transparent) bitmap = trim(bitmap)
+        if (mode != SHARP) bitmap = blur(bitmap, mode == SOFT)
+        cache.put(key, bitmap)
+        return bitmap
     }
 
     /** The image's bytes from the disk cache, else downloaded and saved there. */
@@ -139,8 +149,8 @@ constructor(private val disk: File?) : AutoCloseable {
         } catch (ignored: Exception) { /* the cache is optional */ }
     }
 
-    fun cancel() { cancellation.close(); workers.queue.clear(); cancellation = Cancellation() }
-    override fun close() { cancellation.close(); workers.shutdownNow(); client.close(); cache.evictAll(); main.removeCallbacksAndMessages(null) }
+    fun cancel() { generation++; bindings.clear(); requests.cancelAll() }
+    override fun close() { generation++; bindings.clear(); requests.close(); client.close(); cache.evictAll(); main.removeCallbacksAndMessages(null) }
 
     companion object {
         /** Posters and thumbnails, decoded near their on-screen size. */
