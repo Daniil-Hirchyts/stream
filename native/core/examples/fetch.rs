@@ -2,6 +2,8 @@
 //! against other BitTorrent implementations on loopback.
 //!
 //!   cargo run --example fetch -- <file.torrent | magnet> <peer> [file-index]
+//!
+//! STREAM_TCP=0 connects over uTP only; STREAM_ENCRYPTION=forced|disabled sets MSE (default: tried first).
 
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
@@ -27,6 +29,12 @@ fn main() {
         pex: false,
         multiple_connections_per_ip: true,
         log: Some(std::sync::Arc::new(|l: &str| eprintln!("log: {l}"))),
+        tcp: std::env::var("STREAM_TCP").map_or(true, |v| v != "0"),
+        encryption: match std::env::var("STREAM_ENCRYPTION").as_deref() {
+            Ok("forced") => stream_core::bt::mse::Policy::Forced,
+            Ok("disabled") => stream_core::bt::mse::Policy::Disabled,
+            _ => stream_core::bt::mse::Policy::Enabled,
+        },
         ..Config::default()
     };
     let engine = Engine::new(config).expect("engine");

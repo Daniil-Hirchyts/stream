@@ -77,6 +77,12 @@ pub struct Config {
     pub upnp: bool,
     pub natpmp: bool,
     pub pex: bool,
+    /// uTP for incoming peers and when TCP can't connect.
+    pub utp: bool,
+    /// TCP for peers; off only to test uTP alone.
+    pub tcp: bool,
+    /// Message stream encryption: tried first on outgoing connections and accepted on incoming ones by default.
+    pub encryption: crate::bt::mse::Policy,
     /// Optional live-test networking: disable LAN discovery and reject non-public peer/tracker/DHT addresses.
     pub public_network_only: bool,
     /// Tests run several local peers on one address.
@@ -107,6 +113,9 @@ impl Default for Config {
             upnp: false,
             natpmp: false,
             pex: true,
+            utp: true,
+            tcp: true,
+            encryption: crate::bt::mse::Policy::Enabled,
             public_network_only: false,
             multiple_connections_per_ip: false,
             ca_file: String::new(),

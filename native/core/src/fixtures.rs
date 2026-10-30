@@ -95,11 +95,21 @@ pub struct SeederOptions {
     pub upload_rate: u64,
     /// Check each piece before serving it; off, corrupted content is served as it is.
     pub verify: bool,
+    pub tcp: bool,
+    pub utp: bool,
+    pub encryption: crate::bt::mse::Policy,
 }
 
 impl Default for SeederOptions {
     fn default() -> Self {
-        SeederOptions { listen: "127.0.0.1:0".into(), upload_rate: 0, verify: true }
+        SeederOptions {
+            listen: "127.0.0.1:0".into(),
+            upload_rate: 0,
+            verify: true,
+            tcp: true,
+            utp: true,
+            encryption: crate::bt::mse::Policy::Enabled,
+        }
     }
 }
 
@@ -121,6 +131,9 @@ impl Seeder {
                 lsd: false,
                 pex: false,
                 upload_rate: options.upload_rate,
+                tcp: options.tcp,
+                utp: options.utp,
+                encryption: options.encryption,
                 ..SessionConfig::default()
             },
             None,

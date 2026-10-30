@@ -13,7 +13,7 @@ use crate::cache::PieceCache;
 use crate::swarm::{EvictDone, Event, Metadata, TorrentStatus, DONT_DOWNLOAD};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Notify};
@@ -23,8 +23,8 @@ pub type PeerKey = u64;
 /// To a peer's writer.
 pub enum Out {
     Msg(Message),
-    /// Piece data, sent through the session's upload limit.
-    Upload(Message),
+    /// Piece data and its size, sent through the session's upload limit; the size leaves the peer's queue once sent.
+    Upload(Message, usize),
     Close(String),
 }
 
@@ -37,6 +37,15 @@ const MAX_UNCHOKED: usize = 8;
 const RECONNECT: Duration = Duration::from_secs(5);
 const MAX_CANDIDATES: usize = 1000;
 const LAYER_CHUNK: usize = 512;
+/// The key web seeds download under; real peers' keys start at 1.
+pub const WEB_SEED: PeerKey = 0;
+/// A web seed whose data fails this many hash checks is no longer used.
+const WEB_SEED_FAILURES: u32 = 3;
+/// Piece data read for a peer and not yet sent. Requests beyond it wait unread, up to [MAX_WAITING_REQUESTS] (the
+/// `reqq` we advertise), and are served as the writer drains; beyond that they are rejected. This bounds memory per
+/// slow or rate-limited peer without ever dropping a request silently.
+const MAX_QUEUED_UPLOAD: usize = 1 << 20;
+const MAX_WAITING_REQUESTS: usize = 500;
 
 /// Rolling transfer rate over the last five seconds.
 #[derive(Default)]
@@ -68,6 +77,8 @@ impl Rate {
 pub struct Peer {
     pub addr: SocketAddr,
     tx: mpsc::UnboundedSender<Out>,
+    queued_upload: Arc<AtomicUsize>,
+    waiting: VecDeque<BlockRef>,
     pub reserved: Reserved,
     /// The connection uses the v2 info hash, so v2 hash messages are allowed (BEP 52).
     pub v2: bool,
@@ -157,6 +168,8 @@ pub struct State {
     cache_dir: Option<String>,
     cache_bytes: i64,
     pub trackers: Vec<String>,
+    pub web_seeds: Vec<String>,
+    web_seed_hash_failures: u32,
     pub have: Bitfield,
     priorities: Vec<u8>,
     deadlines: HashMap<i32, Instant>,
@@ -225,6 +238,8 @@ impl Torrent {
                 cache_dir: None,
                 cache_bytes: 0,
                 trackers,
+                web_seeds: Vec::new(),
+                web_seed_hash_failures: 0,
                 have: Bitfield::new(0),
                 priorities: Vec::new(),
                 deadlines: HashMap::new(),
@@ -459,7 +474,7 @@ impl Torrent {
     pub fn metainfo(&self) -> Option<Vec<u8>> {
         let st = self.lock();
         let info = st.info.as_ref()?;
-        Some(metainfo::write_torrent(info, &st.trackers, &st.layers))
+        Some(metainfo::write_torrent(info, &st.trackers, &st.layers, &st.web_seeds))
     }
 
     pub fn pause(&self) {
@@ -547,6 +562,7 @@ impl Torrent {
         v2: bool,
         incoming: bool,
         tx: mpsc::UnboundedSender<Out>,
+        queued_upload: Arc<AtomicUsize>,
         limits: (usize, bool),
     ) -> Option<PeerKey> {
         let mut st = self.lock();
@@ -562,6 +578,8 @@ impl Torrent {
         let peer = Peer {
             addr,
             tx,
+            queued_upload,
+            waiting: VecDeque::new(),
             reserved,
             v2,
             ext: ExtHandshake::default(),
@@ -770,7 +788,11 @@ impl Torrent {
                 self.refill(key);
             }
             Message::Request(b) => self.serve(key, b),
-            Message::Cancel(_) => {}
+            Message::Cancel(b) => {
+                if let Some(peer) = self.lock().peers.get_mut(&key) {
+                    peer.waiting.retain(|w| *w != b);
+                }
+            }
             Message::Reject(b) => {
                 let mut st = self.lock();
                 let peer = st.peers.get_mut(&key).ok_or("gone")?;
@@ -816,7 +838,12 @@ impl Torrent {
                 && st.have.get(b.piece as usize)
                 && st.info.as_ref().is_some_and(|i| b.offset as u64 + b.length as u64 <= i.piece_size(b.piece as i32) as u64);
             let Some(peer) = st.peers.get_mut(&key) else { return };
-            if peer.am_choking || !ok {
+            let full = peer.queued_upload.load(Ordering::SeqCst) + b.length as usize > MAX_QUEUED_UPLOAD;
+            if ok && !peer.am_choking && full && peer.waiting.len() < MAX_WAITING_REQUESTS {
+                peer.waiting.push_back(b);
+                return;
+            }
+            if peer.am_choking || !ok || full {
                 if peer.reserved.fast() {
                     peer.send(Message::Reject(b));
                 }
@@ -849,7 +876,8 @@ impl Torrent {
         match read {
             Ok(()) => {
                 peer.up.add(data.len());
-                let _ = peer.tx.send(Out::Upload(Message::Piece { piece: b.piece, offset: b.offset, data }));
+                peer.queued_upload.fetch_add(data.len(), Ordering::SeqCst);
+                let _ = peer.tx.send(Out::Upload(Message::Piece { piece: b.piece, offset: b.offset, data }, b.length as usize));
                 st.up.add(b.length as usize);
                 st.total_up += i64::from(b.length);
             }
@@ -859,6 +887,24 @@ impl Torrent {
                     peer.send(Message::Reject(b));
                 }
             }
+        }
+    }
+
+    /// The writer sent a peer's piece data: serve the requests that waited for room.
+    pub fn upload_sent(&self, key: PeerKey) {
+        loop {
+            let next = {
+                let mut st = self.lock();
+                let Some(peer) = st.peers.get_mut(&key) else { return };
+                if peer.queued_upload.load(Ordering::SeqCst) + wire::BLOCK as usize > MAX_QUEUED_UPLOAD {
+                    return;
+                }
+                match peer.waiting.pop_front() {
+                    Some(b) => b,
+                    None => return,
+                }
+            };
+            self.serve(key, next);
         }
     }
 
@@ -924,9 +970,10 @@ impl Torrent {
     fn start_hash(self: &Arc<Self>, st: &mut State, p: i32) {
         let (Some(info), Some(storage)) = (st.info.clone(), st.storage.clone()) else { return };
         let Some(expected) = expected_hash(&info, &st.layers, p) else { return };
+        // A session shutting down hashes nothing more; the piece must not stay marked as hashing either way.
+        let Some(session) = self.session.upgrade() else { return };
         st.hashing.insert(p);
         let t = self.clone();
-        let Some(session) = self.session.upgrade() else { return };
         session.runtime.spawn_blocking(move || {
             let ok = verify_piece(&storage, &info, p, &expected);
             drop(storage);
@@ -956,6 +1003,13 @@ impl Torrent {
             }
             // A sole contributor is banned at once; others after repeated failures.
             if let Some(progress) = progress {
+                if progress.contributors.contains(&WEB_SEED) {
+                    st.web_seed_hash_failures += 1;
+                    if st.web_seed_hash_failures >= WEB_SEED_FAILURES && !st.web_seeds.is_empty() {
+                        st.web_seeds.clear();
+                        self.log("web seeds sent data that failed the hash check; they are no longer used".into());
+                    }
+                }
                 let sole = progress.contributors.len() == 1;
                 for k in progress.contributors {
                     if let Some(peer) = st.peers.get_mut(&k) {
@@ -1140,8 +1194,8 @@ impl Torrent {
 
     /// Once a second: rates, request timeouts, unchoking, peer exchange, metadata and layer requests.
     pub fn maintain(&self, tick: u64) {
-        let mut st = self.lock();
-        let st = &mut *st;
+        let mut guard = self.lock();
+        let st = &mut *guard;
         st.down.tick();
         st.up.tick();
         let now = Instant::now();
@@ -1206,6 +1260,94 @@ impl Torrent {
                 peer.send(Message::Extended { id, payload: wire::encode_pex(&added, &dropped) });
             }
         }
+        drop(guard);
+        // Any peer whose requests were rejected, timed out or never sent asks again.
+        self.refill_all();
+    }
+
+    /// A wanted piece no peer is downloading, claimed for a web seed, with the file ranges that make it up:
+    /// `(file index, offset in the file, length, offset in the piece)`. Pad ranges are left out and stay zero.
+    pub fn claim_web_piece(&self) -> Option<(i32, i32, Vec<(usize, u64, usize, usize)>)> {
+        let mut st = self.lock();
+        let st = &mut *st;
+        if st.removed || st.paused || st.web_seeds.is_empty() {
+            return None;
+        }
+        let info = st.info.clone()?;
+        let storage = st.storage.clone()?;
+        let now = Instant::now();
+        let p = st.order.iter().copied().find(|p| {
+            !st.hashing.contains(p)
+                && storage.accepts(*p)
+                && st.progress.get(p).is_none_or(|pr| pr.blocks.iter().all(|b| *b == Block::Missing || *b == Block::Received))
+        })?;
+        let size = info.piece_size(p);
+        let pads = info.piece_pads(p);
+        let pr = st.progress.entry(p).or_insert_with(|| Progress {
+            blocks: vec![Block::Missing; block_count(size)],
+            contributors: HashSet::new(),
+        });
+        for b in pr.blocks.iter_mut() {
+            *b = Block::Requested { first: WEB_SEED, second: None, at: now };
+        }
+        let start = i64::from(p) * i64::from(info.piece_length);
+        let end = start + i64::from(size);
+        let mut ranges = Vec::new();
+        for (i, f) in info.files.iter().enumerate() {
+            let (lo, hi) = (start.max(f.offset), end.min(f.offset + f.size));
+            if lo >= hi || f.pad {
+                continue;
+            }
+            let at = (lo - start) as i32;
+            if pads.iter().any(|&(o, l)| o <= at && at + (hi - lo) as i32 <= o + l) {
+                continue;
+            }
+            ranges.push((i, (lo - f.offset) as u64, (hi - lo) as usize, at as usize));
+        }
+        Some((p, size, ranges))
+    }
+
+    /// A web seed's piece arrived (or didn't): write it and check its hash, or give its blocks back.
+    pub fn web_piece_done(self: &Arc<Self>, p: i32, data: Option<Vec<u8>>) {
+        let storage = self.lock().storage.clone();
+        let written = match (data, storage) {
+            (Some(data), Some(storage)) => {
+                let ok = data
+                    .chunks(wire::BLOCK as usize)
+                    .enumerate()
+                    .all(|(i, block)| storage.write(p, (i * wire::BLOCK as usize) as i32, block) == Ok(true));
+                {
+                    let mut st = self.lock();
+                    st.down.add(data.len());
+                    st.total_down += data.len() as i64;
+                }
+                ok
+            }
+            _ => false,
+        };
+        let mut st = self.lock();
+        let Some(pr) = st.progress.get_mut(&p) else { return };
+        for b in pr.blocks.iter_mut() {
+            if matches!(b, Block::Requested { first: WEB_SEED, .. }) {
+                *b = if written { Block::Received } else { Block::Missing };
+            }
+        }
+        if written {
+            pr.contributors.insert(WEB_SEED);
+            if pr.blocks.iter().all(|b| *b == Block::Received) {
+                self.start_hash(&mut st, p);
+            }
+        }
+        drop(st);
+        self.refill_all();
+    }
+
+    pub fn web_seeds(&self) -> Vec<String> {
+        self.lock().web_seeds.clone()
+    }
+
+    pub fn set_web_seeds(&self, seeds: Vec<String>) {
+        self.lock().web_seeds = seeds;
     }
 
     /// Bytes still wanted, for tracker announces.
@@ -1295,7 +1437,7 @@ fn pick(st: &mut State, key: PeerKey, target: usize) -> Vec<BlockRef> {
                     continue;
                 }
                 let size = info.piece_size(p);
-                let pads = &info.pad_ranges()[p as usize];
+                let pads = &info.piece_pads(p);
                 let blocks = (0..block_count(size))
                     .map(|b| {
                         // Blocks entirely inside pad files need no download.

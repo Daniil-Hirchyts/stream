@@ -39,6 +39,9 @@ impl RustSwarm {
                 ca_file: config.ca_file.clone(),
                 upload_rate: 0,
                 log: config.log.is_some(),
+                utp: config.utp,
+                tcp: config.tcp,
+                encryption: config.encryption,
             },
             Some(Arc::new(move || wake.wake())),
         )
@@ -55,14 +58,17 @@ impl Swarm for RustSwarm {
     fn add(&self, source: &Source, tag: u64, check: PieceLengthCheck<'_>) -> Result<Box<dyn SwarmTorrent>> {
         let mut trackers: Vec<String> = Vec::new();
         let mut peers: Vec<SocketAddr> = Vec::new();
+        let mut web_seeds: Vec<String> = Vec::new();
         let (hashes, info, layers) = if !source.metainfo.is_empty() {
             let t = metainfo::parse_torrent(&source.metainfo).map_err(bad_source)?;
             check(t.info.piece_length)?;
             trackers = t.trackers;
+            web_seeds = t.web_seeds;
             (t.info.hashes, Some(t.info), t.layers)
         } else if !source.magnet.is_empty() {
             let m = metainfo::parse_magnet(&source.magnet).map_err(bad_source)?;
             trackers = m.trackers;
+            web_seeds = m.web_seeds;
             for p in &m.peers {
                 if let Ok(a) = parse_peer(p) {
                     peers.push(a);
@@ -89,6 +95,7 @@ impl Swarm for RustSwarm {
         }
         let t = self.session.add(tag, hashes, info, layers, trackers, peers);
         t.use_cache(&self.cache_dir, self.cache_bytes);
+        t.set_web_seeds(web_seeds);
         Ok(Box::new(RustTorrent { torrent: t, session: self.session.clone() }))
     }
 

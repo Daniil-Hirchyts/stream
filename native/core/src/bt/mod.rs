@@ -8,6 +8,7 @@ pub mod dht;
 pub mod lsd;
 pub mod merkle;
 pub mod metainfo;
+pub mod mse;
 pub mod net;
 pub mod peer;
 pub mod session;

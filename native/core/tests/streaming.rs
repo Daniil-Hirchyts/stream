@@ -632,6 +632,8 @@ fn partial_piece_pressure_recovers_without_hash_bypass_or_extra_cache() {
     let torrent = make_torrent(&dir.file("movie.bin"), piece as i32, Version::V1);
     let mut config = local_config(&dir.file("cache"), (4 * 256 + 64) << 10);
     config.read_ahead_seconds = 1;
+    // The raw peer accepts one plaintext connection; an MSE attempt first would use it up.
+    config.encryption = stream_core::bt::mse::Policy::Disabled;
     let e = Engine::new(config).unwrap();
     let mut stalled = vec![PartialSeeder::new(32, piece, 41)];
     let id = open(&e, &torrent, &[stalled[0].address()]);

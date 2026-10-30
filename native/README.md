@@ -48,17 +48,31 @@ sdkmanager --install "ndk;29.0.14206865"
   `tr`, `x.pe`) and bare info hashes. Metadata comes from peers by ut_metadata
   (BEP 9), checked against the info hash; a v2 torrent's piece layers come by
   hash requests (BEP 52) and are checked against each file's root.
-- **Peers**: TCP, the fast extension (BEP 6), the extension protocol (BEP 10),
-  peer exchange (BEP 11) and lt_donthave (BEP 54). A hybrid's peers may upgrade
-  to v2 in the handshake. Peers that send data failing its hash are banned.
+- **Peers**: TCP and uTP (BEP 29, through `librqbit-utp`, on the listen port;
+  tried when TCP can't connect, and accepted), message stream encryption
+  (MSE/PE: 768-bit Diffie-Hellman and RC4, tried first on outgoing connections
+  with a plaintext retry, both accepted incoming; `Forced` and `Disabled` are
+  available), the fast extension (BEP 6), the extension protocol (BEP 10), peer
+  exchange (BEP 11) and lt_donthave (BEP 54). A hybrid's peers may upgrade to v2
+  in the handshake. Peers that send data failing its hash are banned. At most
+  1 MiB of piece data waits per peer; further requests are rejected.
+- **Web seeds**: HTTP and HTTPS (BEP 19 `url-list`, and `ws=` in magnets). A
+  seed downloads whole pieces no peer is fetching, by ranged GETs of the files
+  that make them up, and its data is hash-checked like any peer's; a seed whose
+  data fails three checks is dropped. Redirects are followed; a server that
+  ignores ranges is refused rather than read whole.
 - **Discovery**: HTTP, HTTPS and UDP trackers (BEP 3, 15), the DHT (BEP 5,
   IPv4), and local service discovery (BEP 14). HTTPS uses rustls with the trust
   roots the app writes from Android's store; certificates are always verified.
   `public_network_only` keeps peers, trackers and DHT nodes off loopback and
   private networks.
-- **Not implemented**: uTP, protocol encryption (MSE/PE), web seeds, and port
-  mapping (UPnP/NAT-PMP, which the app never enables). Peers that insist on
-  any of these are not reachable.
+- **Not implemented**: port mapping (UPnP/NAT-PMP; the app never enables it and
+  the engine logs that it stays off), BEP 17 (Hoffman-style) seeds, the DHT over
+  IPv6 (BEP 32), IPv6 local discovery, uTP on more than the first listen
+  interface, BitTorrent v2 block-level hash requests after a failed piece (the
+  piece is downloaded again whole), seeding to v2 peers that need piece layers
+  for files we only know by their root, I2P, SOCKS/HTTP proxies, and SSL
+  torrents. This is not libtorrent feature parity.
 
 ## How streaming works
 
@@ -102,7 +116,13 @@ a test runs its own loopback tracker), with no internet or LAN:
 
 - protocol units: bencoding limits, torrent and magnet parsing in every
   version, Merkle trees and hash-request answers, wire messages, the address
-  policy, tracker responses and refusal of untrusted HTTPS;
+  policy, tracker responses and refusal of untrusted HTTPS, RC4 against RFC 6229
+  and MSE handshakes in each negotiation;
+- transports: forced MSE in v1, v2 and hybrid; plaintext refused by a seeder
+  that requires MSE; MSE fallback to plaintext; uTP alone (with and without MSE,
+  from magnets); HTTP web seeds for single- and multi-file torrents, a corrupt
+  web seed failing its hashes while peers finish the file, and an HTTPS web
+  seed refused until its certificate is trusted;
 - cache units: slots, reservation, pads, waits and cancellation, 64-bit offsets;
 - eviction: v1, v2 and hybrid seeds re-download evicted pieces; a finished
   torrent stays finished until it wants a piece; a peer learns by lt_donthave,
@@ -116,7 +136,8 @@ a test runs its own loopback tracker), with no internet or LAN:
 
 Interoperability with other implementations is checked by hand: `core/examples/fetch.rs`
 streams the simulator's libtorrent-made v1, v2 and hybrid torrents (and their
-magnets) from a libtorrent seeder, and `eval/rqbit` downloads them from
+magnets) from a libtorrent seeder, also over uTP only (`STREAM_TCP=0`) and with
+MSE forced (`STREAM_ENCRYPTION=forced`); `eval/rqbit` downloads them from
 `stream-fixture seed`.
 
 On the emulator, `./simulator.sh test` runs the same engine through JNI and

@@ -24,6 +24,8 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 rustls-pki-types = { version = "1.12", features = ["std"] }
 webpki-roots = "1"
 socket2 = { version = "0.6", features = ["all"] }
+num-bigint = "0.4"
+librqbit-utp = "=0.7.0"
 
 [profile.release]
 # The engine runs inside the app process: an abort on panic would take the player down without a report.
@@ -31,3 +33,7 @@ panic = "unwind"
 debug = "line-tables-only"
 lto = "thin"
 codegen-units = 4
+
+[dev-dependencies]
+# Self-signed certificates for the HTTPS web seed test only.
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }

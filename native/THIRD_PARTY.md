@@ -9,10 +9,12 @@ The main ones:
 | Crate | Role | License |
 | --- | --- | --- |
 | tokio, mio, socket2 | The network runtime and sockets | MIT; MIT OR Apache-2.0 |
-| rustls, tokio-rustls, rustls-webpki, rustls-pki-types | TLS for HTTPS trackers, always verifying certificates | Apache-2.0 OR ISC OR MIT; ISC; MIT OR Apache-2.0 |
+| rustls, tokio-rustls, rustls-webpki, rustls-pki-types | TLS for HTTPS trackers and web seeds, always verifying certificates | Apache-2.0 OR ISC OR MIT; ISC; MIT OR Apache-2.0 |
 | ring | Cryptography under rustls (includes C and assembly, built with the NDK's clang) | Apache-2.0 AND ISC |
 | webpki-roots | Mozilla's roots, used only when the app gives no trust roots | CDLA-Permissive-2.0 |
 | sha1, sha2 | Piece and info hashes | MIT OR Apache-2.0 |
+| librqbit-utp | uTP (BEP 29) | Apache-2.0 |
+| num-bigint | MSE's Diffie-Hellman exchange | MIT OR Apache-2.0 |
 | jni | The Java bridge | MIT OR Apache-2.0 |
 | libc, getrandom | System calls and random numbers | MIT OR Apache-2.0 |
 

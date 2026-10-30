@@ -4,6 +4,7 @@
 use super::dht::Dht;
 use super::lsd::Lsd;
 use super::metainfo::{Id20, Info, InfoHashes, Layers};
+use super::mse::{self, Policy as Encryption};
 use super::net::{parse_listen, Policy};
 use super::peer::{self, UploadLimit};
 use super::torrent::Torrent;
@@ -30,6 +31,11 @@ pub struct SessionConfig {
     /// Bytes per second; 0 is unlimited.
     pub upload_rate: u64,
     pub log: bool,
+    /// uTP (BEP 29) on the listen port, for incoming peers and when TCP can't connect.
+    pub utp: bool,
+    /// TCP listening and dialling; off only to test uTP alone.
+    pub tcp: bool,
+    pub encryption: Encryption,
 }
 
 impl Default for SessionConfig {
@@ -46,6 +52,9 @@ impl Default for SessionConfig {
             ca_file: String::new(),
             upload_rate: 0,
             log: false,
+            utp: true,
+            tcp: true,
+            encryption: Encryption::Enabled,
         }
     }
 }
@@ -63,6 +72,9 @@ pub struct SessionShared {
     pub connections: AtomicUsize,
     pub blocked_writes: AtomicI32,
     pub upload_limit: UploadLimit,
+    pub encryption: Encryption,
+    pub utp: Option<Arc<librqbit_utp::UtpSocketUdp>>,
+    pub tcp: bool,
     port: AtomicU16,
     log_enabled: bool,
     lsd_enabled: bool,
@@ -105,6 +117,11 @@ impl SessionShared {
         self.torrents().iter().find(|t| t.matches(id)).cloned()
     }
 
+    /// The 20-byte hash of the torrent an MSE initiator named by `HASH('req2', SKEY)`.
+    pub fn find_obfuscated(&self, obfuscated: &Id20) -> Option<Id20> {
+        self.torrents().iter().flat_map(|t| t.lock().hashes.ids()).find(|id| mse::obfuscated_id(id) == *obfuscated)
+    }
+
     pub fn drain(&self, out: &mut Vec<Event>) {
         out.append(&mut self.events.lock().unwrap_or_else(|e| e.into_inner()));
     }
@@ -126,7 +143,7 @@ impl Session {
             .map_err(|e| format!("Network runtime: {e}"))?;
         let tls = tracker::tls_config(&config.ca_file)?;
         let policy = Policy { public_only: config.public_only };
-        let shared = Arc::new(SessionShared {
+        let mut shared = SessionShared {
             runtime: runtime.handle().clone(),
             peer_id: super::wire::new_peer_id(),
             policy,
@@ -137,6 +154,9 @@ impl Session {
             connections: AtomicUsize::new(0),
             blocked_writes: AtomicI32::new(0),
             upload_limit: UploadLimit::new(config.upload_rate),
+            encryption: config.encryption,
+            utp: None,
+            tcp: config.tcp,
             port: AtomicU16::new(0),
             log_enabled: config.log,
             lsd_enabled: config.lsd && !config.public_only,
@@ -147,44 +167,81 @@ impl Session {
             dht: Mutex::new(None),
             lsd: Mutex::new(None),
             stopping: AtomicBool::new(false),
-        });
+        };
 
         let interfaces = parse_listen(&config.listen);
         if interfaces.is_empty() {
             return Err(format!("No usable listen interface in {:?}", config.listen));
         }
-        let mut bound = 0;
+        let mut listeners = Vec::new();
         let mut errors = Vec::new();
-        for mut address in interfaces {
+        for mut address in interfaces.iter().copied().filter(|_| config.tcp) {
             // Every interface listens on the same port: peers learn only one.
             if address.port() == 0 && shared.port() != 0 {
                 address.set_port(shared.port());
             }
-            let listener = runtime.block_on(async { TcpListener::bind(address).await });
-            match listener {
+            match runtime.block_on(async { TcpListener::bind(address).await }) {
                 Ok(l) => {
                     if shared.port() == 0 {
                         shared.port.store(l.local_addr().map(|a| a.port()).unwrap_or(0), Ordering::Relaxed);
                     }
-                    bound += 1;
-                    let s = shared.clone();
-                    runtime.spawn(async move {
-                        loop {
-                            match l.accept().await {
-                                Ok((stream, addr)) => {
-                                    tokio::spawn(peer::accept(s.clone(), stream, addr));
-                                }
-                                Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
-                            }
-                        }
-                    });
+                    listeners.push(l);
                 }
                 // An IPv6 interface on a host without IPv6 is not fatal while another interface works.
                 Err(e) => errors.push(format!("{address}: {e}")),
             }
         }
-        if bound == 0 {
+        if listeners.is_empty() && config.tcp {
             return Err(format!("Cannot listen: {}", errors.join("; ")));
+        }
+        if config.utp {
+            // uTP shares the TCP port, on the first interface; the DHT then takes another UDP port.
+            let mut address = interfaces[0];
+            address.set_port(shared.port());
+            let opts = librqbit_utp::SocketOpts {
+                max_live_vsocks: std::num::NonZeroUsize::new(config.connections_limit.max(1)),
+                ..Default::default()
+            };
+            match runtime.block_on(librqbit_utp::UtpSocketUdp::new_udp_with_opts(address, opts, Default::default())) {
+                Ok(socket) => {
+                    if shared.port() == 0 {
+                        shared.port.store(socket.bind_addr().port(), Ordering::Relaxed);
+                    }
+                    shared.utp = Some(socket);
+                }
+                Err(e) => shared.log(format!("uTP unavailable: {e}")),
+            }
+        }
+        let shared = Arc::new(shared);
+        for l in listeners {
+            let s = shared.clone();
+            runtime.spawn(async move {
+                loop {
+                    match l.accept().await {
+                        Ok((stream, addr)) => {
+                            let _ = stream.set_nodelay(true);
+                            tokio::spawn(peer::accept(s.clone(), Box::new(stream), addr));
+                        }
+                        Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
+                    }
+                }
+            });
+        }
+        if let Some(socket) = shared.utp.clone() {
+            let s = Arc::downgrade(&shared);
+            runtime.spawn(async move {
+                loop {
+                    let accepted = socket.accept().await;
+                    let Some(s) = s.upgrade() else { return };
+                    match accepted {
+                        Ok(stream) => {
+                            let addr = stream.remote_addr();
+                            tokio::spawn(peer::accept(s, Box::new(stream), addr));
+                        }
+                        Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
+                    }
+                }
+            });
         }
 
         if config.dht {
@@ -267,6 +324,7 @@ async fn torrent_loop(session: Arc<SessionShared>, t: Arc<Torrent>) {
     let mut trackers: HashMap<String, TrackerState> = HashMap::new();
     let mut next_dht = Instant::now();
     let mut next_lsd = Instant::now();
+    let mut web_seeds_started: Vec<String> = Vec::new();
     let key = u32::from_be_bytes(session.peer_id[16..20].try_into().unwrap());
     let (results_tx, mut results) = tokio::sync::mpsc::unbounded_channel::<(String, TrackerOutcome)>();
     loop {
@@ -279,6 +337,15 @@ async fn torrent_loop(session: Arc<SessionShared>, t: Arc<Torrent>) {
         }
         if !t.wants_peers() {
             continue;
+        }
+        // One worker per web seed, once the layout is known.
+        if t.info().is_some() {
+            for url in t.web_seeds() {
+                if !web_seeds_started.contains(&url) {
+                    web_seeds_started.push(url.clone());
+                    tokio::spawn(web_seed(session.clone(), t.clone(), url));
+                }
+            }
         }
         // New connections, a few at a time.
         let in_flight = session.connections.load(Ordering::SeqCst);
@@ -375,6 +442,76 @@ async fn torrent_loop(session: Arc<SessionShared>, t: Arc<Torrent>) {
                     next_lsd = now + Duration::from_secs(300);
                     lsd.announce(&t.id(), session.port()).await;
                 }
+            }
+        }
+    }
+}
+
+/// A file's address under a web seed (BEP 19): a single-file torrent's seed may name the file itself; otherwise the
+/// torrent's paths follow the seed's address.
+pub fn web_seed_url(base: &str, path: &str, single_file: bool) -> String {
+    if single_file && !base.ends_with('/') {
+        return base.to_owned();
+    }
+    let mut url = base.to_owned();
+    if !url.ends_with('/') {
+        url.push('/');
+    }
+    let encoded: Vec<String> = path
+        .split('/')
+        .map(|c| {
+            c.bytes()
+                .map(|b| {
+                    if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+                        (b as char).to_string()
+                    } else {
+                        format!("%{b:02X}")
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    url + &encoded.join("/")
+}
+
+/// Downloads whole pieces from one web seed, one at a time, backing off after errors.
+async fn web_seed(session: Arc<SessionShared>, t: Arc<Torrent>, base: String) {
+    let mut failures: u32 = 0;
+    loop {
+        if t.lock().removed || session.stopping.load(Ordering::SeqCst) || !t.web_seeds().contains(&base) {
+            return;
+        }
+        let Some((p, size, ranges)) = t.claim_web_piece() else {
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(500)) => {}
+                _ = t.wake.notified() => {}
+            }
+            continue;
+        };
+        let Some(info) = t.info() else { return };
+        let single = info.files.len() == 1 && info.files[0].path == info.name;
+        let mut data = vec![0u8; size as usize];
+        let mut error = None;
+        for (file, offset, length, at) in ranges {
+            let url = web_seed_url(&base, &info.files[file].path, single);
+            match session.tracker.fetch_range(&url, offset, offset + length as u64).await {
+                Ok(bytes) => data[at..at + length].copy_from_slice(&bytes),
+                Err(e) => {
+                    error = Some(e);
+                    break;
+                }
+            }
+        }
+        match error {
+            None => {
+                failures = 0;
+                t.web_piece_done(p, Some(data));
+            }
+            Some(e) => {
+                t.web_piece_done(p, None);
+                failures += 1;
+                session.log(format!("web seed {}: {e}", redact(&base)));
+                tokio::time::sleep(Duration::from_secs(5u64 << failures.min(6))).await;
             }
         }
     }

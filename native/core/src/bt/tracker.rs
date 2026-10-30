@@ -153,7 +153,7 @@ impl Client {
         );
         let mut target = format!("{url}{}{query}", if u.path.contains('?') { '&' } else { '?' });
         for _ in 0..4 {
-            match self.get(&target).await? {
+            match self.get(&target, None, MAX_RESPONSE).await? {
                 Fetched::Body(body) => return parse_http_response(&body),
                 Fetched::Redirect(location) => target = location,
             }
@@ -161,7 +161,21 @@ impl Client {
         Err("Too many tracker redirects".into())
     }
 
-    async fn get(&self, url: &str) -> Result<Fetched, String> {
+    /// GETs `[start, end)` of an HTTP(S) resource (a web seed's file), following redirects. Certificates are always
+    /// verified and every address passes the session's policy.
+    pub async fn fetch_range(&self, url: &str, start: u64, end: u64) -> Result<Vec<u8>, String> {
+        let mut target = url.to_owned();
+        for _ in 0..4 {
+            match self.get(&target, Some((start, end)), (end - start) as usize + 64 * 1024).await? {
+                Fetched::Body(body) if body.len() as u64 == end - start => return Ok(body),
+                Fetched::Body(body) => return Err(format!("{} bytes instead of {}", body.len(), end - start)),
+                Fetched::Redirect(location) => target = location,
+            }
+        }
+        Err("Too many redirects".into())
+    }
+
+    async fn get(&self, url: &str, range: Option<(u64, u64)>, max: usize) -> Result<Fetched, String> {
         let u = parse_url(url)?;
         let addresses = self.resolve(u.host, u.port).await?;
         let mut last = String::new();
@@ -177,8 +191,9 @@ impl Client {
                     continue;
                 }
             };
+            let range_header = range.map(|(a, b)| format!("Range: bytes={a}-{}\r\n", b - 1)).unwrap_or_default();
             let request = format!(
-                "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: {}\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n",
+                "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: {}\r\n{range_header}Accept-Encoding: identity\r\nConnection: close\r\n\r\n",
                 u.path, u.host, self.user_agent
             );
             let response = if u.scheme == "https" {
@@ -188,11 +203,11 @@ impl Client {
                     .await
                     .map_err(|_| format!("{}: TLS handshake timed out", u.host))?
                     .map_err(|e| format!("{}: {e}", u.host))?;
-                exchange(tls, request.as_bytes()).await
+                exchange(tls, request.as_bytes(), max).await
             } else {
-                exchange(stream, request.as_bytes()).await
+                exchange(stream, request.as_bytes(), max).await
             };
-            return parse_http(&response.map_err(|e| format!("{}: {e}", u.host))?, url);
+            return parse_http(&response.map_err(|e| format!("{}: {e}", u.host))?, url, range.is_some());
         }
         Err(last)
     }
@@ -277,8 +292,10 @@ enum Fetched {
     Redirect(String),
 }
 
-async fn exchange<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, request: &[u8]) -> std::io::Result<Vec<u8>> {
-    timeout(TIMEOUT, async {
+async fn exchange<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, request: &[u8], max: usize) -> std::io::Result<Vec<u8>> {
+    // Large ranged reads get longer, at no less than 256 KiB/s.
+    let limit = TIMEOUT.max(Duration::from_secs((max / (256 * 1024)) as u64));
+    timeout(limit, async {
         stream.write_all(request).await?;
         let mut out = Vec::new();
         let mut chunk = [0u8; 8192];
@@ -293,16 +310,16 @@ async fn exchange<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, request: &[u
                 return Ok(out);
             }
             out.extend_from_slice(&chunk[..n]);
-            if out.len() > MAX_RESPONSE {
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Tracker response too large"));
+            if out.len() > max {
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "HTTP response too large"));
             }
         }
     })
     .await
-    .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Tracker timed out"))?
+    .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "HTTP request timed out"))?
 }
 
-fn parse_http(response: &[u8], url: &str) -> Result<Fetched, String> {
+fn parse_http(response: &[u8], url: &str, ranged: bool) -> Result<Fetched, String> {
     let end = response.windows(4).position(|w| w == b"\r\n\r\n").ok_or("Invalid HTTP response")?;
     let head = std::str::from_utf8(&response[..end]).map_err(|_| "Invalid HTTP response")?;
     let mut lines = head.split("\r\n");
@@ -324,15 +341,16 @@ fn parse_http(response: &[u8], url: &str) -> Result<Fetched, String> {
         };
         return Ok(Fetched::Redirect(target));
     }
-    if status != 200 {
-        return Err(format!("Tracker HTTP status {status}"));
+    // A ranged request needs a partial response: a whole file in reply is refused rather than read.
+    if status != if ranged { 206 } else { 200 } {
+        return Err(format!("HTTP status {status}"));
     }
     let mut body = response[end + 4..].to_vec();
     if header("transfer-encoding").is_some_and(|v| v.eq_ignore_ascii_case("chunked")) {
         body = dechunk(&body).ok_or("Invalid chunked response")?;
     } else if let Some(len) = header("content-length").and_then(|v| v.parse::<usize>().ok()) {
         if body.len() < len {
-            return Err("Truncated tracker response".into());
+            return Err("Truncated HTTP response".into());
         }
         body.truncate(len);
     }
@@ -393,7 +411,7 @@ mod tests {
 
         let body = b"d8:intervali900e5:peers6:\x7f\x00\x00\x01\x1a\xe1e";
         let raw = [b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n".as_slice(), b"10\r\n", &body[..16], b"\r\n", b"10\r\n", &body[16..], b"\r\n0\r\n\r\n"].concat();
-        let Fetched::Body(b) = parse_http(&raw, "http://t/a").unwrap() else { panic!() };
+        let Fetched::Body(b) = parse_http(&raw, "http://t/a", false).unwrap() else { panic!() };
         let r = parse_http_response(&b).unwrap();
         assert_eq!(r.peers, vec!["127.0.0.1:6881".parse().unwrap()]);
         assert_eq!(r.interval, Some(Duration::from_secs(900)));

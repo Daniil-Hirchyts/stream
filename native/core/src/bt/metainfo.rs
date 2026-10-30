@@ -356,6 +356,20 @@ impl Info {
         }
     }
 
+    /// Byte ranges of one piece that belong to pad files.
+    pub fn piece_pads(&self, p: i32) -> PadRanges {
+        let pl = i64::from(self.piece_length);
+        let (start, end) = (i64::from(p) * pl, i64::from(p) * pl + i64::from(self.piece_size(p)));
+        self.files
+            .iter()
+            .filter(|f| f.pad && f.size > 0)
+            .filter_map(|f| {
+                let (lo, hi) = (start.max(f.offset), end.min(f.offset + f.size));
+                (lo < hi).then(|| ((lo - start) as i32, (hi - lo) as i32))
+            })
+            .collect()
+    }
+
     /// Byte ranges of each piece that belong to pad files.
     pub fn pad_ranges(&self) -> Vec<PadRanges> {
         let pl = i64::from(self.piece_length);
@@ -416,6 +430,8 @@ pub struct Torrent {
     pub info: Info,
     pub trackers: Vec<String>,
     pub layers: Layers,
+    /// HTTP(S) web seeds (BEP 19 `url-list`).
+    pub web_seeds: Vec<String>,
 }
 
 /// Parses a torrent file. Piece layers that fail their root are dropped; peers can supply them again.
@@ -460,11 +476,19 @@ pub fn parse_torrent(data: &[u8]) -> Result<Torrent> {
             }
         }
     }
-    Ok(Torrent { info, trackers, layers })
+    let mut web_seeds: Vec<String> = Vec::new();
+    match v.get("url-list") {
+        Some(Value::Bytes(b)) => web_seeds.extend(std::str::from_utf8(b).ok().map(str::to_owned)),
+        Some(Value::List(l)) => web_seeds.extend(l.iter().filter_map(|u| u.str().map(str::to_owned))),
+        _ => {}
+    }
+    web_seeds.retain(|u| u.starts_with("http://") || u.starts_with("https://"));
+    web_seeds.dedup();
+    Ok(Torrent { info, trackers, layers, web_seeds })
 }
 
-/// A torrent file for metadata we hold, with trackers and whichever piece layers are known.
-pub fn write_torrent(info: &Info, trackers: &[String], layers: &Layers) -> Vec<u8> {
+/// A torrent file for metadata we hold, with trackers, web seeds and whichever piece layers are known.
+pub fn write_torrent(info: &Info, trackers: &[String], layers: &Layers, web_seeds: &[String]) -> Vec<u8> {
     let mut out = Vec::with_capacity(info.raw.len() + 256);
     out.push(b'd');
     let entry = |key: &str, value: &Value, out: &mut Vec<u8>| {
@@ -483,6 +507,9 @@ pub fn write_torrent(info: &Info, trackers: &[String], layers: &Layers) -> Vec<u
         let d = layers.iter().map(|(root, layer)| (root.to_vec(), Value::Bytes(layer.concat()))).collect();
         entry("piece layers", &Value::Dict(d), &mut out);
     }
+    if !web_seeds.is_empty() {
+        entry("url-list", &Value::List(web_seeds.iter().map(|u| bytes(u.as_bytes())).collect()), &mut out);
+    }
     out.push(b'e');
     out
 }
@@ -493,6 +520,7 @@ pub struct Magnet {
     pub name: Option<String>,
     pub trackers: Vec<String>,
     pub peers: Vec<String>,
+    pub web_seeds: Vec<String>,
 }
 
 fn percent_decode(s: &str) -> String {
@@ -548,6 +576,7 @@ pub fn parse_magnet(uri: &str) -> Result<Magnet> {
             "dn" => m.name = Some(value),
             "tr" if !m.trackers.contains(&value) => m.trackers.push(value),
             "x" if pair.starts_with("x.pe=") => m.peers.push(value),
+            "ws" if value.starts_with("http://") || value.starts_with("https://") => m.web_seeds.push(value),
             _ => {}
         }
     }
@@ -716,7 +745,9 @@ mod tests {
             let pads: i64 = t.info.files.iter().filter(|f| f.pad).map(|f| f.size).sum();
             assert_eq!(t.info.total, 170_010 + pads);
             // Written back, the torrent keeps its info hash.
-            let again = parse_torrent(&write_torrent(&t.info, &["udp://t.example:1".into()], &t.layers)).unwrap();
+            let seeds = ["https://seed.example/files/".to_string()];
+            let again = parse_torrent(&write_torrent(&t.info, &["udp://t.example:1".into()], &t.layers, &seeds)).unwrap();
+            assert_eq!(again.web_seeds, seeds);
             assert_eq!(again.info.hashes, t.info.hashes);
             assert_eq!(again.trackers, ["udp://t.example:1"]);
             assert_eq!(again.layers, t.layers);
