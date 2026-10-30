@@ -157,6 +157,9 @@ run_data_tests() {
   case "$test_classes" in *NavigationPerformanceTest*) [ "$status" -ne 0 ] || {
     device exec-out run-as tv.stream.app cat files/validation-navigation-performance.json >"$SIM_DIR/.cache/evidence/navigation-performance.json" || status=1
   } ;; esac
+  case "$test_classes" in *SoftwarePlaybackPerformanceTest*) [ "$status" -ne 0 ] || {
+    device exec-out run-as tv.stream.app cat files/validation-software-performance.json >"$SIM_DIR/.cache/evidence/software-performance.json" || status=1
+  } ;; esac
   clear_test_mode
   return "$status"
 }
@@ -247,6 +250,7 @@ case "${1:-up}" in
   data-test) shift; run_data_tests "$@" ;;
   smoke) run_data_tests tv.stream.app.AppFlowTest#catalogueFavouritesPlaybackControlsAndEvictedRewindWork ;;
   decoder-test) sh "$SIM_DIR/decoder-fixtures.sh" && run_data_tests tv.stream.app.DecoderPlaybackTest ;;
+  software-profile) sh "$SIM_DIR/decoder-fixtures.sh" && run_data_tests tv.stream.app.SoftwarePlaybackPerformanceTest ;;
   # Not a required suite: public services and swarms change. Uses the internet, never the LAN or a physical TV.
   live-film) run_data_tests tv.stream.app.LiveFilmTest ;;
   live-addons)

@@ -153,6 +153,7 @@ Home shelf transitions and movement back through a scrolled shelf before enterin
 ./simulator.sh soak             # thirty real minutes of playback and seeks
 ./simulator.sh profile          # dumpsys memory/graphics and a screenshot
 ./simulator.sh data-test tv.stream.app.NavigationPerformanceTest  # isolated navigation timings and frame metrics
+./simulator.sh software-profile  # one minute of generated 1080p software video and memory samples
 ```
 
 The navigation performance test records ten Home → Details → Home journeys,
@@ -160,6 +161,10 @@ per-open latency, process PSS samples and window frame durations to
 `simulator/.cache/evidence/navigation-performance.json`. Run it alone; its
 debug-build emulator numbers are not a real-device benchmark. Dropped frame
 metric reports indicate missing measurements, not necessarily dropped frames.
+The software profile forces FFmpeg video on a looped generated 1080p H.264
+fixture and samples process CPU, PSS, playback and dropped-frame telemetry every
+five seconds for a minute. Its local evidence is `software-performance.json`;
+process CPU includes the whole app and instrumentation, not only conversion.
 
 `StartupTimingTest` targets, on fixtures: Details controls p95 ≤ 500 ms, HTTP
 first audio and video p95 ≤ 3 s, cold torrent p95 ≤ 5 s; traces go to
