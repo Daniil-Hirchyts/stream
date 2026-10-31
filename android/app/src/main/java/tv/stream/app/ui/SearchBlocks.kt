@@ -58,8 +58,8 @@ internal object SearchBlocks {
     private val Motion = CubicBezierEasing(.32f, 0f, .16f, 1f)
     /** Room above and below results for a focused card's 1.1x lift (about 11 dp on a poster) and its raised shadow. */
     const val RESULT_MARGIN = 28
-    /** Share of the space above the results, from the window's top, where cards have faded out (under Back and the clock). */
-    private const val FADE_CLEAR = .35f
+    /** Height of the band at the window's top over which scrolled-away cards fade out. */
+    private const val TOP_FADE = 40
     /** Room each side of the grid's faded layer, which clips, for a focused card's lift, rim and shadow. */
     private const val RESULT_SIDE = 28
 
@@ -307,15 +307,18 @@ internal object SearchBlocks {
             // No clip on the pane: the lazy grid clips only vertically, at the window's edges, where cards fade out.
             // Its content padding and ResultScroll keep a focused card's lift inside the results area.
             Column(Modifier.fillMaxSize().padding(start = if (split) editorWidth else 0.dp)
-                    .graphicsLayer { alpha = opacity.value }.testTag("search-results")
+                    .testTag("search-results")
                     .focusRequester(neutral).onFocusChanged { if (it.isFocused) { owner.tag = "search-results"; cards.page.focused("search-results") } }.focusable()
                     .drawWithContent {
                         drawContent()
                         Frame(state.columns, opacity.value, 1f - keyboard.value, -distance * keyboard.value, widthPx,
                             registry?.keys()?.filter { key -> item.tiles.any { it.key == key } }?.mapNotNull { registry.region(it)?.bounds?.invoke() } ?: emptyList()).also { state.frame = it; drawn?.invoke(it) }
                     }) {
-                if (item.meta.isNotEmpty()) BasicText(item.meta, Modifier.padding(top = 6.dp, bottom = 4.dp), style = TextBlocks.style(Tv.Font.REGULAR, 13f, R.color.tv_warning, false))
-                if (item.actions.isNotEmpty()) PageControls.Actions(item.actions, cards.page, 0.dp, 0.dp)
+                // The fade is applied to each part, not this column: a translucent layer would be drawn through a
+                // buffer of the column's size and cut the rows that run on past it until the fade ended.
+                val faded = Modifier.graphicsLayer { alpha = opacity.value }
+                if (item.meta.isNotEmpty()) BasicText(item.meta, faded.padding(top = 6.dp, bottom = 4.dp), style = TextBlocks.style(Tv.Font.REGULAR, 13f, R.color.tv_warning, false))
+                if (item.actions.isNotEmpty()) Box(faded) { PageControls.Actions(item.actions, cards.page, 0.dp, 0.dp) }
                 if (item.tiles.isNotEmpty() || item.loading) {
                     // The space between the results area and the window's top and bottom: the grid extends over it, so
                     // rows scroll on under the toolbar and off the screen's foot instead of being cut at the area's edge.
@@ -335,12 +338,12 @@ internal object SearchBlocks {
                                 val height = constraints.maxHeight + above + below; val width = constraints.maxWidth + 2 * side
                                 val placeable = measurable.measure(constraints.copy(minWidth = width, maxWidth = width, minHeight = height, maxHeight = height))
                                 layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(-side, -above) }
-                            }.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
+                            }.graphicsLayer { alpha = opacity.value; compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
                                 drawContent()
                                 if (size.height <= 0f) return@drawWithContent
                                 val h = size.height
-                                drawRect(Brush.verticalGradient(0f to Color.Transparent, above * FADE_CLEAR / h to Color.Transparent,
-                                        above / h to Color.Black, (h - below) / h to Color.Black, 1f to Color.Transparent), blendMode = BlendMode.DstIn)
+                                val fade = Math.min(above.toFloat(), TOP_FADE.dp.toPx())
+                                drawRect(Brush.verticalGradient(0f to Color.Transparent, fade / h to Color.Black, (h - below) / h to Color.Black, 1f to Color.Transparent), blendMode = BlendMode.DstIn)
                             },
                             contentPadding = with(density) { PaddingValues(start = RESULT_SIDE.dp, end = RESULT_SIDE.dp,
                                     top = RESULT_MARGIN.dp + above.toDp(), bottom = RESULT_MARGIN.dp + below.toDp()) },
@@ -352,7 +355,7 @@ internal object SearchBlocks {
                     }
                     }
                     }
-                } else Box(Modifier.fillMaxSize().padding(bottom = 52.dp), contentAlignment = Alignment.Center) {
+                } else Box(faded.fillMaxSize().padding(bottom = 52.dp), contentAlignment = Alignment.Center) {
                     BasicText(item.detail.ifEmpty { if (item.loading) "Searching…" else "Search films and series" }, style = TextBlocks.style(Tv.Font.REGULAR, 18f, R.color.tv_text_secondary, false))
                 }
             }

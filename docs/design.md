@@ -113,7 +113,9 @@ Shelves scroll horizontally. Page titles scroll with their page.
 - **Search:** typing replaces only the four-column results beside the keyboard, so the
   focused key never moves and posters keep readable widths. Results are never cut at the column's edges: the grid
   extends to the window's top and bottom, so rows scroll on under the toolbar and off the screen's foot, fading
-  out over that space (fully clear under Back and the clock). Inside the results area, 28 dp of content padding
+  out over a 40 dp band at the window's top and the space below the area. The keyboard reflow fades each
+  part of the results, never the whole column: a translucent column layer would be drawn through a buffer of
+  its size and cut those rows for the length of the fade. Inside the results area, 28 dp of content padding
   top and bottom holds a focused poster's lift and rim, and focus scrolls a card that margin inside the area
   rather than stopping at its edge.
   Moving Right into results slides the keyboard out and expands the grid to six
