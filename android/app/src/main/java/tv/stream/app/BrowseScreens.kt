@@ -198,8 +198,10 @@ class BrowseScreens(private val nav: Navigator, private val services: TvApplicat
             if (title != null) history.add(progressTile("history", title, progress))
         }
         if (favourites.isEmpty() && others.isEmpty() && history.isEmpty()) {
+            // A control to start from, so the empty page still opens with focus inside it rather than on the rail.
             return page.add(Item.message(0, "Your library is empty",
-                    "Films and series you play or favourite will appear here."))
+                    "Films and series you play or favourite will appear here.",
+                    Item.Action("library-browse", Item.Action.Style.PRIMARY, "Browse", Runnable { nav.root("Browse") }).icon(R.drawable.ic_tv_explore)))
         }
         if (!favourites.isEmpty()) { page.add(Item.header("Favourites")); page.addAll(Item.grid("favourites", Tile.Style.POSTER, POSTER_COLUMNS, favourites)) }
         if (!others.isEmpty()) { page.add(Item.header("Recently played")); page.addAll(Item.grid("played", Tile.Style.POSTER, POSTER_COLUMNS, others)) }

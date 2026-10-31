@@ -430,12 +430,28 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
             val position = getPosition(item)
             if (position == RecyclerView.NO_POSITION) return null
             // Only stops the row holds itself (a native control beside a composition) stay with the row's own search.
+            val direction = if (step < 0) View.FOCUS_UP else View.FOCUS_DOWN
             for (target in adapter.controlRows(position, step).take(3)) {
                 val block = reveal(page, target, step) ?: continue
-                val into = landing(page, focused, block, if (step < 0) View.FOCUS_UP else View.FOCUS_DOWN)
+                val into = landing(page, focused, block, direction)
                 if (into != null) return into
+                // A row just scrolled into layout composes its controls on the next frame: enter it then rather than
+                // skipping it for the row beyond.
+                if (composing(block)) {
+                    page.postOnAnimation {
+                        if (!focused.isFocused || !block.isAttachedToWindow) return@postOnAnimation
+                        landing(page, focused, block, direction)?.requestFocus()
+                    }
+                    return focused
+                }
             }
             return null
+        }
+
+        private fun composing(view: View): Boolean {
+            if (view is ComposePageBlock && view.hasPendingBinding) return true
+            if (view is ViewGroup) for (i in 0 until view.childCount) if (composing(view.getChildAt(i))) return true
+            return false
         }
 
         /** The laid-out view of block `target`, scrolling just far enough to lay it out when it is not. */

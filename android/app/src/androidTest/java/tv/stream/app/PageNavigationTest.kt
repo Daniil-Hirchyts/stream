@@ -73,6 +73,40 @@ class PageNavigationTest : AppHarness() {
             val tag = focusTag() ?: ""; tag.startsWith("settings:") && drawnFocused(tag) })
     }
     /**
+     * Every page opened shows a lit control without a key press: each tab reached by remote from the rail (Search's
+     * keyboard was left with focus on the bare page list), Search opened directly, and a title's details.
+     */
+    @Test @Throws(Exception::class) fun everyOpenedPageFocusesAControl() {
+        readyLibrary(); launch(); AppHarness.waitUntil("Home", 10000) { visible("Generated Film") && focusedRow() >= 0 }
+        for (tab in listOf("nav:search", "nav:Browse", "nav:Library", "nav:Settings", "nav:Home", "nav:search")) {
+            openFromRail(tab)
+            assertControlFocused(tab)
+            if (tab == "nav:search") {
+                assertTrue("Search starts on its keyboard: ${focusTag()}", focusTag()?.startsWith("keyboard:") == true)
+                // Left stays in the keyboard (Search never reveals the rail); Back leaves it, and that page is lit too.
+                key(KeyEvent.KEYCODE_BACK); AppHarness.waitUntil("Search closed", 5000) { focusTag()?.startsWith("keyboard:") != true }
+                assertControlFocused("The page Back returns to from Search")
+            }
+        }
+        browse!!.onActivity { a -> a.root("Home") }; AppHarness.waitUntil("Home again", 10000) { visible("Generated Film") }
+        browse!!.onActivity { a -> a.search() }; assertControlFocused("Search opened directly")
+        browse!!.onActivity { a -> a.root("Home") }; AppHarness.waitUntil("Home again", 10000) { visible("Generated Film") }
+        tap("Generated Film", false); AppHarness.waitUntil("Details", 10000) { visible("Play") || visible("Resume") }
+        assertControlFocused("Details")
+    }
+    /** Focus is in the page (not the rail, not the bare list), and a composition's control reports itself focused. */
+    private fun assertControlFocused(page: String) {
+        var detail = ""
+        val lit = waitFor(5000) {
+            val tag = focusTag(); val id = focusId()
+            detail = "focus $tag id $id"
+            if (tag == null || tag.startsWith("nav:") || id == R.id.page_rows) return@waitFor false
+            val node = semanticNode(tag) ?: return@waitFor true
+            node.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Focused) { false }
+        }
+        assertTrue("$page opens with a focused control ($detail)", lit)
+    }
+    /**
      * Quick remote moves across and between shelves leave exactly the focused poster grown, its artwork included, with
      * its caption riding below the grown artwork; every other poster settles back to its size.
      */

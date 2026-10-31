@@ -651,8 +651,13 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         var wanted: String = if (!route.focus.isEmpty()) route.focus else if (page.initialFocus != null) page.initialFocus!! else ""
         if (wanted.isEmpty() && page.firstTile() != null) wanted = page.firstTile()!!
         if (adapter.set(items, if (preserveNavigation) "" else wanted)) {
+            // Updated in place (Search's keyboard is built while it loads): the focus held on the list while the page
+            // loaded must still move into it, or nothing is lit.
+            val claim = !partial && waitingForContentFocus
             if (!partial) finishContentFocusWait()
-            contentReady = true; return
+            contentReady = true
+            if (claim) { val mine = generation; afterPageLayout { if (mine == generation && !stopped) claimContentFocus(wanted) } }
+            return
         }
         if (partial && updating) { contentReady = true; return }
         if (!updating || !preserveNavigation) {
@@ -683,7 +688,16 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
                 return@afterPageLayout
             } else focusFirst()
             contentReady = true
+            // A request a composition could not honour leaves focus on the list itself; the page's first control takes it.
+            list.postOnAnimation { if (mine == generation && !stopped) claimContentFocus("") }
         }
+    }
+    /** Every opened page shows a focused control: focus left on the bare list (or nowhere) moves to `target` or the first one. */
+    private fun claimContentFocus(target: String) {
+        if (waitingForContentFocus || (currentFocus != null && currentFocus !== list)) return
+        if (target.isNotEmpty() && (pageTools.findViewWithTag<View>(target)?.requestFocus() == true || PageFocus.request(list, target))) return
+        // An empty or still-loading page keeps focus on the list, so Right can still collapse the rail.
+        firstFocusable(list)?.requestFocus()
     }
     private fun finishContentFocusWait() {
         waitingForContentFocus = false

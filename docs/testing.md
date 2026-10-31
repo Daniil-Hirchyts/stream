@@ -56,8 +56,11 @@ the next shelf and only the first reaches Refresh. On the emulator,
 row, then the filters, then Back), including quick presses mid-scroll; opens
 Settings from the rail, after visiting Home and directly, and requires a
 category drawn focused (its layer-scaled bounds), not only focused for
-accessibility; and checks that after quick moves only the focused poster's
-artwork is grown, with its caption below it:
+accessibility; opens every tab by remote from the rail (Search, Browse,
+Library, Settings, Home), Search directly and a title's details, and requires a
+focused control in each (never the rail or the bare page list); and checks that
+after quick moves only the focused poster's artwork is grown, with its caption
+below it:
 
 ```sh
 (cd android && ./gradlew :app:testDebugUnitTest --tests tv.stream.app.ui.PageRowFocusTest)

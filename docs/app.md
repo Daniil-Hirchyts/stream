@@ -270,8 +270,17 @@ retains route scroll and focus. Each block's composables own its layout:
   first if it scrolled away, and enters it in the same column; only Up from the
   first such block reaches Back or Refresh. No extra rows are kept laid out off
   screen (their Compose labels would read as visible to accessibility); a row
-  that is not attached is scrolled into layout when focus moves to it. Geometric
-  search from the window used to pick the top corner over a recycled row above.
+  that is not attached is scrolled into layout when focus moves to it, and one
+  whose controls are still composing is entered on the next frame rather than
+  skipped. Geometric search from the window used to pick the top corner over a
+  recycled row above.
+- **Every page opens focused:** while a page loads, focus waits on the page list
+  itself. When the page arrives, focus moves to its restored or initial control.
+  This includes a page updated in place, such as Search, whose keyboard is
+  already built while it loads. If focus is still on the bare list or nowhere
+  once the page has settled, the first control takes it (`claimContentFocus`).
+  An empty Library offers Browse, so it has a control too; a page with no
+  controls at all keeps focus on the list, so Right can still collapse the rail.
 - **Platform views kept:** the Settings subtitle preview hosts the player's
   subtitle renderer through `AndroidView`; Media3 keeps its video surface. The
   player's toolbar, timeline and loading/error/up-next layers are composables
