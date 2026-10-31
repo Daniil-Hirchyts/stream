@@ -389,7 +389,19 @@ class MorphDialog(context: Context, contextual: Boolean) : Dialog(context) {
             // Only the control's part of its composition, at its on-screen size.
             val image = Bitmap.createBitmap(Math.max(1, original.width()), Math.max(1, original.height()), Bitmap.Config.ARGB_8888)
             val at = IntArray(2); anchor.getLocationInWindow(at)
-            try { val canvas = Canvas(image); canvas.translate((at[0] - original.left).toFloat(), (at[1] - original.top).toFloat()); anchor.draw(canvas); return image }
+            try {
+                val canvas = Canvas(image); canvas.translate((at[0] - original.left).toFloat(), (at[1] - original.top).toFloat()); anchor.draw(canvas)
+                // The composition paints around the control too (the player toolbar's shade): keep only the
+                // control's own shape, or that rectangle shows as a dark square over the live page.
+                val radius = cornerRadius(original)
+                val outside = android.graphics.Path().apply {
+                    addRoundRect(0f, 0f, image.width.toFloat(), image.height.toFloat(), radius, radius, android.graphics.Path.Direction.CW)
+                    fillType = android.graphics.Path.FillType.INVERSE_WINDING
+                }
+                Canvas(image).drawPath(outside, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR) })
+                return image
+            }
             catch (unsupportedSurface: RuntimeException) { image.recycle(); return null }
         }
         if (artwork) return copyView(anchor, 512)
@@ -482,7 +494,8 @@ class MorphDialog(context: Context, contextual: Boolean) : Dialog(context) {
     private fun cornerRadius(bounds: Rect): Float {
         if (artwork) return dp(10f).toFloat()
         val half = Math.min(bounds.width(), bounds.height()) / 2f
-        if (region != null) return Math.min(half, region.radius)
+        // A round control reports half its resting size; grown by focus it is still round.
+        if (region != null) return if (region.radius * 2 * Tv.LIFT_ICON >= Math.min(bounds.width(), bounds.height()) - 1) half else Math.min(half, region.radius)
         val current: Drawable? = if (anchor == null || anchor.background == null) null else anchor.background.current
         if (current !is GradientDrawable) return Math.min(dp(22f).toFloat(), half)
         val platter: GradientDrawable = current
@@ -572,8 +585,9 @@ class MorphDialog(context: Context, contextual: Boolean) : Dialog(context) {
                 shape.cornerRadius = fromRadius + (toRadius - fromRadius) * f
                 if (outgoing != null) outgoing.alpha = 1 - smooth(progress / .45f)
                 if (lifted != null && covered) lifted.alpha = smooth(progress / .6f)
-                // Hidden behind the copy by now: only its shadow is left to fade.
-                panel.alpha = 1 - smooth((progress - .7f) / .3f)
+                // Gone before it reaches the control: a gray panel the size of a small round button would show
+                // round its edges (and its shadow) as a dark blob behind the copy.
+                panel.alpha = 1 - smooth((progress - .4f) / .35f)
                 return@addUpdateListener
             }
             if (outgoing != null) outgoing.alpha = 1 - blend
