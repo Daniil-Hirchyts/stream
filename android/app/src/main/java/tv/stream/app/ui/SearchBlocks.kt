@@ -191,8 +191,13 @@ internal object SearchBlocks {
         val scope = rememberCoroutineScope()
         // A query's scroll comes back only when returning to Search (Back from a title restores its card); results
         // for a query typed again start at the top rather than wherever that query was last left.
-        val saved = remember(item.value) { if (cards.page.restore.isEmpty()) null else cards.memory.load("search:" + item.value) as? Bundle }
-        val restored = item.tiles.indexOfFirst { it.key == cards.page.restore }.coerceAtLeast(0)
+        val initialQuery = remember { item.value }
+        var restoreTarget by remember { mutableStateOf(cards.page.restore) }
+        // The route's restore key belongs to its opening query. Once edited, even typing that same query again
+        // must not resurrect its old scroll or ask an old result to take focus as providers answer.
+        if (item.value != initialQuery) restoreTarget = ""
+        val saved = remember(item.value) { if (restoreTarget.isEmpty()) null else cards.memory.load("search:" + item.value) as? Bundle }
+        val restored = item.tiles.indexOfFirst { it.key == restoreTarget }.coerceAtLeast(0)
         val grid = key(item.value) { rememberLazyGridState(saved?.getInt("index") ?: restored, saved?.getInt("offset") ?: 0) }
         val neutral = remember { FocusRequester() }
         DisposableEffect(registry, neutral) {
@@ -230,8 +235,8 @@ internal object SearchBlocks {
             }
         }
         // A query answer may add the remembered card beyond the initially composed rows.
-        LaunchedEffect(item.tiles, cards.page.restore) {
-            val wanted = cards.page.restore
+        LaunchedEffect(item.tiles, restoreTarget) {
+            val wanted = restoreTarget
             // A State rebuilt on Back has no last result; neither fallback below may replace the restored card.
             val card = wanted.isNotEmpty() && item.tiles.any { it.key == wanted }
             if (card) state.lastResult = wanted

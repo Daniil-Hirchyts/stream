@@ -235,6 +235,31 @@ class SearchModesTest : SearchHarness() {
             screenshot("validation-search-scrolled.png")
         }
     }
+    @Test fun extendingQueryWithReorderedResultsStartsAtTheTop() {
+        BrowseRecoveryTest.CatalogServer().use { server ->
+            services.addons.newRequest().use { request ->
+                services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", request))
+            }
+            launch(); AppHarness.waitUntil("Home", 10000) { visible("Film 00") }
+            tap("Search", true); AppHarness.waitUntil("keyboard", 5000) { keyboardShown() }
+            tap("Type f", false); tap("Type i", false)
+            searchWait("first query", 10000) { visible("Film 00") }
+            SystemClock.sleep(500)
+            fun firstRow(): Pair<String, Float> = semanticNodes {
+                it.config.getOrElse(SemanticsProperties.TestTag) { "" }.startsWith("search:[")
+            }.minBy { it.boundsInWindow.top }.let {
+                it.config.getOrElse(SemanticsProperties.TestTag) { "" } to it.boundsInWindow.top
+            }
+            val top = firstRow().second
+            server.reverseSearch = true
+            tap("Type l", false)
+            searchWait("extended query", 10000) { query() == "fil" && server.searchRequests.get() >= 2 }
+            SystemClock.sleep(700)
+            val first = firstRow()
+            assertTrue("The reordered first result is visible: $first", first.first.contains("browse:95"))
+            assertEquals("The new query starts at the same top", top, first.second, 2f)
+        }
+    }
     /** Typing a query again starts its results at the top, not where that query's grid was last scrolled. */
     @Test @Throws(Exception::class) fun retypedQueryStartsAtTheTop() {
         BrowseRecoveryTest.CatalogServer().use { server ->
@@ -252,6 +277,13 @@ class SearchModesTest : SearchHarness() {
             AppHarness.waitUntil("full results", 5000) { !keyboardShown() && focus().startsWith("search:[") }
             for (i in 0 until 3) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN); SystemClock.sleep(400) }
             AppHarness.waitUntil("results scrolled", 5000) { firstTop() < top - 50 }
+            // Back from a title rebuilds Search with a restoration key. That key must not restore a later query.
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
+            AppHarness.waitUntil("title", 10000) { visible("Play") }
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            AppHarness.waitUntil("results restored", 10000) { focus().startsWith("search:[") }
+            browse!!.recreate()
+            AppHarness.waitUntil("restored activity", 10000) { focus().startsWith("search:[") }
             // Left from the leading column brings the keyboard back with the grid still scrolled.
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT)
             AppHarness.waitUntil("keyboard again", 5000) { keyboardShown() && focus().startsWith("keyboard:") }

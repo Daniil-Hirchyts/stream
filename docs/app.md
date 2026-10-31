@@ -244,7 +244,8 @@ retains route scroll and focus. Each block's composables own its layout:
   (`TitleBlocks`); the Home spotlight, shelves, grids and the episode browser with
   its seasons (`TileBlocks`); skeletons and loading (`SkeletonBlocks`). Shelves
   keep their scroll in the route's memory. Search restores results when returning
-  from a title; a newly typed query starts at the top.
+  from a title; a newly typed query starts at the top. Editing the opening query
+  also clears its restoration target, so cached results cannot revive an old position.
   Up and Down move between blocks in page order: Down from the actions reaches
   the seasons. `TitleScreens.seasonOrder` puts Specials (season 0) after the
   last numbered season and `defaultSeason` opens on the selected episode's

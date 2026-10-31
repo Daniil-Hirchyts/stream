@@ -242,6 +242,7 @@ class BrowseRecoveryTest : SearchHarness() {
             server = ServerSocket(0, 20, java.net.InetAddress.getByName("127.0.0.1")); url = "http://127.0.0.1:" + server.localPort
             workers.execute { while (!server.isClosed) try { val socket = server.accept(); workers.execute { answer(socket) } } catch (ignored: Exception) { break } }
         }
+        @Volatile var reverseSearch = false
         fun requests(genre: String, skip: Int): Int { val count = requests["$genre:$skip"]; return if (count == null) 0 else count.get() }
         @Throws(Exception::class)
         fun title(index: Int): JSONObject { return JSONObject().put("id", "browse:$index").put("type", "movie").put("name", String.format(java.util.Locale.ROOT, "Film %02d", index)).put("description", "Generated navigation fixture.") }
@@ -279,7 +280,7 @@ class BrowseRecoveryTest : SearchHarness() {
                         if (genre == "Flaky" && number == 3) flakyThird.await(15, TimeUnit.SECONDS)
                         val titles = JSONArray()
                         val count = if (extra.containsKey("search")) 96 else 24
-                        if (genre != "Empty" && !(emptySearch && extra.containsKey("search")) && status == 200) for (i in skip until skip + count) titles.put(title(i))
+                        if (genre != "Empty" && !(emptySearch && extra.containsKey("search")) && status == 200) for (i in skip until skip + count) titles.put(title(if (reverseSearch && extra.containsKey("search")) count - 1 - i else i))
                         result.put(if (genre == "Bad data") "invalid" else "metas", titles)
                     } else if (path.startsWith("/meta/")) {
                         val id = URLDecoder.decode(path.substring(path.lastIndexOf('/') + 1, path.length - 5), "UTF-8")
