@@ -51,7 +51,10 @@ All assets are local; text and icons need no runtime network request or React de
   at 90°, the eye's upper lid and pupil growing from points hidden under the
   tick, the slash drawn in by trim); the filled heart grows from a 1% copy of
   itself at the centre under the unchanged outline. Each morph's last frame
-  matches its static glyph. Regenerate rather than hand-edit:
+  matches its static glyph. The glyph sits on a 30-unit canvas (3 units of room
+  each side) so the heart's 1.18× beat and the slash's round caps are never cut
+  at the edge; `PageControls.Icon` hosts the drawable that much larger, centred
+  on the icon's 24-unit slot (`MORPH_PAD`), so layout is unchanged. Regenerate rather than hand-edit:
   `python3 branding/make_morphs.py` from `android/` (standard library only).
 
 ### Regeneration

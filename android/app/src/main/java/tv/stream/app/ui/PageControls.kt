@@ -95,6 +95,7 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.android.awaitFrame
@@ -343,9 +344,17 @@ internal object PageControls {
                     setImageDrawable(context.getDrawable(morph)); tag = "icon-morph"
                     post { (drawable as? android.graphics.drawable.Animatable)?.start() }
                 }
-            }, update = { it.imageTintList = android.content.res.ColorStateList.valueOf(tint.toArgb()) }, modifier = modifier.size(sizeDp.dp))
+            }, update = { it.imageTintList = android.content.res.ColorStateList.valueOf(tint.toArgb()) },
+                    modifier = modifier.size(sizeDp.dp).layout { measurable, constraints ->
+                        // The morph's canvas has room around the glyph for its beat; centre that larger view on the slot.
+                        val pad = (sizeDp * MORPH_PAD / 24f).dp.roundToPx()
+                        val placeable = measurable.measure(Constraints.fixed(constraints.maxWidth + 2 * pad, constraints.maxHeight + 2 * pad))
+                        layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(-pad, -pad) }
+                    })
         }
     }
+    /** Units of room each side of a toggle morph's 24-unit glyph (branding/make_morphs.py PAD). */
+    const val MORPH_PAD = 3
 
     /** The animated vector joining two toggle glyphs, or 0 when they aren't a toggle's two states. */
     @DrawableRes

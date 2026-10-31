@@ -164,10 +164,18 @@ def scaled(data, k, cx=12.0, cy=12.5):
 HEART_SEED = scaled(HEART, 0.01)
 
 
+# Room around the 24-unit glyph for the heart's beat (1.18x) and the slash's round caps, which would otherwise be cut
+# at the canvas edge. The app hosts these drawables that much larger than the icon's slot (PageControls.MORPH_PAD).
+PAD = 3
+SIDE = 24 + 2 * PAD
+
+
 def vector(body):
     return ('    <aapt:attr name="android:drawable">\n'
-            '        <vector android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">\n'
+            '        <vector android:width="%ddp" android:height="%ddp" android:viewportWidth="%d" android:viewportHeight="%d">\n'
+            '        <group android:translateX="%d" android:translateY="%d">\n' % (SIDE, SIDE, SIDE, SIDE, PAD, PAD)
             + body +
+            '        </group>\n'
             '        </vector>\n'
             '    </aapt:attr>\n')
 

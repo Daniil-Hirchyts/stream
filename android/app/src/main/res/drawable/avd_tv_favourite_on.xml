@@ -4,7 +4,8 @@
 <animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt">
     <aapt:attr name="android:drawable">
-        <vector android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+        <vector android:width="30dp" android:height="30dp" android:viewportWidth="30" android:viewportHeight="30">
+        <group android:translateX="3" android:translateY="3">
             <group android:name="pop" android:pivotX="12" android:pivotY="12.5">
                 <path android:name="fill" android:fillColor="#FFFFFFFF"
                     android:pathData="M12.0884,12.4211 a0.055,0.055,0,0,0,-0.0778,0 L12,12.4317 l-0.0106,-0.0106 a0.055,0.055,0,0,0,-0.0778,0.0778 l0.0106,0.0106 L12,12.5873 l0.0778,-0.0778 l0.0106,-0.0106 a0.055,0.055,0,0,0,0,-0.0778 z" />
@@ -12,6 +13,7 @@
                     android:strokeLineCap="round" android:strokeLineJoin="round"
                     android:pathData="M20.84,4.61 a5.5,5.5,0,0,0,-7.78,0 L12,5.67 l-1.06,-1.06 a5.5,5.5,0,0,0,-7.78,7.78 l1.06,1.06 L12,21.23 l7.78,-7.78 l1.06,-1.06 a5.5,5.5,0,0,0,0,-7.78 z" />
             </group>
+        </group>
         </vector>
     </aapt:attr>
     <target android:name="fill">
