@@ -45,6 +45,8 @@ jobs:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
       - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;29.0.14206865' 'cmake;3.31.6'
+      # The FFmpeg/dav1d software decoders (codecs/build-native.sh) need these build tools.
+      - run: sudo apt-get update && sudo apt-get install -y meson ninja-build nasm pkg-config
       - name: Pinned crates
         uses: actions/cache@v4
         with:
