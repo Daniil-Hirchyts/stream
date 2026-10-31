@@ -33,9 +33,9 @@ class NewEpisodesScreenTest : AppHarness() {
 
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
         waitUntil("Details open on the new episode", 10000) { focused("play") && visible("S1 E3") }
-        // This fixture has no stream provider, so the "Get add-ons" notice sits between the actions and the seasons.
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
-        waitUntil("the no-provider notice", 5000) { focused("add-source") }
+        // This fixture has no stream provider; Details says nothing of it (Sources and the player do), so Down
+        // goes straight from the actions to the seasons.
+        assertFalse("No source-add-on notice on Details", visible(Availability.NO_PROVIDER))
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
         waitUntil("episodes", 5000) { focused("season:1") }
         waitUntil("the new episode card is marked", 5000) { "New" == flag("episode:followed:1:3") }
@@ -54,8 +54,6 @@ class NewEpisodesScreenTest : AppHarness() {
         // Opening the series without choosing an episode still starts where the viewer is, now unmarked.
         browse!!.onActivity { activity -> activity.openTitle(show, "") }
         waitUntil("Play continues the series", 10000) { focused("play") && visible("S1 E3") }
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
-        waitUntil("the no-provider notice", 5000) { focused("add-source") }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
         waitUntil("episodes", 5000) { focused("season:1") }
         waitUntil("no longer marked", 5000) { shown("episode:followed:1:3") && flag("episode:followed:1:3") == null }

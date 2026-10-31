@@ -243,9 +243,9 @@ retains route scroll and focus. Each block's composables own its layout:
 - **Titles and artwork:** Details, the series header, intro and page titles
   (`TitleBlocks`); the Home spotlight, shelves, grids and the episode browser with
   its seasons (`TileBlocks`); skeletons and loading (`SkeletonBlocks`). Shelves
-  and Search results keep their scroll per key in the route's memory.
-  Up and Down move between blocks in page order: on a title without a source
-  add-on, Down from the actions reaches the notice's Get add-ons button before
+  keep their scroll in the route's memory. Search restores results when returning
+  from a title; a newly typed query starts at the top.
+  Up and Down move between blocks in page order: Down from the actions reaches
   the seasons. `TitleScreens.seasonOrder` puts Specials (season 0) after the
   last numbered season and `defaultSeason` opens on the selected episode's
   season, else the first numbered one; without progress Play starts the first

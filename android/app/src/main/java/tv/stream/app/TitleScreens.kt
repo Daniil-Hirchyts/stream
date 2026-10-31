@@ -112,10 +112,6 @@ class TitleScreens(private val nav: Navigator, private val services: TvApplicati
         }
         page.add(Item.actions("title-actions", actions))
         page.initialFocus = "play"
-        if (!local && noSources(title, video)) {
-            page.add(Item.notice(R.drawable.ic_tv_info, Availability.NO_PROVIDER, "",
-                    Action("add-source", Action.Style.SECONDARY, "Get add-ons", Runnable { nav.push(StoreScreens.route("Sources")) }).icon(R.drawable.ic_tv_extension)))
-        }
         if (title.type == "series") episodes(page, route, title, played, notice)
         if (!title.cast.isEmpty()) page.add(Item.text("Starring", title.cast.subList(0, Math.min(4, title.cast.size)).joinToString(", ")))
         return page
@@ -149,13 +145,6 @@ class TitleScreens(private val nav: Navigator, private val services: TvApplicati
         }
         page.add(Item.episodes(tabs, panes, "season:" + route.season,
                 Consumer { key -> route.season = Integer.parseInt(key.substring("season:".length)) }))
-    }
-
-    /** True when no enabled add-on could supply streams and the metadata carries none itself. */
-    private fun noSources(title: Title, video: String): Boolean {
-        if (!services.addons.providers("stream", title.type, video).isEmpty()) return false
-        for (e in title.episodes) if (e.id == video && !e.streams.isEmpty()) return false
-        return true
     }
 
     /** What the providers answered for one video; reused for a minute while the viewer re-sorts. */

@@ -235,6 +235,33 @@ class SearchModesTest : SearchHarness() {
             screenshot("validation-search-scrolled.png")
         }
     }
+    /** Typing a query again starts its results at the top, not where that query's grid was last scrolled. */
+    @Test @Throws(Exception::class) fun retypedQueryStartsAtTheTop() {
+        BrowseRecoveryTest.CatalogServer().use { server ->
+            services.addons.newRequest().use { request ->
+                services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", request))
+            }
+            launch(); AppHarness.waitUntil("Home", 10000) { visible("Film 00") }
+            tap("Search", true); AppHarness.waitUntil("keyboard", 5000) { keyboardShown() }
+            tap("Type f", false); tap("Type i", false)
+            searchWait("results", 10000) { visible("Film 00") && columns() == 4 }
+            fun firstTop(): Float = semanticNodes { it.config.getOrElse(SemanticsProperties.TestTag) { "" }.startsWith("search:[") }.minOf { it.boundsInWindow.top }
+            val top = firstTop()
+            focusSearch("keyboard:f")
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
+            AppHarness.waitUntil("full results", 5000) { !keyboardShown() && focus().startsWith("search:[") }
+            for (i in 0 until 3) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN); SystemClock.sleep(400) }
+            AppHarness.waitUntil("results scrolled", 5000) { firstTop() < top - 50 }
+            // Left from the leading column brings the keyboard back with the grid still scrolled.
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT)
+            AppHarness.waitUntil("keyboard again", 5000) { keyboardShown() && focus().startsWith("keyboard:") }
+            tap("Clear", false); AppHarness.waitUntil("cleared", 5000) { query() == "Search" }
+            tap("Type f", false); tap("Type i", false)
+            searchWait("results again", 10000) { visible("Film 00") }
+            SystemClock.sleep(600)
+            assertEquals("The first row is back at the top of the results", top, firstTop(), 2f)
+        }
+    }
     private fun query(): String = searchQuery()
     @Test @Throws(Exception::class) fun aPointerSweepLeavesNoKeyHoveredWhileResultsArrive() {
         // The TV's pointer (or the emulator window's) passing over the keyboard while results arrive left keys drawn

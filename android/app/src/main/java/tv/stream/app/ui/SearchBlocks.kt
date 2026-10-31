@@ -189,7 +189,9 @@ internal object SearchBlocks {
         val registry = PageFocus.Local.current
         val owner = LocalView.current
         val scope = rememberCoroutineScope()
-        val saved = remember(item.value) { cards.memory.load("search:" + item.value) as? Bundle }
+        // A query's scroll comes back only when returning to Search (Back from a title restores its card); results
+        // for a query typed again start at the top rather than wherever that query was last left.
+        val saved = remember(item.value) { if (cards.page.restore.isEmpty()) null else cards.memory.load("search:" + item.value) as? Bundle }
         val restored = item.tiles.indexOfFirst { it.key == cards.page.restore }.coerceAtLeast(0)
         val grid = key(item.value) { rememberLazyGridState(saved?.getInt("index") ?: restored, saved?.getInt("offset") ?: 0) }
         val neutral = remember { FocusRequester() }

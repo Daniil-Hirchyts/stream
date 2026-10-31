@@ -373,9 +373,9 @@ six query snapshots. Provider requests and retry waits stay off the UI thread;
 navigation cancels the old scope and its sockets/backoff before starting another.
 
 Catalogue add-ons such as Cinemeta describe titles but supply no video.
-Details and Sources say so ("No source add-on installed") and open the store on
-its Sources filter. The player names the actual cause when nothing can play: no
-source add-on, failing providers (by name and reason), only unsupported
+Sources says so ("No source add-on installed") and opens the store on its
+Sources filter; Details stays uncluttered and shows no notice. The player names
+the actual cause when nothing can play: no source add-on, failing providers (by name and reason), only unsupported
 results, or no results. Nothing is installed without the user's review.
 
 `WatchActivity` re-resolves sources and uses the shared player. `SourcePolicy`
