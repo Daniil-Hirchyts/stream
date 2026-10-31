@@ -27,3 +27,7 @@ android/**/.cxx*/
 android/.kotlin/
 __pycache__/
 *.pyc
+
+# Release signing keys stay outside version control
+*.jks
+*.keystore
