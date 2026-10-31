@@ -73,7 +73,7 @@ release workflow; see [Releasing](releasing.md).
 | Launcher icon and banner | `android/branding/make_brand.py` |
 | Engine open source notice | `python3 native/core/notices.py` after `Cargo.lock` changes |
 | Baseline and Startup Profiles | `./simulator.sh baseline-profile` ([testing](testing.md#baseline-and-startup-profiles)) |
-| README screenshots and GIFs | `./simulator.sh readme-media` (internet; real catalogue, plays only Big Buck Bunny, CC BY) |
+| README screenshots and GIFs | `./simulator.sh readme-media` (internet; real catalogue, plays only Tears of Steel, CC BY 3.0) |
 
 ## Tests
 

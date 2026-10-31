@@ -13,7 +13,7 @@ No account, no cloud, no server, no debrid subscription, no tracking: your data 
 
 <img src="docs/media/home.gif" alt="Browsing Home: the spotlight follows focus across current films and series, then opens a film's details" width="960"/>
 
-<sub>Real interface on the Android TV emulator. Titles and artwork come from the Cinemeta catalogue; the only film shown playing is Big Buck Bunny (© Blender Foundation, CC BY 3.0).</sub>
+<sub>Real interface on the Android TV emulator. Titles and artwork come from the Cinemeta catalogue; the only film shown playing is Tears of Steel (2012, © Blender Foundation, CC BY 3.0).</sub>
 
 </div>
 
@@ -69,8 +69,8 @@ No account, no cloud, no server, no debrid subscription, no tracking: your data 
 <td><b>Search</b>: a keyboard made for the remote, results as you type, a full grid with Right.</td>
 </tr>
 <tr>
-<td><img src="docs/media/player-controls.png" alt="The player's toolbar over Big Buck Bunny: title, timeline, watched, Audio &amp; subtitles and Settings"/></td>
-<td><img src="docs/media/sources.png" alt="The sources for Big Buck Bunny, with sort options, quality and size"/></td>
+<td><img src="docs/media/player-controls.png" alt="The player's toolbar over Tears of Steel: title, timeline, watched, Audio &amp; subtitles and Settings"/></td>
+<td><img src="docs/media/sources.png" alt="The sources for Tears of Steel, with sort options, quality and size"/></td>
 </tr>
 <tr>
 <td><b>Player</b>: a quiet toolbar with a draggable timeline; subtitles always stay clear of it.</td>
@@ -221,6 +221,6 @@ Stream does not host, index or provide any content. Add-ons are third-party
 services chosen by the user, who is responsible for what they watch and for
 respecting the law and copyright where they live. The screenshots and recordings
 in this README show titles and artwork from the Cinemeta catalogue as the app
-displays them; the only film shown playing is Big Buck Bunny (© Blender
+displays them; the only film shown playing is [Tears of Steel](https://mango.blender.org/about/) (2012, © Blender
 Foundation, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)),
-streamed from the Internet Archive.
+streamed from the Blender Foundation’s own download server.

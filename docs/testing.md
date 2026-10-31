@@ -261,13 +261,19 @@ now writes a `failure` record with the player state and engine diagnostics; see
 
 Never required, never against a LAN TV, and nothing plays but public-domain or
 openly licensed films (`readme-media` browses Cinemeta's current catalogue but
-plays only Big Buck Bunny, CC BY). Each uses
+plays only Tears of Steel, CC BY 3.0). Each uses
 an isolated database and installs nothing into owner data; none supplies
 accounts or credentials.
 
+README recordings use 1280 × 720 at 4 Mbps. The licensed live-action film comes
+from the Blender Foundation’s download server and plays forward before capture.
+To retry just playback while preserving completed browsing captures, run
+`./simulator.sh data-test tv.stream.app.ReadmeCapture -e capturePlaybackOnly true`,
+then `sh simulator/readme-media.sh`.
+
 ```sh
 ./simulator.sh live-film       # films installed through the store play on the emulator
-./simulator.sh readme-media    # README screenshots and GIFs (docs/media); plays only Big Buck Bunny
+./simulator.sh readme-media    # README screenshots and GIFs (docs/media); plays only Tears of Steel
 ./simulator.sh live-addons     # every current store entry: manifest, resources, review install
 ./simulator.sh live-torrents   # one public-domain torrent per sampled provider
 ./simulator.sh live-torrents Torrentio,Comet   # a subset; names without spaces

@@ -8,6 +8,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
+import org.json.JSONArray
 import org.junit.Before
 import org.junit.Test
 import tv.stream.app.addon.AddonUrl
@@ -18,12 +19,12 @@ import tv.stream.app.addon.Title
  * Explicit capture utility for the README, not a regression gate: `./simulator.sh readme-media` runs it on the verified
  * emulator and turns its output into `docs/media`. It uses real providers over the internet with an isolated database
  * (nothing reaches owner data). Browsing scenes show Cinemeta's current catalogue (titles, posters and artwork as the
- * app displays them); nothing from it is played. The only film that plays on camera is Big Buck Bunny (Blender
- * Foundation, CC BY 3.0), streamed by the built-in Internet Archive add-on. No torrent add-on is installed.
+ * app displays them); nothing from it is played. The only film that plays on camera is Tears of Steel (2012),
+ * © Blender Foundation, CC BY 3.0, from the Blender Foundation’s download server. No torrent add-on is installed.
  */
 class ReadmeCapture : AppHarness() {
-    private lateinit var cinemeta: String
-    private val output by lazy { File(context.filesDir, "readme").also { it.deleteRecursively(); it.mkdirs() } }
+    private val playbackOnly get() = androidx.test.platform.app.InstrumentationRegistry.getArguments().getString("capturePlaybackOnly") == "true"
+    private val output by lazy { File(context.filesDir, "readme").also { if (!playbackOnly) it.deleteRecursively(); it.mkdirs() } }
 
     @Before fun internet() {
         context.getSharedPreferences("instrumentation", Context.MODE_PRIVATE).edit().putBoolean("localOnly", false)
@@ -33,79 +34,79 @@ class ReadmeCapture : AppHarness() {
             services.addons.newRequest().use { request -> services.addons.install(url, services.addons.preview(url, request)) }
         }
         val installed = services.store.addons()
-        cinemeta = installed.first { it.manifest.name == "Cinemeta" }.id
-        // Browsing shows Cinemeta's current catalogue; the Archive only supplies the open film that plays.
+        // Keep browsing on Cinemeta’s current catalogue; playback uses the explicit licensed source below.
         val archive = installed.first { it.manifest.name == "Internet Archive" }
         for (c in archive.manifest.catalogs) services.store.catalogVisible(archive.id, c.type, c.id, false)
     }
 
     @Test @Throws(Exception::class) fun capture() {
         launch()
-        waitUntil("Home rows", 60_000) { visible("Popular Films") }
-        settle(4000)
-        // A small library, added with the remote from the first catalogue row, so the favourites carry its artwork.
-        for (i in 0 until 3) {
-            key(KeyEvent.KEYCODE_DPAD_CENTER); waitUntil("details $i", 30_000) { visible("Play") }; settle(1500)
-            tap("Add favourite", false); waitUntil("favourite $i", 10_000) { visible("Remove favourite") }
-            key(KeyEvent.KEYCODE_BACK); waitUntil("Home again", 15_000) { visible("Popular Films") }; settle(1500)
-            repeat(i + 1) { key(KeyEvent.KEYCODE_DPAD_RIGHT); pause(300) }
-        }
-        root("Library"); pause(500); root("Home")
-        waitUntil("Home with favourites", 30_000) { visible("Favourites") && visible("Popular Films") }
-        settle(4000)
+        if (!playbackOnly) {
+            waitUntil("Home rows", 60_000) { visible("Popular Films") }
+            settle(4000)
+            // A small library, added with the remote from the first catalogue row, so the favourites carry its artwork.
+            for (i in 0 until 3) {
+                key(KeyEvent.KEYCODE_DPAD_CENTER); waitUntil("details $i", 30_000) { visible("Play") }; settle(1500)
+                tap("Add favourite", false); waitUntil("favourite $i", 10_000) { visible("Remove favourite") }
+                key(KeyEvent.KEYCODE_BACK); waitUntil("Home again", 15_000) { visible("Popular Films") }; settle(1500)
+                repeat(i + 1) { key(KeyEvent.KEYCODE_DPAD_RIGHT); pause(300) }
+            }
+            root("Library"); pause(500); root("Home")
+            waitUntil("Home with favourites", 30_000) { visible("Favourites") && visible("Popular Films") }
+            settle(4000)
 
-        // Start at the top of Home, the spotlight over the first favourite.
-        focusTop("favourite:" + services.store.library(false).first { it.favourite }.title.key())
-        settle(3000)
-        record("home", 18) {
-            pause(1500)
-            repeat(2) { key(KeyEvent.KEYCODE_DPAD_RIGHT); pause(900) }
-            key(KeyEvent.KEYCODE_DPAD_DOWN); pause(1100)
-            repeat(4) { key(KeyEvent.KEYCODE_DPAD_RIGHT); pause(800) }
-            key(KeyEvent.KEYCODE_DPAD_DOWN); pause(1100); key(KeyEvent.KEYCODE_DPAD_UP); pause(1100)
-            // A film: the capture installs no series stream add-on, and a series would say so on its page.
-            key(KeyEvent.KEYCODE_DPAD_CENTER); waitUntil("details", 20_000) { visible("Play") || visible("Resume") }; pause(3500)
-        }
-        shot("details")
-        key(KeyEvent.KEYCODE_BACK); waitUntil("Home again", 10_000) { visible("Popular Films") }; settle(2500)
-        focusTop("favourite:" + services.store.library(false).first { it.favourite }.title.key())
-        settle(2500)
-        shot("home")
+            // Start at the top of Home, the spotlight over the first favourite.
+            focusTop("favourite:" + services.store.library(false).first { it.favourite }.title.key())
+            settle(3000)
+            record("home", 18) {
+                pause(1500)
+                repeat(2) { key(KeyEvent.KEYCODE_DPAD_RIGHT); pause(900) }
+                key(KeyEvent.KEYCODE_DPAD_DOWN); pause(1100)
+                repeat(4) { key(KeyEvent.KEYCODE_DPAD_RIGHT); pause(800) }
+                key(KeyEvent.KEYCODE_DPAD_DOWN); pause(1100); key(KeyEvent.KEYCODE_DPAD_UP); pause(1100)
+                // A film: the capture installs no series stream add-on, and a series would say so on its page.
+                key(KeyEvent.KEYCODE_DPAD_CENTER); waitUntil("details", 20_000) { visible("Play") || visible("Resume") }; pause(3500)
+            }
+            shot("details")
+            key(KeyEvent.KEYCODE_BACK); waitUntil("Home again", 10_000) { visible("Popular Films") }; settle(2500)
+            focusTop("favourite:" + services.store.library(false).first { it.favourite }.title.key())
+            settle(2500)
+            shot("home")
 
-        browse!!.onActivity { it.search() }; waitUntil("keyboard", 10_000) { visible("Type a") }; settle(1200)
-        // A first pass warms the providers' search, so the recorded one is prompt.
-        typeWithRemote("dune")
-        try { waitUntil("first results", 60_000) { visible("Dune") } } catch (e: AssertionError) { shot("search-timeout"); throw e }
-        tap("Clear", false); waitUntil("cleared", 10_000) { visible("Type a") }; settle(1500)
-        record("search", 40) {
-            pause(1000)
+            browse!!.onActivity { it.search() }; waitUntil("keyboard", 10_000) { visible("Type a") }; settle(1200)
+            // A first pass warms the providers' search, so the recorded one is prompt.
             typeWithRemote("dune")
-            waitUntil("results", 30_000) { visible("Dune") }; pause(2500)
-            key(KeyEvent.KEYCODE_DPAD_RIGHT); pause(2500)
-            repeat(2) { key(KeyEvent.KEYCODE_DPAD_RIGHT); pause(700) }
-            key(KeyEvent.KEYCODE_DPAD_DOWN); pause(1200)
-            key(KeyEvent.KEYCODE_DPAD_LEFT); pause(700); key(KeyEvent.KEYCODE_DPAD_LEFT); pause(700)
-            key(KeyEvent.KEYCODE_DPAD_LEFT); pause(2500)
+            try { waitUntil("first results", 60_000) { visible("Dune") } } catch (e: AssertionError) { shot("search-timeout"); throw e }
+            tap("Clear", false); waitUntil("cleared", 10_000) { visible("Type a") }; settle(1500)
+            record("search", 40) {
+                pause(1000)
+                typeWithRemote("dune")
+                waitUntil("results", 30_000) { visible("Dune") }; pause(2500)
+                key(KeyEvent.KEYCODE_DPAD_RIGHT); pause(2500)
+                repeat(2) { key(KeyEvent.KEYCODE_DPAD_RIGHT); pause(700) }
+                key(KeyEvent.KEYCODE_DPAD_DOWN); pause(1200)
+                key(KeyEvent.KEYCODE_DPAD_LEFT); pause(700); key(KeyEvent.KEYCODE_DPAD_LEFT); pause(700)
+                key(KeyEvent.KEYCODE_DPAD_LEFT); pause(2500)
+            }
+            shot("search")
+
+            root("Library"); waitUntil("Library", 20_000) { visible("Favourites") || !visible("Your library is empty") }; settle(2000); shot("library")
+            root("Settings"); tap("Add-ons", false); waitUntil("installed add-ons", 10_000) { visible("Cinemeta") }; settle(1500); shot("settings-addons")
+            tap("Subtitles", false); waitUntil("subtitle settings", 10_000) { visible("Subtitle color") }; settle(1500); shot("settings-subtitles")
+
         }
-        shot("search")
-
-        root("Library"); waitUntil("Library", 20_000) { visible("Favourites") || !visible("Your library is empty") }; settle(2000); shot("library")
-        root("Settings"); tap("Add-ons", false); waitUntil("installed add-ons", 10_000) { visible("Cinemeta") }; settle(1500); shot("settings-addons")
-        tap("Subtitles", false); waitUntil("subtitle settings", 10_000) { visible("Subtitle color") }; settle(1500); shot("settings-subtitles")
-
-        // Only an openly licensed film plays on camera: Big Buck Bunny (Blender Foundation, CC BY 3.0), from archive.org.
-        root("Home"); waitUntil("Home", 30_000) { visible("Favourites") }; settle(1500)
-        open("tt1254207", "Big Buck Bunny")
+        // A capture-only inline source points to the freely licensed film on the Blender Foundation’s download server.
+        root("Home"); waitUntil("Home", 30_000) { visible("Popular Films") }; settle(1500)
+        openLicensedFilm()
         tap("Sources", true)
-        // Rows read "Internet Archive 1080p" and so on; the sort chips and the count come with them.
+        // The Sources page displays the capture-only licensed source and its sort controls.
         try { waitUntil("sources", 150_000) { visible("Seeds") && visible("Played") && !visible("Finding sources") } } catch (e: AssertionError) { shot("sources-timeout"); throw e }
         settle(5000); shot("sources")
         key(KeyEvent.KEYCODE_BACK); waitUntil("details again", 10_000) { visible("Play") }
         tap("Play", true)
-        waitUntil("the film plays from archive.org", 180_000) { state() != null && state()!!.renderedFirstFrame && state()!!.playing && state()!!.positionMs >= 3000 }
-        val player = watch()
-        instrumentation.runOnMainSync { AppFlowTest.session(player).seekTo(2L * 60_000) }
-        waitUntil("playing after the seek", 90_000) { state()!!.playing && state()!!.positionMs >= 2L * 60_000 + 3000 }
+        waitUntil("the licensed film plays", 180_000) { state() != null && state()!!.renderedFirstFrame && state()!!.playing && state()!!.positionMs >= 3000 }
+        // Let the remote film play forward: a large remote seek can stall on a cold range request.
+        waitUntil("the opening scene", 90_000) { state()!!.playing && state()!!.positionMs >= 45_000 }
         pause(4000)
         record("player", 18) {
             pause(2000)
@@ -128,14 +129,19 @@ class ReadmeCapture : AppHarness() {
         waitUntil("player closed", 15_000) { watch() == null }
         root("Home"); waitUntil("Continue watching", 30_000) { visible("Continue watching") || visible("Continue Watching") }; settle(1500)
         // Continue watching tiles are keyed by title and video: a film's video is its own id.
-        focusTop("continue:" + services.store.library(false).first { it.title.id == "tt1254207" }.title.key() + ":tt1254207")
+        focusTop("continue:" + services.store.library(false).first { it.title.id == "readme:tears-of-steel" }.title.key() + ":readme:tears-of-steel")
         settle(2500); shot("home-continue")
     }
 
-    private fun open(id: String, name: String) {
-        val title = Title.parse(cinemeta, JSONObject().put("id", id).put("type", "movie").put("name", name))!!
+    private fun openLicensedFilm() {
+        val id = "readme:tears-of-steel"
+        val source = JSONObject().put("name", "Tears of Steel 720p")
+            .put("url", "https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov")
+        val video = JSONObject().put("id", id).put("streams", JSONArray().put(source))
+        val title = Title.parse("readme-capture", JSONObject().put("id", id).put("type", "movie")
+            .put("name", "Tears of Steel").put("videos", JSONArray().put(video)))!!
         browse!!.onActivity { it.openTitle(title, "") }
-        waitUntil("$name details", 30_000) { visible("Play") }
+        waitUntil("Tears of Steel details", 30_000) { visible("Play") }
         settle(2500)
     }
 
@@ -183,7 +189,7 @@ class ReadmeCapture : AppHarness() {
     private fun record(name: String, seconds: Int, scene: () -> Unit) {
         val path = "/data/local/tmp/readme-$name.mp4"
         instrumentation.uiAutomation.executeShellCommand("rm -f $path").close()
-        val recording = instrumentation.uiAutomation.executeShellCommand("screenrecord --time-limit $seconds --bit-rate 12000000 $path")
+        val recording = instrumentation.uiAutomation.executeShellCommand("screenrecord --size 1280x720 --time-limit $seconds --bit-rate 4000000 $path")
         val drained = Thread {
             android.os.ParcelFileDescriptor.AutoCloseInputStream(recording).use { it.readBytes() }
         }.apply { start() }
