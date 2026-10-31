@@ -129,6 +129,8 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
         }
         return true
     }
+    /** Positions of the blocks with controls beyond `position`, nearest first, in `step`'s direction (-1 up, 1 down). */
+    fun controlRows(position: Int, step: Int): List<Int> = controlRows(items, position, step)
     /** The first Home shelf belongs with the spotlight above it. */
     fun firstSpotlightShelf(key: String): Boolean {
         if (items.isEmpty() || items.get(0).kind != Item.Kind.SPOTLIGHT) return false
@@ -263,7 +265,7 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
                 val cards = TileBlocks.Cards(PageRows.Page(this::focused, restore), artwork, this::feature, scrollMemory)
                 ({ SearchBlocks.Content(state, cards, layout.start, layout.end) })
             }
-            Item.Kind.SKELETON -> ({ SkeletonBlocks.Block(item.title, layout.start, layout.end) })
+            Item.Kind.SKELETON -> ({ SkeletonBlocks.Block(item.value, layout.start, layout.end) })
             Item.Kind.LOADING -> ({ SkeletonBlocks.Loading() })
             Item.Kind.SUBTITLE_PREVIEW -> ({
                 androidx.compose.ui.viewinterop.AndroidView(factory = { subtitlePreview(item) })
@@ -384,13 +386,16 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
          */
         override fun onInterceptFocusSearch(focused: View, direction: Int): View? {
             if ((direction == View.FOCUS_UP || direction == View.FOCUS_DOWN) && orientation == LinearLayoutManager.VERTICAL) {
+                val step = if (direction == View.FOCUS_UP) -1 else 1
+                val row = adjacentRow(focused, step)
+                if (row != null) return row
                 val next: View? = FocusFinder.getInstance().findNextFocus(focused.rootView as ViewGroup, focused, direction)
+                // Up from the first row of controls goes to the top corner even when nothing lies geometrically above.
+                if (direction == View.FOCUS_UP && next == null && findContainingItemView(focused) != null)
+                    return topCorner(focused).takeIf { it !== focused }
                 if (next != null && findContainingItemView(next) == null) {
                     if (direction != View.FOCUS_UP) return focused
-                    val back: View? = focused.rootView.findViewById(R.id.page_back)
-                    if (back != null && back.isShown) return back
-                    val refresh: View? = focused.rootView.findViewById(R.id.home_refresh)
-                    return if (refresh != null && refresh.isShown) refresh else focused
+                    return topCorner(focused)
                 }
                 return null
             }
@@ -403,6 +408,61 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
             }
             val next: View? = FocusFinder.getInstance().findNextFocus(focused.rootView as ViewGroup, focused, direction)
             return if (next != null && findContainingItemView(next) == null) focused else null
+        }
+
+        private fun topCorner(focused: View): View {
+            val back: View? = focused.rootView.findViewById(R.id.page_back)
+            if (back != null && back.isShown) return back
+            val refresh: View? = focused.rootView.findViewById(R.id.home_refresh)
+            return if (refresh != null && refresh.isShown) refresh else focused
+        }
+
+        /**
+         * Up and Down move exactly one row of controls. The neighbouring block is found by adapter position, not by
+         * geometry: a row that has scrolled away (or is still arriving during a smooth scroll) is laid out first, so
+         * a farther control on screen, such as the top corner's Back or Refresh, never wins over it. Null when the
+         * focused view is not in a block or no block beyond it has controls.
+         */
+        private fun adjacentRow(focused: View, step: Int): View? {
+            val page = owner ?: return null
+            val adapter = page.adapter as? PageAdapter ?: return null
+            val item = findContainingItemView(focused) ?: return null
+            val position = getPosition(item)
+            if (position == RecyclerView.NO_POSITION) return null
+            // Only stops the row holds itself (a native control beside a composition) stay with the row's own search.
+            for (target in adapter.controlRows(position, step).take(3)) {
+                val block = reveal(page, target, step) ?: continue
+                val into = landing(page, focused, block, if (step < 0) View.FOCUS_UP else View.FOCUS_DOWN)
+                if (into != null) return into
+            }
+            return null
+        }
+
+        /** The laid-out view of block `target`, scrolling just far enough to lay it out when it is not. */
+        private fun reveal(page: RecyclerView, target: Int, step: Int): View? {
+            var view = findViewByPosition(target)
+            var tries = 0
+            while (view == null && tries++ < 8 && !page.isComputingLayout && page.canScrollVertically(step)) {
+                page.scrollBy(0, step * Math.max(1, height / 3))
+                view = findViewByPosition(target)
+            }
+            return view
+        }
+
+        /** The control in `block` that a move from `focused` lands on: the nearest in the direction of travel. */
+        private fun landing(page: RecyclerView, focused: View, block: View, direction: Int): View? {
+            if (block !is ViewGroup) return if (block.isFocusable) block else null
+            val rect = Rect()
+            focused.getFocusedRect(rect)
+            page.offsetDescendantRectToMyCoords(focused, rect)
+            rect.offset(-block.left, -block.top)
+            // Enter from the block's far edge, keeping the column: the source lies beyond it in the travel direction.
+            val height = rect.height()
+            if (direction == View.FOCUS_UP) { rect.top = block.height; rect.bottom = rect.top + height }
+            else { rect.bottom = 0; rect.top = -height }
+            return FocusFinder.getInstance().findNextFocusFromRect(block, rect, direction) ?: PageFocus.first(block)?.let { first ->
+                ArrayList<View>().also { first.addFocusables(it, direction) }.firstOrNull()
+            }
         }
 
     }
@@ -431,8 +491,25 @@ class PageAdapter(private val context: Context, private val artwork: Artwork, pr
             if (prefs != null) state.add(java.util.HashMap(prefs.all))
             return state
         }
+        /** Whether a block draws controls the remote can stop on. Headings, text, artwork and skeletons do not. */
+        internal fun interactive(item: Item): Boolean = when (item.kind) {
+            Item.Kind.KEYBOARD, Item.Kind.SPLIT, Item.Kind.EPISODES -> true
+            Item.Kind.LIST, Item.Kind.SOURCE, Item.Kind.FIELD -> item.action != null
+            Item.Kind.SHELF, Item.Kind.GRID -> item.tiles.any { it.action != null }
+            Item.Kind.SKELETON, Item.Kind.LOADING, Item.Kind.SPOTLIGHT, Item.Kind.TEXT, Item.Kind.HEADER -> false
+            else -> item.actions.isNotEmpty()
+        }
+        /** Positions of the interactive blocks beyond `position`, nearest first, in `step`'s direction (-1 up, 1 down). */
+        internal fun controlRows(items: List<Item>, position: Int, step: Int): List<Int> {
+            val rows = ArrayList<Int>()
+            var i = position + step
+            while (i >= 0 && i < items.size) { if (interactive(items[i])) rows.add(i); i += step }
+            return rows
+        }
         private fun contains(item: Item, key: String): Boolean {
             if (item.key.equals(key)) return true
+            // Settings' categories are controls of its split view too, so restoring one finds its block.
+            if (item.kind == Item.Kind.SPLIT && item.children?.any { it.key == key } == true) return true
             if (item.kind == Item.Kind.KEYBOARD && key.startsWith(item.key + ":")) return true
             for (t in item.tiles) if (t.key.equals(key)) return true
             for (a in item.actions) if (a.key.equals(key)) return true

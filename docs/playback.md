@@ -104,6 +104,27 @@ VTT/SRT/ASS seek compatibility path is retained for loaded sidecar tracks.
 Selection intent is recorded when a download starts, and eviction protects the
 newly selected track, including when several tracks arrive together.
 
+## Player screen and episodes
+
+While a source opens, the black loading screen shows the title and a spinner;
+a series episode adds its line under the title in the toolbar's format
+(`S2 E7 · Ace of Spades`, `NextEpisodeOffer.watchingLabel`). Films have no second
+line, and transport steps stay behind developer mode.
+
+The next episode is offered only once it is released: its provider date has
+passed, or the provider gives none (`NextEpisodeOffer.released`, the same
+`NewEpisodes.aired` rule as Next Up). Until then the Settings menu's Next
+episode item, the end-of-episode Next episode button, the Up next countdown and
+the remote's Next key do nothing; Previous episode is unchanged. The Next
+episode button appears in the last 10% (at most 90 seconds) only while the
+player's controls are visible, and leaves when they fade; when it had focus, the
+focus returns to the video without bringing the controls back.
+
+The player makes no interface sounds: `WatchActivity` silences `Sounds` from
+resume to pause, so its controls, menus, alerts and source pickers are quiet,
+and it no longer plays pause, resume, seek, menu, up next, finished, watched,
+warning or Back cues. Sounds elsewhere in the app are unchanged.
+
 ## Focused verification
 
 Use test filters; a full suite is unnecessary for these changes:

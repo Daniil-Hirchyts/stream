@@ -134,20 +134,22 @@ aria2, WebTorrent, librqbit and plain web servers) in both directions; see
 
 ## How it compares
 
-| | Stream | Stremio | TorrServe + a player | Kodi + a torrent add-on | Plex / Jellyfin |
-| --- | :---: | :---: | :---: | :---: | :---: |
-| Made for a TV remote | ✅ | ✅ | depends on the player | ✅ | ✅ |
-| Stremio add-ons | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Torrents stream inside one app | ✅ | ✅ | ❌ two apps | ✅ | ❌ |
-| Open-source streaming engine | ✅ Rust | ❌ closed-source server | ✅ | depends on the add-on | n/a |
-| Bounded cache, any file size | ✅ | ✅ | ✅ | depends on the add-on | n/a |
-| No other computer or server | ✅ | ✅ | ✅ | ✅ | ❌ |
+| | Stream | Stremio | Nuvio TV | TorrServe + a player | Kodi + a torrent add-on | Plex / Jellyfin |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: |
+| Made for a TV remote | ✅ | ✅ | ✅ | depends on the player | ✅ | ✅ |
+| Stremio add-ons | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Torrents stream inside one app | ✅ | ✅ | ✅ | ❌ two apps | ✅ | ❌ |
+| Open-source streaming engine | ✅ Rust | ❌ closed-source server | ✅ libtorrent (C++) | ✅ | depends on the add-on | n/a |
+| Bounded cache, any file size | ✅ | ✅ | not documented | ✅ | depends on the add-on | n/a |
+| No other computer or server | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 
 Stream also handles BitTorrent v2 and hybrid torrents and needs no account of
 any kind. What sets it apart is the combination: the add-on ecosystem people already
 use, a streaming engine that is part of the app rather than a separate service,
 and an interface built only for the television. Stremio streams torrents through
-a separate, closed-source server process; TorrServe is a streaming service that
+a separate, closed-source server process; Nuvio TV is the closest relative, an
+open-source (GPL-3.0) Kotlin client for the same add-ons that builds on
+libtorrent rather than its own engine; TorrServe is a streaming service that
 other player apps connect to; Kodi is a general media centre whose torrent
 support comes from third-party add-ons; Plex and Jellyfin play files you already
 have on a server. Stream is a single app that does one thing.

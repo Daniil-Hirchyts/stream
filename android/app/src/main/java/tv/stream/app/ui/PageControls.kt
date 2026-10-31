@@ -6,8 +6,10 @@ import androidx.annotation.ColorRes
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
@@ -17,7 +19,6 @@ import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -65,6 +66,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
@@ -73,7 +75,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -107,6 +109,10 @@ import tv.stream.app.R
 internal object PageControls {
     /** Optional observer of caption layers after drawing, used to check the visible crossfade. */
     @Volatile var captionDrawn: ((String, Float) -> Unit)? = null
+    /** Optional observer of a caption's placement: its label, its text's bounds and its button's bounds, in the root. */
+    @Volatile var captionPlaced: ((String, androidx.compose.ui.geometry.Rect, androidx.compose.ui.geometry.Rect) -> Unit)? = null
+    /** Space between a focused icon button's grown edge and its caption's text. */
+    private val CAPTION_GAP = 6.dp
     /** [android.view.animation.DecelerateInterpolator] (2.2), the native controls' focus easing. */
     val Decelerate = Easing { 1f - Math.pow((1f - it).toDouble(), 4.4).toFloat() }
 
@@ -127,7 +133,11 @@ internal object PageControls {
         val registry = PageFocus.Local.current
         val interaction = remember { MutableInteractionSource() }
         val requester = remember { FocusRequester() }
-        val focused by interaction.collectIsFocusedAsState()
+        // Drawn focus follows the focus target itself. Its FocusInteraction is emitted before the interaction
+        // collector's first effect subscribes when a control takes focus in the frame it is composed (a page's
+        // first control, a card the shelf brings into view), so the control was focused but drawn plain.
+        var focusedTarget by remember { mutableStateOf(false) }
+        val focused = focusedTarget
         val pressed by interaction.collectIsPressedAsState()
         val hovered by interaction.collectIsHoveredAsState()
         val latestPage by rememberUpdatedState(page)
@@ -168,6 +178,7 @@ internal object PageControls {
             input = input
                 .focusRequester(requester)
                 .onFocusChanged { state ->
+                    focusedTarget = state.isFocused
                     registry?.focused(owner, key, state.isFocused)
                     latestFocus?.invoke(state.isFocused)
                     if (state.isFocused && registry?.announces(key) != false) {
@@ -218,12 +229,25 @@ internal object PageControls {
     fun Modifier.lift(grown: Boolean, scale: Float, raise: Boolean, shape: Shape): Modifier {
         val duration = if (grown) 200 else 160
         val factor by animateFloatAsState(if (grown) scale else 1f, tween(duration, easing = Decelerate), label = "lift")
-        val height by animateDpAsState(if (grown && raise) 10.dp else 0.dp, tween(duration, easing = Decelerate), label = "raise")
+        val height = raised(grown && raise, 10.dp)
         return graphicsLayer {
             scaleX = factor; scaleY = factor
             shadowElevation = height.toPx(); this.shape = shape; clip = false
         }
     }
+
+    /**
+     * A focused control's raised shadow: it rises with focus but leaves at once with the focus platter. A layer's
+     * shadow is cast from its outline whatever is painted in it, so a shadow still settling under a control whose
+     * platter has already turned clear (a list row, a Settings category) or glassy (a secondary button, a chip) shows
+     * through as a dark pill on the control focus just left.
+     */
+    @Composable
+    fun raised(focused: Boolean, height: Dp): Dp {
+        val value by animateDpAsState(if (focused) height else 0.dp, raiseSpec(focused), label = "raise")
+        return value
+    }
+    fun raiseSpec(focused: Boolean): FiniteAnimationSpec<Dp> = if (focused) tween(200, easing = Decelerate) else snap()
 
     private fun states(focused: Boolean, pressed: Boolean, hovered: Boolean, activated: Boolean): IntArray {
         val set = ArrayList<Int>(5)
@@ -295,9 +319,42 @@ internal object PageControls {
         return drawWithContent { drawContent(); drawing() }
     }
 
+    /**
+     * A tinted icon. When the same icon slot flips between the two glyphs of a toggle (favourite, watched), it plays
+     * the animated vector that morphs one into the other, then rests on that vector's last frame, which is drawn
+     * exactly like the static glyph. With Android's animations off it changes at once.
+     */
     @Composable
     fun Icon(@DrawableRes icon: Int, sizeDp: Int, tint: Color, modifier: Modifier = Modifier) {
-        Image(painterResource(icon), contentDescription = null, modifier = modifier.size(sizeDp.dp), colorFilter = ColorFilter.tint(tint))
+        val previous = remember { intArrayOf(icon) }
+        val morph = remember(icon) {
+            val from = previous[0]; previous[0] = icon
+            if (from != icon && android.animation.ValueAnimator.areAnimatorsEnabled()) morph(from, icon) else 0
+        }
+        if (morph == 0) {
+            Image(painterResource(icon), contentDescription = null, modifier = modifier.size(sizeDp.dp), colorFilter = ColorFilter.tint(tint))
+            return
+        }
+        // Path morphs are platform animated vectors; an image view plays them on the render thread like the loading wheel.
+        key(morph) {
+            AndroidView(factory = { context ->
+                android.widget.ImageView(context).apply {
+                    isFocusable = false; importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    setImageDrawable(context.getDrawable(morph)); tag = "icon-morph"
+                    post { (drawable as? android.graphics.drawable.Animatable)?.start() }
+                }
+            }, update = { it.imageTintList = android.content.res.ColorStateList.valueOf(tint.toArgb()) }, modifier = modifier.size(sizeDp.dp))
+        }
+    }
+
+    /** The animated vector joining two toggle glyphs, or 0 when they aren't a toggle's two states. */
+    @DrawableRes
+    fun morph(@DrawableRes from: Int, @DrawableRes to: Int): Int = when {
+        from == R.drawable.ic_tv_heart_outline && to == R.drawable.ic_tv_heart -> R.drawable.avd_tv_favourite_on
+        from == R.drawable.ic_tv_heart && to == R.drawable.ic_tv_heart_outline -> R.drawable.avd_tv_favourite_off
+        from == R.drawable.ic_tv_check && to == R.drawable.ic_tv_unwatched -> R.drawable.avd_tv_watched_on
+        from == R.drawable.ic_tv_unwatched && to == R.drawable.ic_tv_check -> R.drawable.avd_tv_watched_off
+        else -> 0
     }
 
     /** Backdrop blur behind a button or notice; there's no Compose equivalent, so this one stays a platform view. */
@@ -373,8 +430,8 @@ internal object PageControls {
                         var slot by remember { mutableStateOf<LayoutCoordinates?>(null) }
                         val show: (Boolean) -> Unit = { shown ->
                             if (action.style == Item.Action.Style.ICON) {
-                                val center = slot?.takeIf { it.isAttached }?.boundsInParent()?.center?.x
-                                if (shown && center != null) named = Named(action.label, center, scroll)
+                                val anchor = slot?.takeIf { it.isAttached }
+                                if (shown && anchor != null) named = Named(action.label, anchor, scroll)
                                 else if (!shown && named?.label == action.label) named = named?.copy(shown = false)
                             }
                         }
@@ -386,20 +443,26 @@ internal object PageControls {
         }
     }
 
-    private data class Named(val label: String, val center: Float, val scroll: ScrollState, val shown: Boolean = true)
+    /** [anchor] is the button's own layout, so the caption follows it through the row's padding, arrangement and scroll. */
+    private data class Named(val label: String, val anchor: LayoutCoordinates, val scroll: ScrollState, val shown: Boolean = true)
 
-    /** The focused icon button's name: labels crossfade rather than replace visible text in place. */
+    /**
+     * The focused icon button's name, centred under it at [CAPTION_GAP] below its grown edge: labels crossfade rather
+     * than replace visible text in place. Positions come from the button's coordinates at placement, not from offsets
+     * measured inside the row, which left out the row's start padding and pushed captions off-centre.
+     */
     @Composable
     private fun Caption(named: Named?) {
         val slots = remember { arrayOf(mutableStateOf<Named?>(null), mutableStateOf<Named?>(null)) }
         var active by remember { mutableIntStateOf(0) }
         val target = named?.takeIf { it.shown }
-        LaunchedEffect(target?.label, target?.center) {
+        LaunchedEffect(target?.label, target?.anchor) {
             if (target == null) return@LaunchedEffect
             if (slots[active].value?.label != target.label) active = (active + 1) % 2
             slots[active].value = target
         }
         val text = TextBlocks.style(Tv.Font.REGULAR, 12.5f, R.color.tv_text_secondary, false)
+        val gap = with(LocalDensity.current) { CAPTION_GAP.toPx() }
         Box(Modifier.fillMaxWidth().height(28.dp).clearAndSetSemantics {}) {
             for (i in slots.indices) key(i) {
                 val slot = slots[i].value
@@ -414,16 +477,31 @@ internal object PageControls {
                         lift.animateTo(if (on) 0f else if (i == active) 4f else -3f, motion)
                     }
                     BasicText(slot.label, style = text.copy(textAlign = TextAlign.Center), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.widthIn(min = 160.dp).padding(horizontal = 6.dp)
-                                    .graphicsLayer { this.alpha = fade.value; translationY = lift.value.dp.toPx() }
-                                    .drawWithContent { drawContent(); captionDrawn?.invoke(slot.label, fade.value) }
+                            modifier = Modifier
                                     .layout { measurable, constraints ->
-                                        val placeable = measurable.measure(constraints.copy(minWidth = 0))
+                                        val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
                                         layout(placeable.width, placeable.height) {
-                                            val x = slot.center - slot.scroll.value - placeable.width / 2f
-                                            placeable.place(x.coerceIn(0f, (constraints.maxWidth - placeable.width).coerceAtLeast(0).toFloat()).toInt(), 0)
+                                            slot.scroll.value // Placed again while the row scrolls.
+                                            val here = coordinates
+                                            val anchor = slot.anchor
+                                            var x = 0f; var y = 0f
+                                            if (here != null && anchor.isAttached) {
+                                                val bottom = here.localPositionOf(anchor, Offset(anchor.size.width / 2f, anchor.size.height.toFloat()))
+                                                // The button grows about its centre while focused; the caption clears its grown edge.
+                                                val grown = anchor.size.height * (Tv.LIFT_BUTTON - 1f) / 2f
+                                                x = bottom.x - placeable.width / 2f
+                                                y = bottom.y + grown + gap
+                                            }
+                                            placeable.place(x.coerceIn(0f, (constraints.maxWidth - placeable.width).coerceAtLeast(0).toFloat()).toInt(), y.toInt())
                                         }
-                                    })
+                                    }
+                                    .padding(horizontal = 6.dp)
+                                    .graphicsLayer { this.alpha = fade.value; translationY = lift.value.dp.toPx() }
+                                    .onGloballyPositioned { c ->
+                                        val observer = captionPlaced
+                                        if (observer != null && slot.anchor.isAttached) observer(slot.label, c.boundsInRoot(), slot.anchor.boundsInRoot())
+                                    }
+                                    .drawWithContent { drawContent(); captionDrawn?.invoke(slot.label, fade.value) })
                 }
             }
         }

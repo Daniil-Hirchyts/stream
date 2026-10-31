@@ -108,7 +108,8 @@ internal object PageRows {
         val density = LocalDensity.current
         val lift = if (growth == Growth.SETTINGS && width > 0) 1f + with(density) { ROW_GROWTH.dp.toPx() } / width else Tv.LIFT_ROW
         val scale by animateFloatAsState(if (focused) lift else 1f, tween(if (focused) 200 else 160, easing = PageControls.Decelerate), label = "lift")
-        val raise by animateDpAsState(if (focused) 10.dp else 0.dp, tween(if (focused) 200 else 160, easing = PageControls.Decelerate), label = "raise")
+        // The shadow leaves with the white platter: settling under a clear row it would show as a dark pill.
+        val raise = PageControls.raised(focused, 10.dp)
         val shape = RoundedCornerShape(radius)
         val fill = when {
             focused -> colorResource(R.color.tv_focus)

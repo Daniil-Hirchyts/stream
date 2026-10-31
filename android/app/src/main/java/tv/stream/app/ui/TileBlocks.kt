@@ -9,7 +9,10 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -66,6 +69,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.colorResource
@@ -107,6 +111,8 @@ internal object TileBlocks {
     const val GAP = 20
     private const val BLOCK_RATIO = 0.5f
     private val SeasonEase = CubicBezierEasing(.22f, 1f, .36f, 1f)
+    /** Horizontal shelf scrolling: no overshoot, about a third of a second to settle. */
+    internal val SCROLL_SPEC: AnimationSpec<Float> = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 360f, visibilityThreshold = .5f)
 
     /** What a card needs from its page. [feature] hears the card the Home spotlight should show. */
     class Cards(val page: PageRows.Page, val artwork: Artwork, val feature: (Item.Tile) -> Unit, val memory: PageRows.ScrollMemory)
@@ -143,10 +149,10 @@ internal object TileBlocks {
         var frameHeight by remember { mutableStateOf(0) }
         Column(modifier.then(control.input)) {
             Box(Modifier.fillMaxWidth().aspectRatio(if (poster) 1f / 1.5f else 1f / .5625f)
+                    .onSizeChanged { frameHeight = it.height }
                     .graphicsLayer {
                         scaleX = scale; scaleY = scale
                         shadowElevation = raise.toPx(); this.shape = shape; clip = true
-                        frameHeight = size.height.toInt()
                     }
                     .then(control.placed)
                     .testTag(tile.key + ":art")
@@ -168,8 +174,9 @@ internal object TileBlocks {
                         .clearAndSetSemantics { testTag = tile.key + ":flag" },
                         style = TextBlocks.style(Tv.Font.MEDIUM, 11f, R.color.tv_on_focus, false).copy(letterSpacing = .06.em), maxLines = 1)
             }
-            val drop = with(LocalDensity.current) { (scale - 1f) * frameHeight / 2f }
-            Column(Modifier.graphicsLayer { translationY = drop }) {
+            // The caption follows the artwork's grown lower edge in the same layer pass that grows the artwork, so
+            // the two always move together; recomposing for it each frame could leave one a frame or more behind.
+            Column(Modifier.graphicsLayer { translationY = (scale - 1f) * frameHeight / 2f }) {
                 if (episode) BasicText("Episode " + tile.episodeNumber, Modifier.padding(start = 2.dp, top = 9.dp, end = 2.dp).testTag(tile.key + ":number"),
                         style = TextBlocks.style(Tv.Font.MEDIUM, 12f, R.color.tv_text_secondary, true), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val caption = PageControls.stateColor(R.color.tv_caption, control.focused)
@@ -231,6 +238,12 @@ internal object TileBlocks {
      */
     @OptIn(ExperimentalFoundationApi::class)
     private class ShelfScroll(private val margin: Float, private val startPadding: Float, private val endPadding: Float) : BringIntoViewSpec {
+        /**
+         * The shelf glides rather than snaps: a critically damped spring, softer than the default, keeps its velocity
+         * when the next press retargets it, so held or repeated presses scroll continuously. A tween can't do that
+         * here: bring-into-view re-evaluates its spec from the current value every frame.
+         */
+        override val scrollAnimationSpec: AnimationSpec<Float> = SCROLL_SPEC
         override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
             if (offset >= startPadding && offset + size <= containerSize - endPadding) return 0f
             val before = offset - margin

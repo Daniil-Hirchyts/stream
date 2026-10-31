@@ -84,6 +84,25 @@ class AutoplayInteractionTest : AppHarness() {
         }
     }
 
+    @Test @Throws(Exception::class) fun unreleasedNextEpisodeIsNeverOfferedOrPlayed() {
+        Sources(unreleasedSecond = true).use { server ->
+            services.addons.newRequest().use { request -> services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", request)) }
+            services.store.favourite(server.title, true); launch(); waitUntil("series", 10000) { visible(server.title.name) }
+            tap(server.title.name, false); tap("Play", true)
+            waitUntil("first episode renders", 40000) { state() != null && state()!!.renderedFirstFrame && state()!!.playing }
+            // Paused, the controls stay up: only the unreleased successor can keep the shortcut away.
+            pauseAndSeek(.93f); SystemClock.sleep(1500)
+            assertFalse("No shortcut to an announced episode", shown(R.id.next_episode_offer))
+            control(R.id.control_settings, true); waitUntil("player settings", 5000) { visible("Speed") }
+            assertFalse("Settings offer no unreleased episode", visible("Next episode"))
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); waitUntil("settings closed", 5000) { !visible("Speed") }
+            seek(.98f); instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PLAY); waitUntil("episode finishes", 15000) { state()!!.ended }
+            SystemClock.sleep(1200); assertFalse("No countdown to an unreleased episode", shown(R.id.up_next))
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_NEXT); SystemClock.sleep(1200)
+            assertTrue("Media Next stays on the released episode", state()!!.ended)
+        }
+    }
+
     private fun pauseAndSeek(fraction: Float) {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_MEDIA_PAUSE)
         waitUntil("paused", 5000) { state() != null && !state()!!.playWhenReady }; seek(fraction)
@@ -107,7 +126,8 @@ class AutoplayInteractionTest : AppHarness() {
         FileOutputStream(File(context.filesDir, name)).use { out -> image!!.compress(Bitmap.CompressFormat.PNG, 100, out) }; image!!.recycle()
     }
 
-    private inner class Sources @Throws(Exception::class) constructor() : AutoCloseable {
+    /** @param unreleasedSecond the second episode is announced for a future date, with sources already listed. */
+    private inner class Sources @Throws(Exception::class) constructor(unreleasedSecond: Boolean = false) : AutoCloseable {
         val socket = ServerSocket(0, 8, java.net.InetAddress.getByName("127.0.0.1"))
         val url = "http://127.0.0.1:" + socket.localPort
         val first = "fixture:episode/custom?part=1"; val second = "fixture:episode/custom?part=2"
@@ -116,6 +136,8 @@ class AutoplayInteractionTest : AppHarness() {
             val loaded: Array<Any> = AddonClient().use { client ->
                 Cancellation().use { scope ->
                     val meta = client.json("$origin/addon/good/ui/meta/series/fixture%3Aseries.json", scope, AddonClient.deadline()).getJSONObject("meta")
+                    if (unreleasedSecond) { val videos = meta.getJSONArray("videos")
+                        for (i in 0 until videos.length()) if (videos.getJSONObject(i).optString("id") == second) videos.getJSONObject(i).put("released", "2999-01-01T00:00:00.000Z") }
                     arrayOf<Any>(Title.parse("fixture.autoplay", meta.put("name", "Autoplay test series"))!!,
                             streams(client.json("$origin/addon/good/ui/stream/series/fixture%3Aepisode%2Fcustom%3Fpart%3D1.json", scope, AddonClient.deadline())),
                             streams(client.json("$origin/addon/good/ui/stream/series/fixture%3Aepisode%2Fcustom%3Fpart%3D2.json", scope, AddonClient.deadline())))

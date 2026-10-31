@@ -18,6 +18,8 @@ class LoadingSurfacesTest : AppHarness() {
                 services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", request))
             }
             launch(); waitUntil("remote Home is still loading", 5000) { skeleton("Home results") }
+            // The skeleton item must draw its shelves; an unknown name used to fall back to the centred spinner.
+            SystemClock.sleep(250); assertFalse("Home's skeleton is drawn as shelves, not a spinner", spinner())
             assertFalse("Home does not pretend to be category blocks", skeleton("Catalogues"))
             tap("Settings", true); waitUntil("real Settings", 5000) { visible("Add-ons") }
             assertFalse("Local Settings has no ghost form", anySkeleton())
@@ -31,6 +33,16 @@ class LoadingSurfacesTest : AppHarness() {
         }
     }
     private fun skeleton(name: String): Boolean { return items().stream().anyMatch { item -> item.kind == Item.Kind.SKELETON && item.value == name } }
+    private fun spinner(): Boolean {
+        val found = java.util.concurrent.atomic.AtomicBoolean(false)
+        browse!!.onActivity { activity ->
+            fun walk(view: View) {
+                if (view is android.widget.ProgressBar && view.isShown) found.set(true)
+                if (view is android.view.ViewGroup) for (i in 0 until view.childCount) walk(view.getChildAt(i))
+            }
+            walk(activity.findViewById<RecyclerView>(R.id.page_rows))
+        }; return found.get()
+    }
     private fun anySkeleton(): Boolean { return items().stream().anyMatch { item -> item.kind == Item.Kind.SKELETON } }
     @Suppress("UNCHECKED_CAST") private fun items(): List<Item> {
         val result = AtomicReference<List<Item>>(java.util.Collections.emptyList())

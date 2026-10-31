@@ -23,6 +23,16 @@
             android:gravity="center"
             android:maxLines="2" />
 
+        <!-- A series episode's line, such as "S2 E7 · Ace of Spades"; films have none. -->
+        <TextView
+            android:id="@+id/loading_episode"
+            style="@style/Text.Body"
+            android:layout_width="560dp"
+            android:layout_marginTop="10dp"
+            android:gravity="center"
+            android:maxLines="1"
+            android:visibility="gone" />
+
         <!-- The shared player may update these labels at every stage. Their parent gates them
              together, so transport details cannot flash into the normal viewing experience. -->
         <LinearLayout

@@ -48,6 +48,15 @@ class BrowseRecoveryTest : SearchHarness() {
             val skeleton = AtomicReference(false)
             browse!!.onActivity { activity -> skeleton.set(((activity.findViewById<View>(R.id.page_rows) as RecyclerView).adapter as PageAdapter).position("skeleton:Catalogue results") >= 0) }
             assertTrue("The skeleton remains during retry", skeleton.get())
+            val spinner = AtomicReference(false)
+            browse!!.onActivity { activity ->
+                fun walk(view: View) {
+                    if (view is android.widget.ProgressBar && view.isShown) spinner.set(true)
+                    if (view is android.view.ViewGroup) for (i in 0 until view.childCount) walk(view.getChildAt(i))
+                }
+                walk(activity.findViewById(R.id.page_rows))
+            }
+            assertFalse("The catalogue grid loads as skeleton posters, not a centred spinner", spinner.get())
             server.flakyThird.countDown()
             waitUntil("retry recovers posters", 10000) { visible("Film 00") && !text("Loading catalogue") && !text("Retrying catalogue") }
             assertEquals(3, server.requests("Flaky", 0).toLong())

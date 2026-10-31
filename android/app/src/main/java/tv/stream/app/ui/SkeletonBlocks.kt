@@ -35,6 +35,14 @@ import tv.stream.app.ui.PageControls.platter
  * moving. A bar stands where each line of text will be, centred on the line's capital letters.
  */
 internal object SkeletonBlocks {
+    /**
+     * Every name [Item.skeleton] is given, each drawn in its page's shape. The spinner fallback is only for a page
+     * without a known layout; a grid, shelf or list must never land there.
+     */
+    val SHAPES: Set<String> = setOf("Home", "Home results", "Add-ons", "Add-on review", "Catalogue", "Catalogue results",
+            "Source results", "Store results")
+
+    /** `screen` is the skeleton item's [Item.value] (not its title, which is empty). */
     @Composable
     fun Block(screen: String, start: Dp, end: Dp) {
         Column(Modifier.fillMaxWidth().clearAndSetSemantics {}) {

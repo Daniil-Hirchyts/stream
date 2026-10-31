@@ -14,8 +14,10 @@ import tv.stream.app.R
  * whatever else sounds, never taking audio focus from a film or the viewer's music.
  *
  * Three sizes: quiet touches as the viewer navigates (focus, a row's end, typing), controls (OK, Back, tabs,
- * pages, dialogs, the player's own) and moments (favourite, watched, installed, a failure, a title's end, and the
- * start screen's short piece of music).
+ * pages, dialogs) and moments (favourite, watched, installed, a failure, and the start screen's short piece of music).
+ *
+ * The player is silent: while it is in front ([silence]) nothing plays, over its controls, menus and popups alike.
+ * Its former cues (pause, resume, seek, menu, up next, finished) are still generated but not played.
  *
  * Never two at once, decided before anything plays:
  * - one voice: a new sound cuts whatever smaller or equal is still sounding, and is dropped under a larger one;
@@ -60,6 +62,8 @@ class Sounds private constructor(context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private val screenWidth: Int
     @Volatile private var enabled = true
+    /** The player is in front: no interface sounds at all, whatever the switches say. */
+    @Volatile private var silenced = false
     private var systemEnabled = true
     private var inputAt = -10_000L
     private var soundingUntil = 0L
@@ -109,7 +113,7 @@ class Sounds private constructor(context: Context) {
     }
     private fun sound(sound: Sound, semitones: Float) {
         spoken++
-        if (!enabled || !systemEnabled) return
+        if (!enabled || !systemEnabled || silenced) return
         val now = SystemClock.uptimeMillis()
         val busy = now < soundingUntil
         if (busy && sound.size.compareTo(sounding) < 0) return
@@ -142,6 +146,14 @@ class Sounds private constructor(context: Context) {
         @Synchronized fun get(context: Context): Sounds {
             if (instance == null) instance = Sounds(context.applicationContext)
             return instance!!
+        }
+
+        /** While `on`, every sound is dropped: the player calls this as it resumes and pauses. */
+        fun silence(on: Boolean) {
+            val s = instance ?: return
+            s.silenced = on
+            // A sound already playing (the Play press that opened the player) finishes; one still loading is dropped.
+            if (on) s.pending = null
         }
 
         /** An arrow key or touch from the viewer: the focus ticks that follow are theirs. */

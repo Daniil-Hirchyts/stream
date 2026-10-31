@@ -69,10 +69,6 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
     private var explicitKey: String? = null
     /** How each candidate went before, read with them; this activity's own outcomes are added as they happen. */
     private var marks: MutableMap<String, TvStore.SourceMark> = java.util.HashMap()
-    /** What the sounds last heard: the play state (only the viewer's change of it sounds), and where the position was and when. */
-    private var heardPlay: Boolean? = null
-    private var heardAt: Long = 0
-    private var heardPosition: Long = 0
     private var startMs: Long = 0
     private var firstFrameMs: Long = 0
     private var lastAdvanceMs: Long = 0
@@ -157,6 +153,7 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         lifecycleScope.launch {
             playback.presentation.collect { renderPresentation(it) }
         }
+        // The player is silent: its controls, menus and popups make no interface sounds (see onResume).
         Sounds.get(this)
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         video = intent.getStringExtra("video"); explicitKey = intent.getStringExtra("source")
@@ -177,7 +174,7 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
             rememberViewerState(state)
             failureQueued = false; ranking = failureQueued; polling = ranking
             val now = SystemClock.elapsedRealtime()
-            heardPlay = false; heardAt = now; previousPosition = state.positionMs; heardPosition = previousPosition
+            previousPosition = state.positionMs
             lastAdvanceMs = now; seekStarted = 0; bufferingStarted = if (state.buffering) now else 0
             val counters = session!!.player().videoDecoderCounters
             videoWatchdog.reset(now, if (counters == null) 0L else counters.renderedOutputBufferCount.toLong(), if (counters == null) 0L else counters.droppedBufferCount.toLong())
@@ -275,14 +272,19 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         val surface = findViewById<View>(R.id.player_root)
         surface.requestFocus()
         // Overlay fades finish independently of playback callbacks, including the inactivity timeout.
-        surface.viewTreeObserver.addOnGlobalLayoutListener { updatePlayerClock() }
+        surface.viewTreeObserver.addOnGlobalLayoutListener {
+            updatePlayerClock()
+            // The next-episode shortcut follows the controls in and out without waiting for the next tick.
+            val controls = screen?.controlsVisible() == true
+            if (controls != offerFollowsControls) { offerFollowsControls = controls; if (session != null && !releasing) updateNextEpisode(session!!.snapshot()) }
+        }
         val clock = findViewById<View>(R.id.player_clock)
         clock.addOnLayoutChangeListener { view, l, t, r, b, ol, ot, or, ob -> updatePlayerHeaderInset() }
         clock.post { updatePlayerHeaderInset() }
         // Two buttons replace the shared single Options button: audio and subtitles, and the player's settings.
         playerMenus = PlayerMenus(this, session!!, screen!!, services!!.playerPreferences, object : PlayerMenus.Host {
-            override fun hasEpisode(direction: Int): Boolean = neighbour(direction) != null
-            override fun episode(direction: Int) { this@WatchActivity.episode(neighbour(direction)) }
+            override fun hasEpisode(direction: Int): Boolean = available(direction) != null
+            override fun episode(direction: Int) { val target = available(direction) ?: return; this@WatchActivity.episode(target) }
             override fun canChooseSource(): Boolean = this@WatchActivity.canChooseSource()
             override fun sources(page: Tv.Alert) { populateSources(page, true) }
             override fun offers(): List<PlayerMenus.SubtitleOffer> {
@@ -327,7 +329,7 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
             while (sourceFailures.length() > 0) sourceFailures.remove(0); sourceResolution = JSONObject() }
         waitingSources = true; switching = waitingSources; lastAdvanceMs = SystemClock.elapsedRealtime(); work.scope = services!!.addons.newRequest(); work.scope!!.priority(0)
         val mine = generation; val request = work.scope!!
-        screen!!.setTitle(title!!.name); showLoading("sources", "Finding sources", null, false)
+        screen!!.setTitle(title!!.name); updateWatchingInfo(); showLoading("sources", "Finding sources", null, false)
         work.task = loader.submit(Runnable {
             try {
                 closeNative()
@@ -337,7 +339,7 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
                 request.check()
                 main.post(Runnable {
                     if (!current(mine)) return@Runnable
-                    title = resolution.title; screen!!.setTitle(title!!.name)
+                    title = resolution.title; screen!!.setTitle(title!!.name); updateWatchingInfo()
                     progress.watched = resolution.watched; updateWatchedButton(); coordinator.mark("FIRST_SOURCE")
                     resumePosition = resolution.resumePosition; playback.candidates = resolution.candidates
                     marks = resolution.marks.toMutableMap(); sourceResolution = JSONObject(resolution.diagnostics)
@@ -362,7 +364,7 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         playback.selected = source; waitingSources = false; playing = null; attachedSubtitles.clear(); subtitleOffers = Collections.emptyList()
         val payloadReset = resettingPayload; resettingPayload = false
         if (chosenIndex < 0 && !payloadReset) { playback.attempt(source) }
-        handledError = null; observedAudio = null; observedVideo = observedAudio; heardPlay = null; heardAt = 0
+        handledError = null; observedAudio = null; observedVideo = observedAudio
         switching = true; failureQueued = false; progress.startSource(); firstFrameMs = 0; droppedFrames = 0
         lastAdvanceMs = SystemClock.elapsedRealtime(); startMs = lastAdvanceMs; previousPosition = -1; startupWatchdog.start(startMs); coordinator.attempt(); demand.reset(); videoWatchdog.reset(startMs, 0, 0); nativeStats = JSONObject(); lastDemandUpdate = 0
         showLoading("preparing", "Opening source", sourceLabel(source), false)
@@ -540,11 +542,12 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
                 java.util.function.Consumer<Boolean> { loaded -> attachedSubtitles.remove(chosen.url) })
         if (manual) { if (playerMenus != null) playerMenus!!.close() else screen!!.menu().close() }
     }
-    private fun episodeLabel(): String { for (e in title!!.episodes) if (e.id.equals(video)) return "S" + e.season + " E" + e.number + " · " + e.name; return "" }
-    /** Only episode context belongs under the player's title. */
+    private fun episodeLabel(): String = NextEpisodeOffer.episodeLabel(title!!.episodes, video)
+    /** Only episode context belongs under the player's title, on the toolbar and on the loading screen alike. */
     private fun updateWatchingInfo() {
         val watching = title ?: return
-        playback.watching(watching.name, if (watching.type == "series") episodeLabel() else "")
+        val label = NextEpisodeOffer.watchingLabel(watching.type, watching.episodes, video)
+        playback.watching(watching.name, label); playerLayers?.episode(label)
     }
     private fun chooseFile(source: MediaSource?, files: List<TorrentFile>) {
         val names = Array(files.size) { i -> files.get(i).name() + " · " + files.get(i).size / (1 shl 20) + " MiB" }
@@ -667,7 +670,6 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         app.persistence.execute { services!!.store.markSource(titleKey, forVideo!!, key, state) }
     }
     private fun failure(heading: String, message: String, code: String) {
-        Sounds.play(Sounds.Sound.WARNING)
         waitingSources = false; switching = waitingSources
         if (screen == null || session == null) return
         // Freeze before fail/stop/closeNative replace the original Media3 error and coordinator.torrent counters.
@@ -708,12 +710,7 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         if (snapshot.videoFormat != null) observedVideo = snapshot.videoFormat
         if (snapshot.audioFormat != null) observedAudio = snapshot.audioFormat
         if (snapshot.renderedFirstFrame && firstFrameMs == 0L) { diagnosticStage = "Playing video"; firstFrameMs = SystemClock.elapsedRealtime() - startMs; coordinator.stage(PlaybackCoordinator.State.PLAYING); PlaybackOutcomes.record(playback.selected, true); markSource(TvStore.SourceMark.PLAYED) }
-        // The viewer's pause and play, heard as small sounds; never the first state a source starts in.
-        if (snapshot.started && snapshot.error == null) {
-            retainedSpeed = snapshot.speed
-            if (heardPlay != null && heardPlay != snapshot.playWhenReady) Sounds.play(if (snapshot.playWhenReady) Sounds.Sound.RESUME else Sounds.Sound.PAUSE)
-            heardPlay = snapshot.playWhenReady
-        }
+        if (snapshot.started && snapshot.error == null) retainedSpeed = snapshot.speed
         if (snapshot.error != null) {
             // Compare the actual host-owned description, not strings shared with Media3's error vocabulary.
             if (snapshot.error !== handledError) queueFailure(playbackFailure(snapshot.error!!), "opening")
@@ -738,19 +735,8 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         if (error.code.equals("format")) return "No readable video in this source."
         return error.message
     }
-    override fun onProgress(snapshot: PlaybackSnapshot) { if (visible && !releasing) { hearSeek(snapshot); save(snapshot) } }
-    /** A skip, however it was made (remote, timeline, menu), sounds by its direction: the position jumped from where time had it. */
-    private fun hearSeek(snapshot: PlaybackSnapshot) {
-        val now = SystemClock.elapsedRealtime()
-        if (!switching && snapshot.started && heardAt != 0L) {
-            val expected = heardPosition + (if (snapshot.playing) ((now - heardAt) * snapshot.speed).toLong() else 0L)
-            val jump = snapshot.positionMs - expected
-            if (jump > 4000) Sounds.play(Sounds.Sound.SEEK_FORWARD) else if (jump < -4000) Sounds.play(Sounds.Sound.SEEK_BACK)
-        }
-        heardAt = now; heardPosition = snapshot.positionMs
-    }
+    override fun onProgress(snapshot: PlaybackSnapshot) { if (visible && !releasing) save(snapshot) }
     override fun onMenuToggled(open: Boolean) {
-        if (playerMenus == null || !playerMenus!!.isOpen()) Sounds.play(if (open) Sounds.Sound.MENU_OPEN else Sounds.Sound.MENU_CLOSE)
         if (!open && screen != null && session != null && !session!!.player().playWhenReady) screen!!.showControls()
         updatePlayerClock()
         if (session != null) updateNextEpisode(session!!.snapshot())
@@ -762,38 +748,46 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
     override fun onEnded() {
         if (!visible || releasing || screen == null) return
         hideNextEpisode()
-        val next = if (autoplay && !episodes.dismissed) neighbour(1) else null
-        Sounds.play(if (next != null) Sounds.Sound.UP_NEXT else Sounds.Sound.FINISHED)
+        val next = if (autoplay && !episodes.dismissed) nextEpisode() else null
         if (next != null) {
             screen!!.offerUpNext(next.name, "Season " + next.season, Runnable { episode(next) })
             playerLayers?.request(R.id.up_next_play)
         }
     }
+    /** The end-of-episode shortcut belongs to the player's interface: it shows only while the controls do. */
     private fun updateNextEpisode(state: PlaybackSnapshot) {
-        episodes.playing(video!!)
-        val next = neighbour(1)
+        val playerScreen = screen ?: return
+        val current = video ?: return
+        episodes.playing(current)
+        val next = nextEpisode()
+        val controls = playerScreen.controlsVisible()
         val show = visible && !releasing && !switching && state.started && state.error == null
-                && !state.ended && screen!!.loading() == null && !screen!!.isMenuOpen() && (playerMenus == null || !playerMenus!!.isOpen()) && !screen!!.hasUpNext()
-                && next != null && !episodes.dismissed && NextEpisodeOffer.nearEnd(state.positionMs, state.durationMs)
-        val offer = findViewById<View>(R.id.next_episode_offer)
+                && !state.ended && playerScreen.loading() == null && !playerScreen.isMenuOpen() && (playerMenus == null || !playerMenus!!.isOpen()) && !playerScreen.hasUpNext()
+                && controls && next != null && !episodes.dismissed && NextEpisodeOffer.nearEnd(state.positionMs, state.durationMs)
+        val offer = findViewById<View>(R.id.next_episode_offer) ?: return
         if (show == (offer.visibility == View.VISIBLE)) return
         offer.animate().cancel()
         if (show) {
             offer.alpha = 0f; offer.translationY = Tv.dp(this, 12f).toFloat(); offer.visibility = View.VISIBLE
             offer.animate().alpha(1f).translationY(0f).setDuration(240).start()
-        } else hideNextEpisode()
+        } else hideNextEpisode(controls)
     }
-    private fun hideNextEpisode() {
+    /** @param restoreControls bring the controls back when the offer had focus; not when it leaves because they faded. */
+    private fun hideNextEpisode(restoreControls: Boolean = true) {
         val offer = findViewById<View>(R.id.next_episode_offer)
         if (offer == null) return
-        if (offer.hasFocus()) { findViewById<View>(R.id.player_root).requestFocus(); if (screen != null) screen!!.showControls() }
+        if (offer.hasFocus()) { findViewById<View>(R.id.player_root).requestFocus(); if (restoreControls && screen != null) screen!!.showControls() }
         offer.animate().cancel(); offer.visibility = View.GONE
     }
     private fun neighbour(offset: Int): Title.Episode? = episodes.neighbour(title, video, offset)
+    /** The following episode, only once it has been released; an announced one has no sources to play yet. */
+    private fun nextEpisode(): Title.Episode? = neighbour(1)?.takeIf { NextEpisodeOffer.released(it, System.currentTimeMillis()) }
+    /** The episode Previous (-1) or Next (1) moves to; Next waits for its release. */
+    private fun available(direction: Int): Title.Episode? = if (direction > 0) nextEpisode() else neighbour(direction)
     private fun episode(next: Title.Episode?) {
         rememberViewerState(session!!.snapshot()); save(session!!.snapshot()); session!!.stop(); keepPausedOnRecovery = false; video = next!!.id; progress.startEpisode(); resumePosition = 0; explicitKey = ""; resolve(true)
     }
-    override fun onNextEpisode(): Boolean { val next = neighbour(1); if (next == null) return false; episode(next); return true }
+    override fun onNextEpisode(): Boolean { val next = nextEpisode(); if (next == null) return false; episode(next); return true }
     override fun onPreviousEpisode(): Boolean { val previous = neighbour(-1); if (previous == null) return false; episode(previous); return true }
     override fun canRetry(): Boolean = true
     override fun onRetry() { if (session != null && session!!.snapshot().positionMs > 0) resumePosition = session!!.snapshot().positionMs; resolve(true) }
@@ -804,7 +798,6 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         if (session == null || services == null || title == null) return
         if (!progress.mark(title!!, video!!, PlaybackProgress.Moment.of(session!!.snapshot()), watched)) return
         updateWatchedButton()
-        Sounds.play(if (watched) Sounds.Sound.WATCHED_ON else Sounds.Sound.WATCHED_OFF)
     }
     override fun onExit() {
         if (exitChoiceOpen) return
@@ -879,6 +872,8 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         playerLayers?.focusError()
     }
     private var clockTargetVisible = false
+    /** The controls' visibility the next-episode offer last followed. */
+    private var offerFollowsControls = false
     /** The clock accompanies active controls as well as paused playback and menus. */
     private fun updatePlayerClock() {
         val clock = findViewById<View>(R.id.player_clock)
@@ -907,7 +902,7 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
         if (leading) {
             if (canChooseSource()) result.add(MenuPanel.Item.action("Choose source", null, Runnable { chooseSources() }))
             if (neighbour(-1) != null) result.add(MenuPanel.Item.action("Previous episode", null, Runnable { onPreviousEpisode() }))
-            if (neighbour(1) != null) result.add(MenuPanel.Item.action("Next episode", null, Runnable { onNextEpisode() }))
+            if (nextEpisode() != null) result.add(MenuPanel.Item.action("Next episode", null, Runnable { onNextEpisode() }))
         } else if (developerMode) result.add(MenuPanel.Item.action("Developer", "Playback diagnostics", Runnable { diagnostics() }))
         return result
     }
@@ -1047,7 +1042,7 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
                 && canShowControls()) screen!!.showControls()
         return super.dispatchGenericMotionEvent(event)
     }
-    /** The player's controls and menu belong to the shared player: an arrow that moves its focus ticks here. */
+    /** The player's controls and menu belong to the shared player; they move focus silently. */
     // AndroidX core restricts its inherited override; TV remote routing still uses the framework dispatch contract.
     @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -1058,8 +1053,6 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
     private fun dispatchKey(event: KeyEvent): Boolean {
         // Shared remote handling consumes keys before Activity can report this interaction itself.
         if (event.action == KeyEvent.ACTION_DOWN) onUserInteraction()
-        val move = event.action == KeyEvent.ACTION_DOWN && Sounds.arrow(event.keyCode)
-        if (move) Sounds.input()
         if (screen != null && screen!!.hasUpNext()) {
             val code = event.keyCode
             val select = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER
@@ -1075,13 +1068,12 @@ class WatchActivity : ComponentActivity(), PlaybackHost {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) playerMenus!!.open(false, playerControls!!.origin(R.id.control_settings))
             return true
         }
-        val before = currentFocus
-        val handled = screen != null && screen!!.dispatchKeyEvent(event) || super.dispatchKeyEvent(event)
-        val after = currentFocus
-        if (move && after != null && after !== before) Sounds.focus(after)
-        return handled
+        return screen != null && screen!!.dispatchKeyEvent(event) || super.dispatchKeyEvent(event)
     }
-    private fun exitOrCloseOverlay() { if (screen != null && screen!!.onRemoteKey(KeyEvent.KEYCODE_BACK)) return; Sounds.play(Sounds.Sound.BACK); onExit() }
+    private fun exitOrCloseOverlay() { if (screen != null && screen!!.onRemoteKey(KeyEvent.KEYCODE_BACK)) return; onExit() }
+    /** Interface sounds stay off while the player is in front, including over its menus and popups. */
+    override fun onResume() { super.onResume(); Sounds.silence(true) }
+    override fun onPause() { Sounds.silence(false); super.onPause() }
     override fun onStop() {
         visible = false
         var state = if (session == null) null else session!!.snapshot()

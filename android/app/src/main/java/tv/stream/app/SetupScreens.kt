@@ -125,8 +125,12 @@ class SetupScreens(private val context: Context, private val nav: Navigator, pri
         if (developerMode) about.add(Item.row("developer", 0, "Developer", "", Runnable { nav.push(Route("Developer")) }))
         category(categories, panes, "settings:about", R.drawable.ic_tv_info, "About", about)
 
-        return Page().add(Item.split("settings", categories, panes, route.extras.getOrDefault("category", ""),
+        val page = Page().add(Item.split("settings", categories, panes, route.extras.getOrDefault("category", ""),
                 Consumer { key -> route.extras["category"] = key }))
+        // Settings always opens with a lit category: the one shown, unless a remembered row is restored instead.
+        val shown = route.extras["category"]
+        page.initialFocus = if (shown != null && panes.containsKey(shown)) shown else categories[0].key
+        return page
     }
     private fun keyboardLanguageNames(): String {
         val names: MutableList<String> = ArrayList()

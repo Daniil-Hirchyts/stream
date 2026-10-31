@@ -50,6 +50,7 @@ class PlayerPresentationTest : AppHarness() {
 
             }
             renderedText(R.id.loading_title, "Presentation film")
+            assertNull("Films have no episode line while loading", rendered(R.id.loading_episode))
             assertNull(rendered(R.id.loading_step))
             assertNull(rendered(R.id.loading_message))
             screenshot("validation-player-text-loading.png")
@@ -103,6 +104,7 @@ class PlayerPresentationTest : AppHarness() {
                 assertTrue(activity!!.playerControlBounds(R.id.loading_title) != null)
             }
             renderedText(R.id.loading_title, "Presentation series")
+            renderedText(R.id.loading_episode, "S1 E2 · Pilot")
             assertTrue("Nonempty developer stage", rendered(R.id.loading_step)?.config?.getOrNull(SemanticsProperties.Text)?.any { it.text.isNotEmpty() } == true)
             server.streamGate.countDown()
             AppHarness.waitUntil("video renders without artwork", 30000) { state() != null && state()!!.renderedFirstFrame }

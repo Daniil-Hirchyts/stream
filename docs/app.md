@@ -246,7 +246,14 @@ retains route scroll and focus. Each block's composables own its layout:
   and Search results keep their scroll per key in the route's memory.
   Up and Down move between blocks in page order: on a title without a source
   add-on, Down from the actions reaches the notice's Get add-ons button before
-  the seasons.
+  the seasons. `TitleScreens.seasonOrder` puts Specials (season 0) after the
+  last numbered season and `defaultSeason` opens on the selected episode's
+  season, else the first numbered one; without progress Play starts the first
+  numbered episode (`NewEpisodes.order`), never a special listed first.
+  Icon-button captions (`PageControls.Caption`) are placed from the focused
+  button's coordinates. `PageControls.Icon` plays the `avd_tv_*` morph when the
+  same icon slot flips between a toggle's two glyphs (favourite, watched), on the
+  title page and anywhere else that glyph pair is shown through it.
 - **Search** (`SearchBlocks`): keyboard, query, results grid and the reflow
   between the split and full grid. Provider answers replace values in the live
   composition; the keyboard page and the last result survive Back.
@@ -254,13 +261,26 @@ retains route scroll and focus. Each block's composables own its layout:
   Controls register a `FocusRequester` (and their popup region) with their block;
   the focused key is mirrored onto the composition owner's tag, so route focus,
   `currentFocus.tag` and instrumentation keep working. Controls expose their key
-  as an accessibility resource name for tests.
+  as an accessibility resource name for tests. A control draws focus from its
+  focus target's own state (`onFocusChanged`), not from collected focus
+  interactions, which miss a control focused in the frame it is composed (a
+  page's first control on opening, a card a shelf brings into view).
+- **Rows of controls:** `PageAdapter.Layout` moves Up/Down to the nearest block
+  with controls by adapter position (`PageAdapter.controlRows`), laying it out
+  first if it scrolled away, and enters it in the same column; only Up from the
+  first such block reaches Back or Refresh. No extra rows are kept laid out off
+  screen (their Compose labels would read as visible to accessibility); a row
+  that is not attached is scrolled into layout when focus moves to it. Geometric
+  search from the window used to pick the top corner over a recycled row above.
 - **Platform views kept:** the Settings subtitle preview hosts the player's
   subtitle renderer through `AndroidView`; Media3 keeps its video surface. The
   player's toolbar, timeline and loading/error/up-next layers are composables
   (`ComposePlayerControls`, `ComposePlayerLayers`) bound to the shared
   `ControlsOverlay`/`PlayerScreen` state, which keeps transport, scrubbing and
   inactivity timers. The timeline keeps its 48 dp touch target and dragging.
+  The loading layer shows a series episode's `S2 E7 · Name` line under the
+  title (`loading_episode`); the Next episode shortcut shows only with the
+  controls and only for a released next episode (see [playback](playback.md)).
 
 New Compose work must preserve those interaction contracts rather than introduce
 new styling.

@@ -36,6 +36,11 @@ class ComposePlayerLayersTest {
             composition.onNodeWithTag(activity.resources.getResourceName(R.id.loading_title)).assertTextEquals("Film")
             composition.onNodeWithTag(activity.resources.getResourceName(R.id.loading_step)).assertDoesNotExist()
             composition.onNodeWithTag(activity.resources.getResourceName(R.id.loading_message)).assertDoesNotExist()
+            composition.onNodeWithTag(activity.resources.getResourceName(R.id.loading_episode)).assertDoesNotExist()
+            layers.episode("S2 E7 · Ace of Spades"); settle(root)
+            composition.onNodeWithTag(activity.resources.getResourceName(R.id.loading_episode)).assertTextEquals("S2 E7 · Ace of Spades")
+            layers.episode(""); settle(root)
+            composition.onNodeWithTag(activity.resources.getResourceName(R.id.loading_episode)).assertDoesNotExist()
         } finally { controller.pause().stop().destroy() }
     }
     @Test fun failureAndNextEpisodeActionsKeepTheirLabelsFocusAndCallbacks() {

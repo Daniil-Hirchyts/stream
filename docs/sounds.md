@@ -1,9 +1,22 @@
 # Interface sounds
 
 The app uses **Soft**, chosen over the earlier Glass set and the Felt alternative in listening tests. Its 28 cues
-include navigation, typing, choices, dialogs, player controls and startup.
+include navigation, typing, choices, dialogs and startup, plus player cues that are
+currently unused.
 `sounds.py` is the production entry point; `palettes.py` defines the Soft and
 Felt voices, scores and mastering. Android resources are generated, not edited.
+
+## Where sounds play
+
+Everywhere except the player. `WatchActivity` calls `Sounds.silence(true)` as it
+resumes and `false` as it pauses, so the player's controls, menus and popups
+(including dialogs shared with the rest of the app) stay silent and a sound
+still loading when it opens is dropped. The player-only cues `pause`, `resume`,
+`seek-forward`, `seek-back`, `menu-open`, `menu-close`, `up-next` and
+`finished` are still generated, approved and packaged (so `verify.py` and
+`SoundAssetsTest` cover them unchanged) but nothing plays them now. Removing
+them means removing their events from the generator and approval file and
+regenerating, never deleting WAVs by hand.
 
 ## Regenerate and verify
 

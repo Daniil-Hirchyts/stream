@@ -60,7 +60,8 @@ class TitleScreens(private val nav: Navigator, private val services: TvApplicati
         var video: String = if (!route.video.isEmpty()) route.video else if (resumable != null) resumable else title.id
         if (title.type == "series" && video == title.id && !title.episodes.isEmpty()) {
             val next: Title.Episode? = NewEpisodes.nextUp(title, played, now)
-            video = if (next != null) next.id else title.episodes[0].id
+            // Without progress, start at the first numbered episode, not a special listed first.
+            video = next?.id ?: (NewEpisodes.order(title).firstOrNull() ?: title.episodes[0]).id
         }
         route.video = video
         val selected = video
@@ -125,12 +126,8 @@ class TitleScreens(private val nav: Navigator, private val services: TvApplicati
             page.add(Item.notice(R.drawable.ic_tv_info, "No episodes listed", "Try Refresh details."))
             return
         }
-        val seasons: SortedSet<Int> = TreeSet()
-        for (e in title.episodes) seasons.add(e.season)
-        if (route.season == -1 || !seasons.contains(route.season)) {
-            route.season = seasons.first()
-            for (e in title.episodes) if (e.id == route.video) route.season = e.season
-        }
+        val seasons = seasonOrder(title.episodes)
+        if (route.season == -1 || !seasons.contains(route.season)) route.season = defaultSeason(title.episodes, route.video, seasons)
         val tabs: MutableList<Action> = ArrayList()
         for (season in seasons) {
             tabs.add(Action("season:" + season, Action.Style.CHIP, if (season == 0) "Specials" else "Season " + season, Runnable {})
@@ -280,6 +277,25 @@ class TitleScreens(private val nav: Navigator, private val services: TvApplicati
         fun pendingTitle(page: Page, title: Title) {
             if (title.logo == null && title.provider != "local")
                 for (item in page.items) if (item.kind == Item.Kind.DETAILS) item.loading = true
+        }
+
+        /** Numbered seasons in ascending order, then Specials (season 0) after the last one. */
+        fun seasonOrder(episodes: List<Title.Episode>): List<Int> {
+            val seasons: SortedSet<Int> = TreeSet()
+            for (e in episodes) seasons.add(e.season)
+            val ordered = ArrayList<Int>(seasons.size)
+            for (season in seasons) if (season != 0) ordered.add(season)
+            if (seasons.contains(0)) ordered.add(0)
+            return ordered
+        }
+
+        /**
+         * The season tab selected first: the selected (resume or next) episode's season, else the first numbered season.
+         * Specials are chosen by default only when they hold the selected episode or are the only season.
+         */
+        fun defaultSeason(episodes: List<Title.Episode>, video: String, ordered: List<Int>): Int {
+            for (e in episodes) if (e.id == video) return e.season
+            return ordered.firstOrNull { it != 0 } ?: ordered.first()
         }
 
         /**

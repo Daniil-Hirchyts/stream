@@ -49,6 +49,15 @@ Shelves scroll horizontally. Page titles scroll with their page.
 - **Details:** Play or Resume (with the episode), Sources, and More retain labels.
   Favourite and a film's Mark watched are circular icon buttons, with state highlights,
   accessible action names and labels that fade between separate text views on focus.
+  An icon button's caption is centred directly under it, 6 dp below its grown
+  focus edge; it is placed from the button's own coordinates, so the row's page
+  margin, arrangement and scroll never push it off-centre. Toggling favourite or
+  watched morphs the glyph in place (heart outline fills from its centre with a
+  small beat; the tick opens into the struck-out eye), then rests on the same
+  picture as the static icon; with animations off it changes at once.
+  Season tabs list numbered seasons in order with Specials last. The selected
+  season is the resume or next episode's, else Season 1; Specials are selected
+  first only when they hold that episode or are the only season.
   In a series, focusing or hovering a season changes its episodes immediately;
   the episode shelf slides a little in the direction of travel and crossfades
   (`ui.SeasonShelf`), while the season strip and its focus stay put.
@@ -97,9 +106,14 @@ Shelves scroll horizontally. Page titles scroll with their page.
 - **Scrolling:** moving back up a long page returns it to its very top (Home's
   spotlight shows again), using each block's last measured height once the top
   blocks have been recycled. A block that fills the page (Search, Settings)
-  scrolls inside itself and never moves the page.
+  scrolls inside itself and never moves the page. Shelves scroll sideways on a
+  soft critically damped spring (about a third of a second, no overshoot) that
+  keeps its speed when the next press retargets it, so held and repeated presses
+  glide instead of snapping card by card.
 - **Search:** typing replaces only the four-column results beside the keyboard, so the
-  focused key never moves and posters keep readable widths. Results clip cleanly at the column's top and bottom.
+  focused key never moves and posters keep readable widths. Results clip cleanly at the column's top and bottom
+  only: the pane itself doesn't clip, 28 dp of content padding top and bottom holds a focused poster's lift and
+  rim, and focus scrolls a card that margin inside the viewport rather than stopping at its edge.
   Moving Right into results slides the keyboard out and expands the grid to six
   columns. Left from the leading column restores the editing layout; Right
   returns to the selected result. There is no search bar or mode button: the typed
@@ -160,7 +174,10 @@ Shelves scroll horizontally. Page titles scroll with their page.
   `python3 branding/make_geist.py all` regenerates fonts, vectors and bundled
   notices from pinned revisions with SHA-256 verification; sources and mapping
   are documented in [fonts and icons](fonts-and-icons.md).
-- **Loading:** skeletons cover unknown remote content after a 160 ms delay;
+- **Loading:** skeletons cover unknown remote content after a 160 ms delay,
+  each in its page's shape (shelves, poster grid, source rows, add-on list). A filter chip or page change keeps
+  the header and chips and draws skeleton posters in the grid below them. The spinner is only for a page with
+  no known layout (a slow local list or form), never for a grid, shelf or list;
   local pages and cached returns have no ghost forms/grids. Known title headers
   and existing results remain visible; a refresh keeps usable content. Poster
   placeholders use the current one-line captions and Search's active column
@@ -188,17 +205,22 @@ Shelves scroll horizontally. Page titles scroll with their page.
   over artwork carries a soft shadow.
 - **Remote:** On pages with a wrapped rail, Left from the content's left edge focuses the current destination.
   A second Left unwraps it into the navigation popup.
-  Up/Down traverse the five destinations; the endpoints hold focus. Up from the first content row
-  reaches Back or Refresh where available; utility Down restores content and utility Left returns
-  towards Back or navigation.
+  Up/Down traverse the five destinations; the endpoints hold focus. In content, Up and Down move exactly one
+  row of controls per press, however fast, even to a row that has scrolled away; only Up from the first content
+  row reaches Back or Refresh where available. Utility Down restores content and utility Left returns
+  towards Back or navigation. Settings opens with its shown category focused (or the remembered row).
   Right or Back from either navigation state restores the route's remembered control without leaving the page.
   Clicking outside dismisses it without activating the page beneath; choosing a destination closes it onto that page.
   Settings first returns from its pane to the selected category; Search first returns from results
   to its keyboard. Back closes a popup (including navigation), restores the series overview or pops a subpage;
   on another root page it returns Home, and on Home it exits. The Home spotlight remains a touch-only shortcut.
 - **Focus:** the focused control turns white with dark text. Artwork grows,
-  gains a white rim and a deep shadow while its caption keeps its size; buttons
+  gains a white rim and a deep shadow while its caption keeps its size and rides
+  the grown lower edge in the same layer pass, so the two always move together; buttons
   grow slightly; list rows and tabs don't grow, so their text never shifts.
+  A raised control's shadow rises with focus but leaves at once with the white platter: a shadow still settling
+  under a row or category whose platter has turned clear would show through as a dark pill.
+  Settings marks only the open category with a faint platter.
   Right holds at shelf ends; Left only enters the rail from the first card. Up/Down move through content and the separate toolbar.
   Toggling a favourite, watched state or a Settings switch updates its block in
   place (`PageAdapter`'s bindings), so the focused control stays the same view.

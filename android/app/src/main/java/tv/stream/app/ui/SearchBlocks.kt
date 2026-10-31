@@ -5,7 +5,10 @@ import android.view.KeyEvent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -17,7 +20,6 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -47,6 +49,8 @@ internal object SearchBlocks {
     /** Observes the values applied to painted layers, for the device reflow regression. */
     @Volatile var drawn: ((Frame) -> Unit)? = null
     private val Motion = CubicBezierEasing(.32f, 0f, .16f, 1f)
+    /** Room above and below results for a focused card's 1.1x lift (about 11 dp on a poster) and its raised shadow. */
+    const val RESULT_MARGIN = 28
 
     class State(initial: Item, initialPage: Int = 0, private val modeChanged: (Boolean) -> Unit) {
         var item by mutableStateOf(initial); private set
@@ -119,6 +123,23 @@ internal object SearchBlocks {
             else -> KeyboardLanguages.accents(language)
         }
     }
+    /**
+     * Scrolls the results so a focused card, with its lift and focus rim, sits a margin inside the grid's clipped
+     * viewport instead of stopping at its edge; a card already that far inside stays still.
+     */
+    @OptIn(ExperimentalFoundationApi::class)
+    class ResultScroll(private val margin: Float) : BringIntoViewSpec {
+        override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
+                distance(offset, size, containerSize, margin)
+        companion object {
+            fun distance(offset: Float, size: Float, containerSize: Float, margin: Float): Float {
+                if (offset >= margin && offset + size <= containerSize - margin) return 0f
+                // A card taller than the room between the margins keeps its top (artwork) in view.
+                if (size + 2 * margin > containerSize || offset < margin) return offset - margin
+                return offset + size + margin - containerSize
+            }
+        }
+    }
     class Key(val key: String, val label: String, val description: String, val cells: Int, val run: () -> Unit)
 
     private fun keys(state: State): List<List<Key>> {
@@ -149,6 +170,7 @@ internal object SearchBlocks {
         return rows
     }
 
+    @OptIn(ExperimentalFoundationApi::class)
     @Composable
     fun Content(state: State, cards: TileBlocks.Cards, start: androidx.compose.ui.unit.Dp, end: androidx.compose.ui.unit.Dp) {
         val item = state.item
@@ -270,8 +292,10 @@ internal object SearchBlocks {
                             .background(colorResource(R.color.tv_hairline)))
                 }
             }
+            // No clip on the pane: the lazy grid clips only vertically (with room for lift and shadow at the sides),
+            // and its content padding and ResultScroll keep a focused card's lift inside that viewport.
             Column(Modifier.fillMaxSize().padding(start = if (split) editorWidth else 0.dp)
-                    .clipToBounds().graphicsLayer { alpha = opacity.value }.testTag("search-results")
+                    .graphicsLayer { alpha = opacity.value }.testTag("search-results")
                     .focusRequester(neutral).onFocusChanged { if (it.isFocused) { owner.tag = "search-results"; cards.page.focused("search-results") } }.focusable()
                     .drawWithContent {
                         drawContent()
@@ -281,12 +305,15 @@ internal object SearchBlocks {
                 if (item.meta.isNotEmpty()) BasicText(item.meta, Modifier.padding(top = 6.dp, bottom = 4.dp), style = TextBlocks.style(Tv.Font.REGULAR, 13f, R.color.tv_warning, false))
                 if (item.actions.isNotEmpty()) PageControls.Actions(item.actions, cards.page, 0.dp, 0.dp)
                 if (item.tiles.isNotEmpty() || item.loading) {
+                    val spec = remember(density) { ResultScroll(with(density) { RESULT_MARGIN.dp.toPx() }) }
+                    CompositionLocalProvider(LocalBringIntoViewSpec provides spec) {
                     androidx.compose.foundation.lazy.grid.LazyVerticalGrid(GridCells.Fixed(state.columns), state = grid, modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(top = 18.dp, bottom = 28.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                            contentPadding = PaddingValues(top = RESULT_MARGIN.dp, bottom = RESULT_MARGIN.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         if (item.loading && item.tiles.isEmpty()) items(state.columns * 2) { SkeletonBlocks.Card() }
                         else itemsIndexed(item.tiles, key = { _, tile -> tile.key }) { index, tile ->
                             TileBlocks.Card(tile, Item.Tile.Style.POSTER, cards, onKey = { code -> code == KeyEvent.KEYCODE_DPAD_RIGHT && (index + 1) % state.columns == 0 })
                         }
+                    }
                     }
                 } else Box(Modifier.fillMaxSize().padding(bottom = 52.dp), contentAlignment = Alignment.Center) {
                     BasicText(item.detail.ifEmpty { if (item.loading) "Searching…" else "Search films and series" }, style = TextBlocks.style(Tv.Font.REGULAR, 18f, R.color.tv_text_secondary, false))

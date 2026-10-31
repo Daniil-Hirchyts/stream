@@ -201,6 +201,29 @@ class SeriesBrowseTest : AppHarness() {
         }
     }
 
+    @Test @Throws(Exception::class) fun specialsFollowTheLastSeasonAndAreNotSelectedFirst() {
+        val episodes = JSONArray()
+        // Specials listed first, as providers often do.
+        for (season in listOf(0, 1, 2)) for (number in 1..2) episodes.put(JSONObject()
+                .put("id", "order:s" + season + "e" + number).put("season", season).put("episode", number)
+                .put("title", (if (season == 0) "Special " else "Episode ") + number))
+        val series = Title.parse("local", JSONObject().put("id", "test:specials").put("type", "series")
+                .put("name", "Specials order").put("videos", episodes))!!
+        launch(); AppHarness.waitUntil("Home", 10000) { visible("Make yourself at home") }
+        browse!!.onActivity { activity -> activity.openTitle(series, "") }
+        AppHarness.waitUntil("overview", 5000) { focused("play") }
+        assertTrue("Play starts the first numbered episode", visible("S1 E1"))
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN)
+        AppHarness.waitUntil("Season 1 is selected first", 5000) { focused("season:1") && shown("episode:order:s1e1") }
+        assertTrue("Specials follow the last numbered season", bounds("season:0").left > bounds("season:2").right)
+        assertTrue("Season 2 follows Season 1", bounds("season:2").left > bounds("season:1").right)
+        assertTrue(visible("Specials"))
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
+        AppHarness.waitUntil("Season 2", 5000) { focused("season:2") }
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
+        AppHarness.waitUntil("Specials are last", 5000) { focused("season:0") && shown("episode:order:s0e1") }
+    }
+
     @Test @Throws(Exception::class) fun defaultTabsHideBackButSubpagesKeepIt() {
         launch(); AppHarness.waitUntil("Home", 10000) { visible("Make yourself at home") }
         assertFalse(visible("Back"))

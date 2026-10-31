@@ -40,11 +40,14 @@ internal class ComposePlayerLayers(private val activity: Activity, private val d
     private var state by mutableStateOf(PlayerScreen.LayerState())
     private var input: PlayerScreen.LayerInput? = null
     private var showQr by mutableStateOf(false)
+    /** A series episode's line under the loading title, such as "S2 E7 · Ace of Spades"; empty for films. */
+    private var episode by mutableStateOf("")
     private val qr = FrameLayout(activity).apply { id = R.id.error_diagnostics }
     private val hosts = ArrayList<Layer>()
     private val locations = HashMap<Int, Pair<Layer, Rect>>()
     override fun bind(input: PlayerScreen.LayerInput) { this.input = input }
     override fun render(state: PlayerScreen.LayerState) { this.state = state }
+    fun episode(label: String) { episode = label }
     fun diagnostics(report: DiagnosticReport?) {
         ErrorQrPanel.attach(qr, developer, report)
         showQr = developer && report != null
@@ -113,6 +116,7 @@ internal class ComposePlayerLayers(private val activity: Activity, private val d
         install(R.id.loading) {
             Column(Modifier.fillMaxSize().background(colorResource(PlaybackR.color.ink)).padding(horizontal = 96.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 BasicText(state.title, Modifier.width(560.dp).named(R.id.loading_title), style = TextBlocks.style(Tv.Font.SEMIBOLD, 28f, R.color.tv_text, false, 1.12f).copy(textAlign = TextAlign.Center), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (episode.isNotEmpty()) BasicText(episode, Modifier.width(560.dp).padding(top = 10.dp).named(R.id.loading_episode), style = TextBlocks.style(Tv.Font.MEDIUM, 16f, R.color.tv_text_secondary, false).copy(textAlign = TextAlign.Center), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (developer) Column(Modifier.width(560.dp).padding(top = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     BasicText(state.step.uppercase(), Modifier.named(R.id.loading_step), style = TextBlocks.style(Tv.Font.MEDIUM, 11.5f, R.color.accent, false).copy(textAlign = TextAlign.Center))
                     if (state.message.isNotEmpty()) BasicText(state.message, Modifier.padding(top = 10.dp).named(R.id.loading_message), style = TextBlocks.style(Tv.Font.REGULAR, 15f, R.color.tv_text, false).copy(textAlign = TextAlign.Center))

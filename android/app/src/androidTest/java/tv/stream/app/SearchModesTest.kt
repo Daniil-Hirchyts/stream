@@ -203,7 +203,8 @@ class SearchModesTest : SearchHarness() {
             assertTrue("Results start at the page's leading edge", resultsBounds().left < dp(120))
             screenshot("validation-search-query-results.png")
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT)
-            AppHarness.waitUntil("Left brings the keyboard and query back", 5000) { keyboardShown() && query() == "fi" }
+            // The keyboard's edge slides in a frame before the query text enters the window.
+            AppHarness.waitUntil("Left brings the keyboard and query back", 5000) { keyboardShown() && semanticNode("search-query") != null && query() == "fi" }
         }
     }
     private fun query(): String = searchQuery()

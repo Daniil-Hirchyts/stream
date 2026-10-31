@@ -49,6 +49,21 @@ RecyclerView: labels, focus by key, D-pad moves between blocks (dispatched as
 ViewRootImpl does), OK/Enter and touch clicks after a rebind, category selection,
 Right/Left steering and restoring a pane row by key.
 
+`PageRowFocusTest` (JVM) walks eight shelves down and back up through the page's
+real `PageAdapter.Layout` after the top ones have scrolled away: every Up reaches
+the next shelf and only the first reaches Refresh. On the emulator,
+`PageNavigationTest` repeats that on Home and on a catalogue grid (Up reaches each
+row, then the filters, then Back), including quick presses mid-scroll; opens
+Settings from the rail, after visiting Home and directly, and requires a
+category drawn focused (its layer-scaled bounds), not only focused for
+accessibility; and checks that after quick moves only the focused poster's
+artwork is grown, with its caption below it:
+
+```sh
+(cd android && ./gradlew :app:testDebugUnitTest --tests tv.stream.app.ui.PageRowFocusTest)
+./simulator.sh data-test tv.stream.app.PageNavigationTest
+```
+
 `ScreenStateInteractionTest` recreates Settings and Details, then exercises the
 restored actions by remote and touch and checks that Back pops one screen.
 
@@ -118,6 +133,7 @@ sanitizer.
 | Error QR reports (decodes every part, checks redaction) | `DiagnosticReportTest`, `ErrorQrPanelTest` |
 | Subtitle fonts: saved values, kept emphasis, Cyrillic fallback (API 26 and 36) | `SubtitleFontsTest` |
 | Focus growth never clipped; player timeline layout (Robolectric) | `FocusEffectsTest`, `PlayerTimelineLayoutTest` |
+| Skeletons drawn in their page's shape (never the spinner), Search focus scrolling margin, focus shadow exit (Robolectric) | `ui.LoadingBlocksTest` |
 
 Two are opt-in because they reach the internet: `-PuiSnapshots=true` renders
 the real screens at 1920×1080 into `android/app/build/ui-snapshots/` and fails on any
