@@ -108,22 +108,32 @@ class ReadmeCapture : AppHarness() {
         // Let the remote film play forward: a large remote seek can stall on a cold range request.
         waitUntil("the opening scene", 90_000) { state()!!.playing && state()!!.positionMs >= 45_000 }
         pause(4000)
-        record("player", 18) {
+        record("player", 30) {
             pause(2000)
-            key(KeyEvent.KEYCODE_DPAD_CENTER); pause(2500)
-            repeat(3) { key(KeyEvent.KEYCODE_DPAD_RIGHT); pause(600) }
-            pause(1500)
-            control(R.id.control_settings, false); pause(2500)
-            key(KeyEvent.KEYCODE_DPAD_DOWN); pause(900); key(KeyEvent.KEYCODE_DPAD_DOWN); pause(1500)
-            key(KeyEvent.KEYCODE_BACK); pause(1200)
-            // Focus is on a toolbar button now; the remote's Play key resumes from anywhere.
+            key(KeyEvent.KEYCODE_MEDIA_PAUSE); pause(1200)
+            openPlayerSettings()
+            pause(1600)
+            key(KeyEvent.KEYCODE_DPAD_DOWN); pause(450)
+            key(KeyEvent.KEYCODE_DPAD_DOWN); pause(450)
+            key(KeyEvent.KEYCODE_DPAD_CENTER)
+            waitUntil("subtitle style over video", 5000) { visible("Font") && visible("Size") }
+            pause(3500)
+            shot("player-subtitle-style")
+            // Size is first; move to Font, preview it, then return without changing saved preferences.
+            key(KeyEvent.KEYCODE_DPAD_DOWN); pause(450)
+            key(KeyEvent.KEYCODE_DPAD_CENTER)
+            waitUntil("font preview", 5000) { visible("Noto Sans") && visible("Bold") }
+            key(KeyEvent.KEYCODE_DPAD_DOWN); pause(1800)
+            key(KeyEvent.KEYCODE_BACK); pause(900)
+            key(KeyEvent.KEYCODE_BACK); pause(900)
+            key(KeyEvent.KEYCODE_BACK); pause(900)
             key(KeyEvent.KEYCODE_MEDIA_PLAY); pause(3000)
         }
         if (!state()!!.playWhenReady) key(KeyEvent.KEYCODE_MEDIA_PLAY)
         waitUntil("playing again", 60_000) { state()!!.playing }
         pause(6000)
         key(KeyEvent.KEYCODE_MEDIA_PAUSE); pause(2000); shot("player-controls")
-        control(R.id.control_settings, false); pause(2500); shot("player-menu")
+        openPlayerSettings(); pause(1500); shot("player-menu")
         key(KeyEvent.KEYCODE_BACK); pause(800); key(KeyEvent.KEYCODE_BACK); pause(800)
         if (watch() != null) key(KeyEvent.KEYCODE_BACK)
         waitUntil("player closed", 15_000) { watch() == null }
@@ -131,6 +141,33 @@ class ReadmeCapture : AppHarness() {
         // Continue watching tiles are keyed by title and video: a film's video is its own id.
         focusTop("continue:" + services.store.library(false).first { it.title.id == "readme:tears-of-steel" }.title.key() + ":readme:tears-of-steel")
         settle(2500); shot("home-continue")
+    }
+
+    /** Give the real remote focus time to finish painting before the popup snapshots its opener. */
+    private fun openPlayerSettings() {
+        key(KeyEvent.KEYCODE_DPAD_UP)
+        key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        waitUntil("settings focused", 5000) { watch()?.playerControlFocused(R.id.control_settings) == true }
+        pause(500)
+        assertSettingsCursorWhite()
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitUntil("player settings", 5000) { visible("Subtitle style") }
+        pause(500)
+        assertSettingsCursorWhite()
+    }
+
+    private fun assertSettingsCursorWhite() {
+        val bounds = java.util.concurrent.atomic.AtomicReference<android.graphics.Rect>()
+        val activity = watch()!!
+        instrumentation.runOnMainSync { bounds.set(activity.playerControlBounds(R.id.control_settings)) }
+        val bitmap = instrumentation.uiAutomation.takeScreenshot() ?: throw AssertionError("Player screenshot unavailable")
+        try {
+            val r = bounds.get() ?: throw AssertionError("Settings bounds unavailable")
+            val pixel = bitmap.getPixel(r.left + r.width() / 6, r.centerY())
+            org.junit.Assert.assertTrue("The recording has the solid white remote cursor: $pixel",
+                android.graphics.Color.red(pixel) > 235 && android.graphics.Color.green(pixel) > 235 && android.graphics.Color.blue(pixel) > 235)
+        } finally { bitmap.recycle() }
     }
 
     private fun openLicensedFilm() {

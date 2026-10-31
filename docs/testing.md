@@ -269,7 +269,9 @@ README recordings use 1280 × 720 at 4 Mbps. The licensed live-action film comes
 from the Blender Foundation’s download server and plays forward before capture.
 To retry just playback while preserving completed browsing captures, run
 `./simulator.sh data-test tv.stream.app.ReadmeCapture -e capturePlaybackOnly true`,
-then `sh simulator/readme-media.sh`.
+then `sh simulator/readme-media.sh player`. The player sequence uses settled remote
+focus, checks the Settings cursor stays white, and opens Subtitle style and its
+font preview over the film.
 
 ```sh
 ./simulator.sh live-film       # films installed through the store play on the emulator

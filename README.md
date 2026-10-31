@@ -90,7 +90,7 @@ No account, no cloud, no server, no debrid subscription, no tracking: your data 
 <summary><b>Search and the player in motion</b></summary>
 
 <p align="center"><img src="docs/media/search.gif" alt="Typing &quot;dune&quot; on the on-screen keyboard with the remote while results arrive" width="720"/></p>
-<p align="center"><img src="docs/media/player.gif" alt="Showing the player toolbar, skipping forward with the remote and opening the Settings menu" width="720"/></p>
+<p align="center"><img src="docs/media/player.gif" alt="Showing the player toolbar, opening Subtitle style and previewing fonts over the film with the remote" width="720"/></p>
 
 </details>
 

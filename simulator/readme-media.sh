@@ -9,13 +9,17 @@ ROOT=$(dirname "$SIM_DIR")
 command -v ffmpeg >/dev/null || { echo 'ffmpeg is required' >&2; exit 2; }
 media="$ROOT/docs/media"
 raw="$SIM_DIR/.cache/readme"
-rm -rf "$raw"
+selection=${1:-all}
+case "$selection" in all|player) ;; *) echo "Usage: $0 [all|player]" >&2; exit 2 ;; esac
 mkdir -p "$media" "$raw"
 for name in $(device shell run-as tv.stream.app ls files/readme | tr -d '\r'); do
+  if [ "$selection" = player ]; then case "$name" in player-*.png) ;; *) continue ;; esac; fi
   device exec-out run-as tv.stream.app cat "files/readme/$name" >"$raw/$name"
   ffmpeg -loglevel error -y -i "$raw/$name" -vf scale=1280:-1:flags=lanczos "$media/$name"
 done
-for scene in home:720 search:720 player:640; do
+scenes="home:720 search:720 player:640"
+[ "$selection" != player ] || scenes="player:640"
+for scene in $scenes; do
   width=${scene#*:}; scene=${scene%:*}
   device pull "/data/local/tmp/readme-$scene.mp4" "$raw/$scene.mp4" >/dev/null
   device shell rm -f "/data/local/tmp/readme-$scene.mp4"
