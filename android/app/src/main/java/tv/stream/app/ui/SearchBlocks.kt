@@ -23,6 +23,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.focus.FocusRequester
@@ -51,6 +58,10 @@ internal object SearchBlocks {
     private val Motion = CubicBezierEasing(.32f, 0f, .16f, 1f)
     /** Room above and below results for a focused card's 1.1x lift (about 11 dp on a poster) and its raised shadow. */
     const val RESULT_MARGIN = 28
+    /** Share of the space above the results, from the window's top, where cards have faded out (under Back and the clock). */
+    private const val FADE_CLEAR = .35f
+    /** Room each side of the grid's faded layer, which clips, for a focused card's lift, rim and shadow. */
+    private const val RESULT_SIDE = 28
 
     class State(initial: Item, initialPage: Int = 0, private val modeChanged: (Boolean) -> Unit) {
         var item by mutableStateOf(initial); private set
@@ -124,19 +135,20 @@ internal object SearchBlocks {
         }
     }
     /**
-     * Scrolls the results so a focused card, with its lift and focus rim, sits a margin inside the grid's clipped
-     * viewport instead of stopping at its edge; a card already that far inside stays still.
+     * Scrolls the results so a focused card, with its lift and focus rim, sits a margin inside the results area
+     * instead of stopping at its edge; a card already that far inside stays still. The grid itself reaches the
+     * window's edges (cards fade out beyond the area), so `top` and `bottom` also cover that extension.
      */
     @OptIn(ExperimentalFoundationApi::class)
-    class ResultScroll(private val margin: Float) : BringIntoViewSpec {
+    class ResultScroll(private val top: () -> Float, private val bottom: () -> Float) : BringIntoViewSpec {
         override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
-                distance(offset, size, containerSize, margin)
+                distance(offset, size, containerSize, top(), bottom())
         companion object {
-            fun distance(offset: Float, size: Float, containerSize: Float, margin: Float): Float {
-                if (offset >= margin && offset + size <= containerSize - margin) return 0f
+            fun distance(offset: Float, size: Float, containerSize: Float, top: Float, bottom: Float): Float {
+                if (offset >= top && offset + size <= containerSize - bottom) return 0f
                 // A card taller than the room between the margins keeps its top (artwork) in view.
-                if (size + 2 * margin > containerSize || offset < margin) return offset - margin
-                return offset + size + margin - containerSize
+                if (size + top + bottom > containerSize || offset < top) return offset - top
+                return offset + size + bottom - containerSize
             }
         }
     }
@@ -292,8 +304,8 @@ internal object SearchBlocks {
                             .background(colorResource(R.color.tv_hairline)))
                 }
             }
-            // No clip on the pane: the lazy grid clips only vertically (with room for lift and shadow at the sides),
-            // and its content padding and ResultScroll keep a focused card's lift inside that viewport.
+            // No clip on the pane: the lazy grid clips only vertically, at the window's edges, where cards fade out.
+            // Its content padding and ResultScroll keep a focused card's lift inside the results area.
             Column(Modifier.fillMaxSize().padding(start = if (split) editorWidth else 0.dp)
                     .graphicsLayer { alpha = opacity.value }.testTag("search-results")
                     .focusRequester(neutral).onFocusChanged { if (it.isFocused) { owner.tag = "search-results"; cards.page.focused("search-results") } }.focusable()
@@ -305,14 +317,39 @@ internal object SearchBlocks {
                 if (item.meta.isNotEmpty()) BasicText(item.meta, Modifier.padding(top = 6.dp, bottom = 4.dp), style = TextBlocks.style(Tv.Font.REGULAR, 13f, R.color.tv_warning, false))
                 if (item.actions.isNotEmpty()) PageControls.Actions(item.actions, cards.page, 0.dp, 0.dp)
                 if (item.tiles.isNotEmpty() || item.loading) {
-                    val spec = remember(density) { ResultScroll(with(density) { RESULT_MARGIN.dp.toPx() }) }
+                    // The space between the results area and the window's top and bottom: the grid extends over it, so
+                    // rows scroll on under the toolbar and off the screen's foot instead of being cut at the area's edge.
+                    var above by remember { mutableIntStateOf(0) }
+                    var below by remember { mutableIntStateOf(0) }
+                    val view = LocalView.current
+                    val margin = with(density) { RESULT_MARGIN.dp.toPx() }
+                    val side = with(density) { RESULT_SIDE.dp.roundToPx() }
+                    val spec = remember(margin) { ResultScroll({ margin + above }, { margin + below }) }
+                    Box(Modifier.fillMaxSize().onGloballyPositioned {
+                        val top = it.positionInWindow().y.toInt().coerceAtLeast(0)
+                        above = top; below = (view.rootView.height - top - it.size.height).coerceAtLeast(0)
+                    }) {
                     CompositionLocalProvider(LocalBringIntoViewSpec provides spec) {
-                    androidx.compose.foundation.lazy.grid.LazyVerticalGrid(GridCells.Fixed(state.columns), state = grid, modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(top = RESULT_MARGIN.dp, bottom = RESULT_MARGIN.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    androidx.compose.foundation.lazy.grid.LazyVerticalGrid(GridCells.Fixed(state.columns), state = grid,
+                            modifier = Modifier.fillMaxSize().layout { measurable, constraints ->
+                                val height = constraints.maxHeight + above + below; val width = constraints.maxWidth + 2 * side
+                                val placeable = measurable.measure(constraints.copy(minWidth = width, maxWidth = width, minHeight = height, maxHeight = height))
+                                layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(-side, -above) }
+                            }.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
+                                drawContent()
+                                if (size.height <= 0f) return@drawWithContent
+                                val h = size.height
+                                drawRect(Brush.verticalGradient(0f to Color.Transparent, above * FADE_CLEAR / h to Color.Transparent,
+                                        above / h to Color.Black, (h - below) / h to Color.Black, 1f to Color.Transparent), blendMode = BlendMode.DstIn)
+                            },
+                            contentPadding = with(density) { PaddingValues(start = RESULT_SIDE.dp, end = RESULT_SIDE.dp,
+                                    top = RESULT_MARGIN.dp + above.toDp(), bottom = RESULT_MARGIN.dp + below.toDp()) },
+                            horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         if (item.loading && item.tiles.isEmpty()) items(state.columns * 2) { SkeletonBlocks.Card() }
                         else itemsIndexed(item.tiles, key = { _, tile -> tile.key }) { index, tile ->
                             TileBlocks.Card(tile, Item.Tile.Style.POSTER, cards, onKey = { code -> code == KeyEvent.KEYCODE_DPAD_RIGHT && (index + 1) % state.columns == 0 })
                         }
+                    }
                     }
                     }
                 } else Box(Modifier.fillMaxSize().padding(bottom = 52.dp), contentAlignment = Alignment.Center) {

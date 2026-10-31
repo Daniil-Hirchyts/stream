@@ -73,8 +73,11 @@ class SearchModesTest : SearchHarness() {
                 assertTrue("Results have visible cards", resultNodes.isNotEmpty())
                 for (node in resultNodes) {
                     val bounds = node.boundsInRoot
-                    if (bounds.width > 0 && bounds.height > 0) assertTrue("Results stay inside their scrolling viewport",
-                            bounds.left >= viewport.left && bounds.right <= viewport.right && bounds.top >= viewport.top && bounds.bottom <= viewport.bottom)
+                    // Rows scroll on past the results area to the window's edges (fading out), so only the sides are
+                    // bounded, with room for a focused card's lift beyond them (it is no longer clipped there).
+                    val lift = dp(28)
+                    if (bounds.width > 0 && bounds.height > 0) assertTrue("Results stay inside their scrolling viewport: $bounds in $viewport",
+                            bounds.left >= viewport.left - lift && bounds.right <= viewport.right + lift)
                 }
                 browse!!.onActivity { activity -> assertEquals(0f, activity.findViewById<View>(R.id.scroll_fade).alpha, 0f) }
                 assertSearchNavigationHidden()
@@ -205,6 +208,31 @@ class SearchModesTest : SearchHarness() {
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT)
             // The keyboard's edge slides in a frame before the query text enters the window.
             AppHarness.waitUntil("Left brings the keyboard and query back", 5000) { keyboardShown() && semanticNode("search-query") != null && query() == "fi" }
+        }
+    }
+    @Test @Throws(Exception::class) fun scrolledResultsRunOnToTheWindowEdgesWithTheFocusedCardWhole() {
+        BrowseRecoveryTest.CatalogServer().use { server ->
+            services.addons.newRequest().use { request ->
+                services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", request))
+            }
+            launch(); AppHarness.waitUntil("Home", 10000) { visible("Film 00") }
+            tap("Search", true); AppHarness.waitUntil("keyboard", 5000) { keyboardShown() }
+            tap("Type f", false); tap("Type i", false)
+            searchWait("results", 10000) { visible("Film 00") && columns() == 4 }
+            focusSearch("keyboard:f")
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
+            AppHarness.waitUntil("full results", 5000) { !keyboardShown() && columns() == 6 && focus().startsWith("search:[") }
+            val area = resultsBounds()
+            for (i in 0 until 3) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN); SystemClock.sleep(450) }
+            instrumentation.waitForIdleSync(); SystemClock.sleep(400)
+            val focused = searchBounds(focus())
+            assertTrue("The focused card is whole inside the results area", focused.top >= area.top && focused.bottom <= area.bottom
+                    && focused.left >= area.left && focused.right <= area.right)
+            // The row above has scrolled past the area's top; it is still composed (drawn fading under the toolbar).
+            val above = semanticNodes { it.config.getOrElse(SemanticsProperties.TestTag) { "" }.startsWith("search:[") }
+                    .count { it.boundsInWindow.bottom < focused.top }
+            assertTrue("Rows above the focused one stay drawn", above > 0)
+            screenshot("validation-search-scrolled.png")
         }
     }
     private fun query(): String = searchQuery()

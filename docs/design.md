@@ -111,9 +111,11 @@ Shelves scroll horizontally. Page titles scroll with their page.
   keeps its speed when the next press retargets it, so held and repeated presses
   glide instead of snapping card by card.
 - **Search:** typing replaces only the four-column results beside the keyboard, so the
-  focused key never moves and posters keep readable widths. Results clip cleanly at the column's top and bottom
-  only: the pane itself doesn't clip, 28 dp of content padding top and bottom holds a focused poster's lift and
-  rim, and focus scrolls a card that margin inside the viewport rather than stopping at its edge.
+  focused key never moves and posters keep readable widths. Results are never cut at the column's edges: the grid
+  extends to the window's top and bottom, so rows scroll on under the toolbar and off the screen's foot, fading
+  out over that space (fully clear under Back and the clock). Inside the results area, 28 dp of content padding
+  top and bottom holds a focused poster's lift and rim, and focus scrolls a card that margin inside the area
+  rather than stopping at its edge.
   Moving Right into results slides the keyboard out and expands the grid to six
   columns. Left from the leading column restores the editing layout; Right
   returns to the selected result. There is no search bar or mode button: the typed

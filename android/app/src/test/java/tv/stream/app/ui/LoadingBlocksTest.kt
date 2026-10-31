@@ -78,11 +78,16 @@ class LoadingBlocksTest {
 
     @Test fun focusedSearchResultsScrollClearOfTheViewportEdge() {
         val margin = 28f
-        assertEquals("A card already inside the margins stays still", 0f, SearchBlocks.ResultScroll.distance(40f, 200f, 500f, margin), 0f)
-        assertEquals("A card cut at the top moves down to the margin", -38f, SearchBlocks.ResultScroll.distance(-10f, 200f, 500f, margin), 0f)
-        assertEquals("A card cut at the bottom moves up past the margin", 18f, SearchBlocks.ResultScroll.distance(290f, 200f, 500f, margin), 0f)
-        assertEquals("A card just short of the bottom margin still moves", 8f, SearchBlocks.ResultScroll.distance(280f, 200f, 500f, margin), 0f)
-        assertEquals("A card taller than the room keeps its artwork in view", 72f, SearchBlocks.ResultScroll.distance(100f, 480f, 500f, margin), 0f)
+        assertEquals("A card already inside the margins stays still", 0f, SearchBlocks.ResultScroll.distance(40f, 200f, 500f, margin, margin), 0f)
+        assertEquals("A card cut at the top moves down to the margin", -38f, SearchBlocks.ResultScroll.distance(-10f, 200f, 500f, margin, margin), 0f)
+        assertEquals("A card cut at the bottom moves up past the margin", 18f, SearchBlocks.ResultScroll.distance(290f, 200f, 500f, margin, margin), 0f)
+        assertEquals("A card just short of the bottom margin still moves", 8f, SearchBlocks.ResultScroll.distance(280f, 200f, 500f, margin, margin), 0f)
+        assertEquals("A card taller than the room keeps its artwork in view", 72f, SearchBlocks.ResultScroll.distance(100f, 480f, 500f, margin, margin), 0f)
+        // The grid reaches the window's edges: a card in the faded strip under the toolbar scrolls fully into the area.
+        val top = margin + 150f; val bottom = margin + 60f
+        assertEquals("A card visible only in the top fade moves into the area", -128f, SearchBlocks.ResultScroll.distance(50f, 300f, 1000f, top, bottom), 0f)
+        assertEquals("A card in the bottom fade moves up into the area", 138f, SearchBlocks.ResultScroll.distance(750f, 300f, 1000f, top, bottom), 0f)
+        assertEquals("A card inside the area stays", 0f, SearchBlocks.ResultScroll.distance(400f, 300f, 1000f, top, bottom), 0f)
     }
 
     @Test fun focusShadowLeavesAtOnceWithThePlatter() {
