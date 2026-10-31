@@ -72,7 +72,8 @@ jobs:
             out="dist/stream-$TAG-$abi.apk"
             # 16 KiB alignment keeps the uncompressed native libraries loadable in place.
             "$tools/zipalign" -P 16 -f 4 "$apk" "$out"
-            "$tools/apksigner" sign --ks "$keystore" --ks-pass env:STORE_PASSWORD \
+            # No v4 (.idsig) signature: it only serves incremental adb installs and would clutter the release.
+            "$tools/apksigner" sign --v4-signing-enabled false --ks "$keystore" --ks-pass env:STORE_PASSWORD \
               --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASSWORD "$out"
             "$tools/apksigner" verify "$out"
           done
