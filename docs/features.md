@@ -1,7 +1,10 @@
 # Using Stream
 
-Stream is built for a TV remote first: every screen works with the D-pad, OK and
-Back, and also with a pointer or touch where the device has one.
+Stream runs entirely on the TV: there is no account, no server and nothing to
+install on another device, and your library and history stay on the TV,
+encrypted. It is designed to stay quick on modest hardware, down to 1 GB, 32-bit
+sticks. Every screen works with the remote's D-pad, OK and Back, and also with a
+pointer or touch where the device has one.
 
 ## Finding something to watch
 
@@ -20,7 +23,7 @@ Back, and also with a pointer or touch where the device has one.
   cards; moving to a season shows its episodes at once.
 - **Library** keeps your favourites and watch history on the TV only.
 
-<img src="media/home.png" alt="Home: the spotlight over a focused public-domain film, with Favourites and the Internet Archive's catalogue below" width="49%"/> <img src="media/home-continue.png" alt="Home after watching: the film just played waits in Continue watching" width="49%"/>
+<img src="media/home.png" alt="Home: the spotlight over a focused film, with Favourites and the Cinemeta catalogue below" width="49%"/> <img src="media/home-continue.png" alt="Home after watching: the film just played waits in Continue watching" width="49%"/>
 
 ## Add-ons
 

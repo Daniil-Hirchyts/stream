@@ -21,6 +21,7 @@
 **Building and testing**
 
 - [Building and running](development.md): requirements, emulator, release builds, generated assets
+- [Releasing](releasing.md): the signing key, version tags and the release workflow
 - [Testing](testing.md): suites, focused regressions, device rules, measurements
 - [Codec build](codec-build.md): the pinned FFmpeg/NextLib decoder build
 - [Sounds](sounds.md) and [fonts and icons](fonts-and-icons.md): generated assets

@@ -1,64 +1,87 @@
 <div align="center">
 
+<img src="docs/media/icon.png" alt="Stream app icon" width="112"/>
+
 # Stream
 
-**A remote-first Android TV app for films and series, with its own BitTorrent streaming engine built in.**
+**Private, local streaming for Android TV, built to run smoothly on cheap and slow TVs.**
 
-Catalogues, search, a private library and playback from direct links or torrents,<br/>
-using the add-ons you already know. No account, no server, nothing to install on another device.
+Stream films and series from your Stremio add-ons and from torrents, directly on the TV.<br/>
+No account, no cloud, no server, no debrid subscription, no tracking: your data never leaves the TV.
 
-[Features](#what-it-does) · [How it works](#how-it-works) · [Compared with](#how-it-compares) · [Install](#install) · [Docs](docs/README.md)
+[Download](https://github.com/Daniil-Hirchyts/stream/releases) · [Why Stream](#why-stream) · [How it works](#how-it-works) · [Compared with](#how-it-compares) · [Install](#install) · [Docs](docs/README.md)
 
-<img src="docs/media/home.gif" alt="Browsing Home with the remote: the spotlight follows focus across public-domain films, then opens a film's details" width="960"/>
+<img src="docs/media/home.gif" alt="Browsing Home: the spotlight follows focus across current films and series, then opens a film's details" width="960"/>
 
-<sub>Real interface, real data: public-domain films from the Internet Archive, recorded on the Android TV emulator.</sub>
+<sub>Real interface on the Android TV emulator. Titles and artwork come from the Cinemeta catalogue; the only film shown playing is Big Buck Bunny (© Blender Foundation, CC BY 3.0).</sub>
 
 </div>
 
-## What it does
+## Why Stream
 
-- **Built for the remote.** Every screen works with the D-pad, OK and Back,
-  and with a pointer or touch where there is one. Focus never gets lost, Back
-  always does what you expect, and the interface follows tvOS: artwork behind
-  the page, a spotlight for the focused title, quiet sounds for each move.
-- **Your add-ons, unchanged.** Stream speaks the Stremio add-on protocol:
-  catalogue, metadata, stream and subtitle add-ons work as they are, and an
-  in-app store with a review page for each one makes installing them a choice
-  rather than a surprise.
-- **Torrents play like any video.** Press Play and the best source starts on its
-  own; seek anywhere and the download jumps there. The engine is part of the
-  app, written in Rust, and writes only a small bounded cache, whatever the
-  file's size.
-- **Plays what the TV can't.** Hardware decoders when the TV has them; bundled
-  FFmpeg software decoders for DTS, TrueHD, older codecs and 10-bit video
-  when it doesn't.
-- **Private by design.** No sign-in, no analytics, no backups of your data.
-  Add-on addresses, history and imports are encrypted with a key held by the
-  TV's Keystore, and playable stream links are never stored.
+- **Everything stays on your TV.** There is no Stream account, server or cloud,
+  and no analytics. Your library, watch history, add-on addresses and imports
+  live only on the TV, encrypted with a key held by its Keystore; playable
+  stream links are never stored, and Android backups and device transfer are
+  turned off. Uninstalling removes it all.
+- **Made for weak hardware.** Stream is designed around a first-generation
+  Fire TV Stick: 1 GB of RAM and a 32-bit processor. It keeps one torrent
+  active, streams through a small bounded cache (128, 256 or 512 MiB) whatever
+  the file's size, loads artwork within tight memory limits and ships startup
+  profiles so screens open quickly on slow chips.
+- **Torrents without a second app or a debrid service.** The BitTorrent engine
+  is part of the app, written in Rust: press Play and the best source starts,
+  seek anywhere and the download jumps there. No TorrServe, no desktop client,
+  no Real-Debrid or other paid service required (debrid links from your add-ons
+  still play if you use one).
+- **A Stremio alternative that keeps your add-ons.** Stream speaks the Stremio
+  add-on protocol, so catalogue, metadata, stream and subtitle add-ons work as
+  they are. The first start installs a small starter set; anything else is
+  added only after you review it in the in-app store.
+- **Plays what the TV can't.** Hardware decoders when the TV has them, bundled
+  FFmpeg software decoders for DTS, TrueHD, older codecs and 10-bit video when
+  it doesn't.
+- **Free and open source, no ads.** GPL-3.0, no subscriptions, nothing to sign
+  up for.
+- **Comfortable from the sofa.** Every screen works with the remote's D-pad, OK
+  and Back (and with a pointer or touch), with a spotlight that follows the
+  focused title and a timeline you can drag.
+
+### Looking for…
+
+- **A Stremio alternative for Android TV or Fire TV?** Stream uses the same
+  add-ons, with the torrent engine inside the app instead of a separate server.
+- **A way to stream torrents on a TV without TorrServe?** One app does the
+  downloading and the playback; nothing to set up on another device.
+- **Something that doesn't lag on a cheap box or stick?** Stream's memory, cache
+  and decoder choices are set for 1 GB, 32-bit devices first.
+- **Streaming without accounts or tracking?** There is nothing to sign in to and
+  nothing sent anywhere except requests to the add-ons you installed, the
+  artwork they point to and the peers of what you play.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/media/details.png" alt="A film's details: logo, facts, synopsis and Play, Sources, favourite and watched controls over the film's artwork"/></td>
-<td width="50%"><img src="docs/media/search.png" alt="Search: the on-screen keyboard beside a grid of public-domain results"/></td>
+<td width="50%"><img src="docs/media/details.png" alt="A title's details: facts, synopsis and Play, episodes, favourite and watched controls over its artwork"/></td>
+<td width="50%"><img src="docs/media/search.png" alt="Search: the on-screen keyboard beside a grid of results for &quot;dune&quot;"/></td>
 </tr>
 <tr>
 <td><b>Details</b>: logo, facts and synopsis over the title's art, with Play, Sources, favourite and watched.</td>
 <td><b>Search</b>: a keyboard made for the remote, results as you type, a full grid with Right.</td>
 </tr>
 <tr>
-<td><img src="docs/media/player-controls.png" alt="The player's toolbar over a playing film: title, timeline, Audio &amp; subtitles and Settings"/></td>
-<td><img src="docs/media/sources.png" alt="Every source for a film, from the Internet Archive add-on, with quality and size"/></td>
+<td><img src="docs/media/player-controls.png" alt="The player's toolbar over Big Buck Bunny: title, timeline, watched, Audio &amp; subtitles and Settings"/></td>
+<td><img src="docs/media/sources.png" alt="The sources for Big Buck Bunny, with sort options, quality and size"/></td>
 </tr>
 <tr>
 <td><b>Player</b>: a quiet toolbar with a draggable timeline; subtitles always stay clear of it.</td>
 <td><b>Sources</b>: every candidate from your add-ons, ranked, if you'd rather choose yourself.</td>
 </tr>
 <tr>
-<td><img src="docs/media/library.png" alt="The Library with favourite public-domain films"/></td>
+<td><img src="docs/media/library.png" alt="The Library with favourite films"/></td>
 <td><img src="docs/media/settings-subtitles.png" alt="Subtitle settings with a live preview of size, font, colour and background"/></td>
 </tr>
 <tr>
-<td><b>Library</b>: favourites and history, kept on the TV.</td>
+<td><b>Library</b>: favourites and history, kept on the TV and encrypted.</td>
 <td><b>Settings</b>: subtitle style with a live preview, languages, add-ons and playback.</td>
 </tr>
 </table>
@@ -66,7 +89,7 @@ using the add-ons you already know. No account, no server, nothing to install on
 <details>
 <summary><b>Search and the player in motion</b></summary>
 
-<p align="center"><img src="docs/media/search.gif" alt="Typing &quot;night&quot; on the on-screen keyboard with the remote while public-domain results arrive" width="720"/></p>
+<p align="center"><img src="docs/media/search.gif" alt="Typing &quot;dune&quot; on the on-screen keyboard with the remote while results arrive" width="720"/></p>
 <p align="center"><img src="docs/media/player.gif" alt="Showing the player toolbar, skipping forward with the remote and opening the Settings menu" width="720"/></p>
 
 </details>
@@ -156,14 +179,22 @@ have on a server. Stream is a single app that does one thing.
 
 ## Install
 
-Stream runs on Android TV and Google TV devices with Android 8.0 or later.
+Stream runs on Android TV, Google TV and other Android-based TVs and boxes with
+Android 8.0 or later.
 
-1. Build the APK for your device (most TVs are `arm64-v8a`), as described in
-   [Building and running](docs/development.md#build-an-apk-for-a-tv), and sign
-   it with your own key.
-2. On the TV, enable developer options and network debugging.
-3. From a computer on the same network: `adb connect <tv-address>`, then
-   `adb install app-arm64-v8a-release-signed.apk`.
+1. Download the APK from the
+   [latest release](https://github.com/Daniil-Hirchyts/stream/releases/latest):
+   **arm64-v8a** for most current TVs, **armeabi-v7a** for 32-bit sticks such as
+   the first Fire TV Stick, or **universal** if unsure. Check it against
+   `SHA256SUMS.txt`.
+2. Install it the way your TV allows sideloading: a downloader app on the TV, a
+   USB drive with a file manager, or from a computer on the same network with
+   developer options and network debugging enabled:
+   `adb connect <tv-address>`, then `adb install stream-<version>-arm64-v8a.apk`.
+
+To build it yourself instead, see
+[Building and running](docs/development.md#build-an-apk-for-a-tv); releases are
+made as described in [Releasing](docs/releasing.md).
 
 On first start Stream installs Cinemeta (films and series), OpenSubtitles and a
 few public torrent add-ons, so it is ready to browse at once; remove any of them
@@ -188,5 +219,8 @@ mbedTLS, Media3, the Geist typeface and the Rust crates listed in
 
 Stream does not host, index or provide any content. Add-ons are third-party
 services chosen by the user, who is responsible for what they watch and for
-respecting the law and copyright where they live. The media in this README show
-public-domain films from the Internet Archive.
+respecting the law and copyright where they live. The screenshots and recordings
+in this README show titles and artwork from the Cinemeta catalogue as the app
+displays them; the only film shown playing is Big Buck Bunny (© Blender
+Foundation, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)),
+streamed from the Internet Archive.

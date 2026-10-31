@@ -47,7 +47,9 @@ Release outputs are unsigned: sign them with your own key (`apksigner`) before
 installing. Most Android TV devices are `arm64-v8a`; older and cheaper sticks
 are often `armeabi-v7a`. To install on your own TV, enable developer options
 and network debugging on it, then `adb connect <tv-address>` and
-`adb install app-arm64-v8a-release-signed.apk`.
+`adb install app-arm64-v8a-release-signed.apk`. Signed builds are published on
+[GitHub Releases](https://github.com/Daniil-Hirchyts/stream/releases) by the
+release workflow; see [Releasing](releasing.md).
 
 ## Engine on the host
 
@@ -71,7 +73,7 @@ and network debugging on it, then `adb connect <tv-address>` and
 | Launcher icon and banner | `android/branding/make_brand.py` |
 | Engine open source notice | `python3 native/core/notices.py` after `Cargo.lock` changes |
 | Baseline and Startup Profiles | `./simulator.sh baseline-profile` ([testing](testing.md#baseline-and-startup-profiles)) |
-| README screenshots and GIFs | `./simulator.sh readme-media` (internet; public-domain films only) |
+| README screenshots and GIFs | `./simulator.sh readme-media` (internet; real catalogue, plays only Big Buck Bunny, CC BY) |
 
 ## Tests
 

@@ -259,13 +259,15 @@ now writes a `failure` record with the player state and engine diagnostics; see
 
 ## Live checks (optional, internet)
 
-Never required, never against a LAN TV, only with public-domain films. Each uses
+Never required, never against a LAN TV, and nothing plays but public-domain or
+openly licensed films (`readme-media` browses Cinemeta's current catalogue but
+plays only Big Buck Bunny, CC BY). Each uses
 an isolated database and installs nothing into owner data; none supplies
 accounts or credentials.
 
 ```sh
 ./simulator.sh live-film       # films installed through the store play on the emulator
-./simulator.sh readme-media    # README screenshots and GIFs (docs/media), public-domain films only
+./simulator.sh readme-media    # README screenshots and GIFs (docs/media); plays only Big Buck Bunny
 ./simulator.sh live-addons     # every current store entry: manifest, resources, review install
 ./simulator.sh live-torrents   # one public-domain torrent per sampled provider
 ./simulator.sh live-torrents Torrentio,Comet   # a subset; names without spaces
