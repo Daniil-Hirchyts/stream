@@ -238,18 +238,10 @@ class AcceptanceTest : AppHarness() {
         tap("Browse", true); captureUi("categories"); tap("Generated films", false)
         tap("Generated", true); captureUi("catalogue-header")
         for (step in 0 until 3) {
-            val reached = java.util.concurrent.atomic.AtomicBoolean()
-            browse!!.onActivity { activity -> reached.set(activity.currentFocus != null
-                    && "Next page".contentEquals(if (activity.currentFocus!!.contentDescription == null) "" else activity.currentFocus!!.contentDescription)) }
-            if (reached.get()) break
+            if (focusedKey().startsWith("next-page:")) break
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN); android.os.SystemClock.sleep(250)
         }
-        waitUntil("remote reaches footer next page", 5000) {
-            val focused = java.util.concurrent.atomic.AtomicBoolean()
-            browse!!.onActivity { activity -> focused.set(activity.currentFocus != null
-                    && "Next page".contentEquals(if (activity.currentFocus!!.contentDescription == null) "" else activity.currentFocus!!.contentDescription)) }
-            focused.get()
-        }
+        waitUntil("remote reaches footer next page", 5000) { focusedKey().startsWith("next-page:") }
         waitUntil("pagination footer is fully visible", 5000) {
             val atBottom = java.util.concurrent.atomic.AtomicBoolean()
             browse!!.onActivity { activity -> atBottom.set(!activity.findViewById<android.view.View>(R.id.page_rows).canScrollVertically(1)) }
@@ -276,14 +268,26 @@ class AcceptanceTest : AppHarness() {
             } catch (error: ReflectiveOperationException) { throw AssertionError(error) }
         }
         instrumentation.waitForIdleSync()
+        // The keyboard keeps focus while typing; Right from its last column moves into the results.
+        browse!!.onActivity { activity -> assertNotNull(focusKey(activity, "keyboard:f")) }
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT)
+        waitUntil("Right moves into the results", 5000) { focusedKey().startsWith("edge-card:") }
         for (i in 0 until 3) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN); android.os.SystemClock.sleep(300) }
         captureUi("search-scroll")
-        browse!!.onActivity { activity ->
-            val focus = activity.currentFocus; assertNotNull(focus)
-            assertTrue("Focus stayed in search results", (focus!!.tag as Any?).toString().startsWith("edge-card:"))
-            val visible = android.graphics.Rect(); assertTrue(focus.getGlobalVisibleRect(visible))
-            assertEquals("Focused card and caption are fully visible", focus.height.toLong(), visible.height().toLong())
+        val key = focusedKey()
+        assertTrue("Focus stayed in search results: $key", key.startsWith("edge-card:"))
+        assertTrue("Down moved through the results: $key", key.removePrefix("edge-card:").toInt() >= 12)
+        // Compose clips window bounds by every ancestor but not a node's size, so equal heights mean nothing is cut off.
+        waitUntil("Focused card and caption are fully visible", 5000) {
+            val card = semanticNode(key) ?: return@waitUntil false
+            Math.abs(card.boundsInWindow.height - card.size.height) < 1f
         }
+    }
+    /** The key of the control holding focus: declarative controls report theirs through the page's focus owner. */
+    private fun focusedKey(): String {
+        val key = java.util.concurrent.atomic.AtomicReference("")
+        browse!!.onActivity { activity -> key.set((activity.currentFocus?.tag as Any?)?.toString() ?: "") }
+        return key.get()
     }
     @Throws(Exception::class)
     private fun captureUi(name: String) {
