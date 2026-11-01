@@ -238,6 +238,8 @@ class BrowseRecoveryTest : SearchHarness() {
         @Volatile @JvmField var catalogueDelayMs: Long = 0
         @Volatile @JvmField var homeGate: CountDownLatch? = null
         @Volatile @JvmField var homeGateCatalog = ""
+        /** A second server needs its own add-on id to install beside the first. */
+        @Volatile @JvmField var addonId = "tv.stream.browse-fixture"
         init {
             server = ServerSocket(0, 20, java.net.InetAddress.getByName("127.0.0.1")); url = "http://127.0.0.1:" + server.localPort
             workers.execute { while (!server.isClosed) try { val socket = server.accept(); workers.execute { answer(socket) } } catch (ignored: Exception) { break } }
@@ -260,7 +262,7 @@ class BrowseRecoveryTest : SearchHarness() {
                         val catalogs = JSONArray()
                         for (i in 0 until catalogCount) catalogs.put(JSONObject().put("type", "movie").put("id", if (i == 0) "browse" else "browse-$i").put("name", "Test films")
                                 .put("extra", JSONArray().put(genre).put(JSONObject().put("name", "skip")).put(JSONObject().put("name", "search"))))
-                        result.put("id", "tv.stream.browse-fixture").put("name", "Browse fixture").put("version", "1.0.0")
+                        result.put("id", addonId).put("name", "Browse fixture").put("version", "1.0.0")
                                 .put("types", JSONArray().put("movie")).put("resources", JSONArray().put("catalog").put("meta").put("stream"))
                                 .put("catalogs", catalogs)
                     } else if (path.startsWith("/catalog/")) {

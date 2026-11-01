@@ -282,8 +282,8 @@ retains route scroll and focus. Each block's composables own its layout:
   once the page has settled, the first control takes it (`claimContentFocus`).
   A remote move into a partial page (a first launch's Home, whose slow starter
   providers keep it loading) ends that wait: the control the viewer reached keeps
-  focus when the page arrives, and an update never scrolls a browsing viewer back
-  to the top. An arrow that leaves focus on the bare list, after the control
+  focus when the page arrives, and the page is not scrolled back to its top
+  (a new page, such as a catalogue's next page, still opens at its top). An arrow that leaves focus on the bare list, after the control
   under it was replaced, hands focus to the remembered or first control.
   An empty Library offers Browse, so it has a control too; a page with no
   controls at all keeps focus on the list, so Right can still collapse the rail.

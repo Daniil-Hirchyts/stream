@@ -94,6 +94,43 @@ class PageNavigationTest : AppHarness() {
         tap("Generated Film", false); AppHarness.waitUntil("Details", 10000) { visible("Play") || visible("Resume") }
         assertControlFocused("Details")
     }
+    /**
+     * A first launch's Home shows the shelves that have answered while slower providers keep it loading (each starter
+     * add-on installed restarts the load). The remote moves onto those posters at once, and the poster it reached keeps
+     * the focus when the last provider answers.
+     */
+    @Test @Throws(Exception::class) fun remoteEntersShelvesWhileSlowProvidersKeepHomeLoading() {
+        BrowseRecoveryTest.CatalogServer().use { first -> BrowseRecoveryTest.CatalogServer().use { slow ->
+            first.catalogCount = 3; install(first)
+            slow.addonId = "tv.stream.browse-fixture-slow"; slow.homeGate = java.util.concurrent.CountDownLatch(1); install(slow)
+            launch(); AppHarness.waitUntil("Answered shelves while Home loads", 10000) { visible("Film 00") && loading() }
+            for (code in intArrayOf(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_DOWN,
+                    KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_RIGHT)) key(code)
+            assertTrue("Home is still loading", loading())
+            assertRemoteMovesFocus("Home while a provider is slow")
+            val reached = focusTag()
+            slow.homeGate!!.countDown()
+            AppHarness.waitUntil("Home loaded", 10000) { !loading() }; instrumentation.waitForIdleSync(); SystemClock.sleep(300)
+            assertEquals("The poster the remote reached keeps the focus (id ${focusId()})", reached, focusTag())
+            assertRemoteMovesFocus("Home once loaded")
+        } }
+    }
+    private fun install(server: BrowseRecoveryTest.CatalogServer) {
+        services.addons.newRequest().use { scope ->
+            services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", scope))
+        }
+    }
+    private fun loading(): Boolean { val yes = AtomicBoolean(); browse!!.onActivity { a ->
+        yes.set(MainActivity::class.java.getDeclaredField("pageLoading").also { it.isAccessible = true }.getBoolean(a)) }; return yes.get() }
+    /** A poster is lit, and Right then Left each move the focus on from it. */
+    private fun assertRemoteMovesFocus(page: String) {
+        assertControlFocused(page)
+        for (code in intArrayOf(KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_LEFT)) {
+            val before = focusTag(); key(code)
+            assertTrue("$page: ${KeyEvent.keyCodeToString(code)} moves on from $before (focus ${focusTag()} id ${focusId()})",
+                    waitFor(3000) { focusTag() != before && focusId() != R.id.page_rows })
+        }
+    }
     /** Focus is in the page (not the rail, not the bare list), and a composition's control reports itself focused. */
     private fun assertControlFocused(page: String) {
         var detail = ""

@@ -62,7 +62,13 @@ focused control in each (never the rail or the bare page list); and checks that
 after quick moves only the focused poster's artwork is grown, with its caption
 below it. `posterLiftNeverStallsAcrossShelvesPagesAndTitles` requires every move
 of a long walk to end on a grown poster within a second, through shelves
-scrolled away and back, a title opened and closed and a page change:
+scrolled away and back, a title opened and closed and a page change.
+`remoteEntersShelvesWhileSlowProvidersKeepHomeLoading` reproduces a first
+launch's Home: one fixture provider answers while a second (gated, like a slow
+starter add-on) keeps the page loading. Down and Right move onto the answered
+shelves at once, and when the last provider answers the poster the remote
+reached keeps the focus (it is not reset to the first poster or dropped on the
+bare page list), and Right and Left still move it:
 
 ```sh
 (cd android && ./gradlew :app:testDebugUnitTest --tests tv.stream.app.ui.PageRowFocusTest)

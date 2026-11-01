@@ -95,6 +95,8 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
     private var searchDebounce: Runnable? = null
     /** A tab was chosen: keep focus in the rail until Right enters its content. */
     private var waitingForContentFocus = false
+    /** The viewer moved into this render's page before it finished loading; its arrival keeps their place. */
+    private var enteredLoadingPage = false
     private var leftPressed = false
     /** Saved series changed while their page was loading; it rebuilds when that load finishes. */
     private var libraryChanged = false
@@ -171,6 +173,11 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
             // A deliberate toolbar/rail choice while a provider is loading cancels automatic content focus.
             if (waitingForContentFocus && now != null && (now === pageBack || topBar.hasFocus() || pageTools.hasFocus()))
                 finishContentFocusWait()
+            // Only the viewer moves focus into a page still loading (the list holds it until then): their control, not
+            // the page's first, keeps it once the page arrives.
+            else if (waitingForContentFocus && now !== list && insidePage(now) && !stack.isEmpty() && shownRoute === route()) {
+                finishContentFocusWait(); contentReady = true; enteredLoadingPage = true
+            }
             // The initial focus is assigned before contentReady. Capture it when it leaves the page as well,
             // so the rail and toolbar return to that control rather than the first filter or row.
             if (contentReady && !stack.isEmpty() && shownRoute === route() && insidePage(old) && old!!.tag is String)
@@ -389,6 +396,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
     private fun render(restoreOnly: Boolean) { render(restoreOnly, false) }
     private fun render(restoreOnly: Boolean, refreshData: Boolean) {
         seriesTransition++
+        enteredLoadingPage = false
         if (!entrance.entering || shownRoute !== route()) {
             list.animate().cancel(); list.alpha = 1f; list.translationX = 0f; list.translationY = 0f
         }
@@ -617,6 +625,8 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         if (!partial) browseClockReady = true
         updateClock()
         val updating = shownRoute === route() && shownPage != null
+        // A page the viewer entered while it loaded keeps their place: it is not scrolled back to its top.
+        if (updating && enteredLoadingPage && currentFocus !== list && insidePage(currentFocus)) rememberFocus()
         val previousPage = shownPage
         shownRoute = route(); shownPage = page
         if (!partial) { retainedPages[shownRoute!!] = page; dirtyPages.remove(shownRoute) }
@@ -672,7 +682,7 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
         afterPageLayout {
             if (mine != generation || stopped) return@afterPageLayout
             val viewerMoved = !waitingForContentFocus && (pageBack.hasFocus() || topBar.hasFocus() || pageTools.hasFocus()
-                    || list.hasFocus() && route.focus.isNotEmpty() && route.focus != target)
+                    || list.hasFocus() && currentFocus !== list && route.focus.isNotEmpty() && route.focus != target)
             finishContentFocusWait()
             if (preserveNavigation || viewerMoved) { contentReady = true; return@afterPageLayout }
             val found: View? = if (target.isEmpty()) null else pageTools.findViewWithTag(target)
@@ -1073,6 +1083,12 @@ class MainActivity : ComponentActivity(), Navigator, PageAdapter.Listener {
             if (move && !topBar.hasFocus() && !stack.isEmpty() && route().screen == "Search" && adapter.searchKey(event.keyCode)) return true
             super.dispatchKeyEvent(event)
         } finally { adapter.arrowing(false) }
+        if (move && before === list && !waitingForContentFocus && contentReady) {
+            // A control replaced under the remote leaves focus on the bare list, where arrows find nothing. A move the
+            // list completes itself (scrolling to the next row first) lands a moment later.
+            val shown = route()
+            main.postDelayed({ if (!stopped && currentFocus === list && !waitingForContentFocus && route() === shown) claimContentFocus(shown.focus) }, 120)
+        }
         if (move && !hiddenNavigation() && event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && insidePage(before) && leftContentEdge(before)
                 && (stayed() || !insidePage(currentFocus))) {
             focusNavigation(); handled = true
