@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.android.awaitFrame
 import tv.stream.app.R
+import tv.stream.app.ui.PageControls.lifted
 
 /**
  * Settings and add-on management drawn by Compose: list, source and field rows, and the Settings split view. They
@@ -120,10 +121,7 @@ internal object PageRows {
         }
         val row = Modifier
             .onSizeChanged { width = it.width }
-            .graphicsLayer {
-                scaleX = scale; scaleY = scale
-                shadowElevation = raise.toPx(); this.shape = shape; clip = false
-            }
+            .lifted(scale, raise, shape, false)
             // Inside the layer, so popups and sounds see the grown platter as native controls' visible rects do.
             .then(control.placed)
             .background(fill, shape)

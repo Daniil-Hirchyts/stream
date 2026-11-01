@@ -34,6 +34,13 @@ A different emulator needs both `STREAM_AVD` and `STREAM_PORT`; if the emulator
 can't resolve names after the host's network changed, start it with
 `STREAM_DNS_SERVERS=1.1.1.1,8.8.8.8 ./simulator.sh start`.
 
+To get closer to a first-generation Fire TV Stick (Android 9, 1 GB), create an
+API 28 AVD with a 1080p TV profile and 1 GB of RAM and start it with the host GPU,
+for example `STREAM_AVD=Stream_FireTV_9 STREAM_PORT=5560 ./simulator.sh start`.
+Google publishes the API 28 TV image for x86 only, so on Apple silicon use the
+API 28 `google_apis` arm64 image: it runs 64-bit code only, so install the
+`arm64-v8a` APK rather than the 32-bit one the Stick uses.
+
 ## Build an APK for a TV
 
 ```sh

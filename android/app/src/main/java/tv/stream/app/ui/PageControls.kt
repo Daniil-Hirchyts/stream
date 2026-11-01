@@ -231,11 +231,17 @@ internal object PageControls {
         val duration = if (grown) 200 else 160
         val factor by animateFloatAsState(if (grown) scale else 1f, tween(duration, easing = Decelerate), label = "lift")
         val height = raised(grown && raise, 10.dp)
-        return graphicsLayer {
-            scaleX = factor; scaleY = factor
-            shadowElevation = height.toPx(); this.shape = shape; clip = false
-        }
+        return lifted(factor, height, shape, false)
     }
+
+    /**
+     * A focus growth's layer, with its animated values read during composition. A layer block's own reads can stop
+     * being observed when RecyclerView composes a page block before attaching it: the animation then ran to its end
+     * while the control stayed drawn at its old size until the next focus change.
+     */
+    @Composable
+    fun Modifier.lifted(scale: Float, raise: Dp, shape: Shape, clip: Boolean): Modifier =
+            graphicsLayer(scaleX = scale, scaleY = scale, shadowElevation = with(LocalDensity.current) { raise.toPx() }, shape = shape, clip = clip)
 
     /**
      * A focused control's raised shadow: it rises with focus but leaves at once with the focus platter. A layer's

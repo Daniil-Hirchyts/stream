@@ -60,7 +60,9 @@ accessibility; opens every tab by remote from the rail (Search, Browse,
 Library, Settings, Home), Search directly and a title's details, and requires a
 focused control in each (never the rail or the bare page list); and checks that
 after quick moves only the focused poster's artwork is grown, with its caption
-below it:
+below it. `posterLiftNeverStallsAcrossShelvesPagesAndTitles` requires every move
+of a long walk to end on a grown poster within a second, through shelves
+scrolled away and back, a title opened and closed and a page change:
 
 ```sh
 (cd android && ./gradlew :app:testDebugUnitTest --tests tv.stream.app.ui.PageRowFocusTest)
@@ -175,7 +177,8 @@ app-private `files/vertical-navigation/`.
 `SearchModesTest` checks horizontal keyboard navigation, navigation remaining hidden for remote/pointer/touch,
 plain result clipping, grid fades with no visible row crossings during column changes,
 rapid reversals, activity recreation during both transition phases, selected-film restoration
-and mode switches without repeating provider requests.
+and mode switches without repeating provider requests. Results start at the top when a query is
+retyped and when a slower provider's earlier-ranked answers arrive after others are on screen.
 The reflow regression observes overlapping keyboard/grid fades, the keyboard's longer eased tail,
 and position/opacity continuity when direction changes.
 `InterfacePolishTest#keyboardLanguagesKeepTheQueryAndFillEveryRowWithoutVoiceInput` checks all eight

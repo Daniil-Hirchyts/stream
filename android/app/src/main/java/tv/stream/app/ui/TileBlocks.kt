@@ -95,6 +95,7 @@ import java.util.function.Consumer
 import kotlinx.coroutines.android.awaitFrame
 import tv.stream.app.R
 import tv.stream.app.addon.Title
+import tv.stream.app.ui.PageControls.lifted
 import tv.stream.app.ui.PageControls.overlay
 import tv.stream.app.ui.PageControls.platter
 
@@ -150,10 +151,7 @@ internal object TileBlocks {
         Column(modifier.then(control.input)) {
             Box(Modifier.fillMaxWidth().aspectRatio(if (poster) 1f / 1.5f else 1f / .5625f)
                     .onSizeChanged { frameHeight = it.height }
-                    .graphicsLayer {
-                        scaleX = scale; scaleY = scale
-                        shadowElevation = raise.toPx(); this.shape = shape; clip = true
-                    }
+                    .lifted(scale, raise, shape, true)
                     .then(control.placed)
                     .testTag(tile.key + ":art")
                     .platter(R.drawable.tv_artwork)
@@ -174,9 +172,9 @@ internal object TileBlocks {
                         .clearAndSetSemantics { testTag = tile.key + ":flag" },
                         style = TextBlocks.style(Tv.Font.MEDIUM, 11f, R.color.tv_on_focus, false).copy(letterSpacing = .06.em), maxLines = 1)
             }
-            // The caption follows the artwork's grown lower edge in the same layer pass that grows the artwork, so
-            // the two always move together; recomposing for it each frame could leave one a frame or more behind.
-            Column(Modifier.graphicsLayer { translationY = (scale - 1f) * frameHeight / 2f }) {
+            // The caption follows the artwork's grown lower edge from the same composed scale, so the two always move
+            // together in one frame.
+            Column(Modifier.graphicsLayer(translationY = (scale - 1f) * frameHeight / 2f)) {
                 if (episode) BasicText("Episode " + tile.episodeNumber, Modifier.padding(start = 2.dp, top = 9.dp, end = 2.dp).testTag(tile.key + ":number"),
                         style = TextBlocks.style(Tv.Font.MEDIUM, 12f, R.color.tv_text_secondary, true), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val caption = PageControls.stateColor(R.color.tv_caption, control.focused)
@@ -214,7 +212,7 @@ internal object TileBlocks {
         val shape = RoundedCornerShape(10.dp)
         val wash = remember(tile.colorIndex) { CategoryBackground(tile.colorIndex) }
         Box(modifier.fillMaxWidth().aspectRatio(1f / BLOCK_RATIO)
-                .graphicsLayer { scaleX = scale; scaleY = scale; shadowElevation = raise.toPx(); this.shape = shape; clip = true }
+                .lifted(scale, raise, shape, true)
                 .then(control.placed)
                 .drawBehind {
                     wash.setBounds(0, 0, size.width.toInt(), size.height.toInt())

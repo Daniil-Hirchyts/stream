@@ -127,9 +127,43 @@ class PageNavigationTest : AppHarness() {
             instrumentation.waitForIdleSync(); assertPosterGrown()
         }
     }
-    private fun assertPosterGrown() {
+    /**
+     * The focused poster keeps growing however the viewer got there: after long walks that scroll shelves away and
+     * back, page changes through the rail and a title opened and closed, every move ends on a grown poster.
+     */
+    @Test @Throws(Exception::class) fun posterLiftNeverStallsAcrossShelvesPagesAndTitles() {
+        BrowseRecoveryTest.CatalogServer().use { server ->
+            server.catalogCount = 7
+            services.addons.newRequest().use { scope ->
+                services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", scope))
+            }
+            launch(); AppHarness.waitUntil("Home shelves", 10000) { visible("Film 00") && focusedRow() >= 0 }
+            fun walk(vararg codes: Int) { for (code in codes) { instrumentation.sendKeyDownUpSync(code); SystemClock.sleep(250); assertPosterGrown(1000) } }
+            fun rail(tab: String) {
+                for (i in 0 until 30) { if (focusTag()?.startsWith("nav:") == true) break; key(KeyEvent.KEYCODE_DPAD_LEFT) }
+                openFromRail(tab)
+            }
+            val right = KeyEvent.KEYCODE_DPAD_RIGHT; val left = KeyEvent.KEYCODE_DPAD_LEFT
+            val down = KeyEvent.KEYCODE_DPAD_DOWN; val up = KeyEvent.KEYCODE_DPAD_UP
+            for (round in 0 until 2) {
+                walk(right, right, right, right, right, right, right, right, down, down, down, down, down, down)
+                walk(left, left, left, up, up, up, up, up, up, right, right)
+                instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
+                AppHarness.waitUntil("title", 10000) { visible("Play") }
+                instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+                AppHarness.waitUntil("Home again", 10000) { focusTag()?.contains("browse:") == true }
+                assertPosterGrown(1000)
+                walk(right, down, right, up)
+                rail("nav:Browse"); SystemClock.sleep(1500)
+                rail("nav:Home"); AppHarness.waitUntil("Home poster", 10000) { focusTag()?.contains("browse:") == true || focusedRow() >= 0 }
+                if (focusTag()?.contains("browse:") != true) key(right)
+                walk(right, right, down, down, down, right, up, up)
+            }
+        }
+    }
+    private fun assertPosterGrown(timeout: Long = 3000) {
         var detail = ""
-        val settled = waitFor(3000) {
+        val settled = waitFor(timeout) {
             val focus = focusTag() ?: return@waitFor false
             val art = semanticNode("$focus:art"); val title = semanticNode("$focus:title")
             if (art == null || title == null) { detail = "no artwork for $focus"; return@waitFor false }

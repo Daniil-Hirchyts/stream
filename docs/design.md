@@ -154,7 +154,8 @@ Shelves scroll horizontally. Page titles scroll with their page.
   so no language or character page adds blank spacer keys. Page switches and Clear
   span two cells; the language key spans all six. Cell and gap widths are rounded
   to pixels before calculating spans. The popup leaves focus growth clear of clipping. Results update as you type,
-  with no heading or count. Before a search, and when nothing matches, a quiet
+  with no heading or count; until the viewer moves into them they stay at the top, even when a slower provider's
+  better-ranked answers arrive after others are already showing. Before a search, and when nothing matches, a quiet
   line sits centred in the results area.
 - **Corners:** one scale in `res/values/dimens.xml`, on this 960 dp canvas
   (half of tvOS points):
@@ -220,8 +221,11 @@ Shelves scroll horizontally. Page titles scroll with their page.
   on another root page it returns Home, and on Home it exits. The Home spotlight remains a touch-only shortcut.
 - **Focus:** the focused control turns white with dark text. Artwork grows,
   gains a white rim and a deep shadow while its caption keeps its size and rides
-  the grown lower edge in the same layer pass, so the two always move together; buttons
-  grow slightly; list rows and tabs don't grow, so their text never shifts.
+  the grown lower edge from the same composed scale, so the two always move together; buttons
+  grow slightly; list rows and tabs don't grow, so their text never shifts. Growth values are read
+  during composition and handed to the layer, never read inside a layer block: RecyclerView can compose
+  a page block before attaching it, and a layer block's reads were then no longer observed, leaving a
+  focused poster drawn at its resting size.
   A raised control's shadow rises with focus but leaves at once with the white platter: a shadow still settling
   under a row or category whose platter has turned clear would show through as a dark pill.
   Settings marks only the open category with a faint platter.
