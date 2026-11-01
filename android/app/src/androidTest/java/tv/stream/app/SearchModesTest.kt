@@ -294,6 +294,29 @@ class SearchModesTest : SearchHarness() {
             assertEquals("The first row is back at the top of the results", top, firstTop(), 2f)
         }
     }
+    /** A slower provider whose answers rank first must not leave the grid scrolled to the results already shown. */
+    @Test @Throws(Exception::class) fun lateEarlierRankedAnswersKeepTheResultsAtTheTop() {
+        BrowseRecoveryTest.CatalogServer().use { server ->
+            server.catalogCount = 2
+            services.addons.newRequest().use { request ->
+                services.addons.install(server.url + "/manifest.json", services.addons.preview(server.url + "/manifest.json", request))
+            }
+            launch(); AppHarness.waitUntil("Home", 10000) { visible("Film 00") }
+            server.lateSearchMs = 2500
+            tap("Search", true); AppHarness.waitUntil("keyboard", 5000) { keyboardShown() }
+            tap("Type f", false); tap("Type i", false)
+            fun firstRow(): Pair<String, Float> = semanticNodes {
+                it.config.getOrElse(SemanticsProperties.TestTag) { "" }.startsWith("search:[")
+            }.minBy { it.boundsInWindow.top }.let { it.config.getOrElse(SemanticsProperties.TestTag) { "" } to it.boundsInWindow.top }
+            searchWait("first answers", 10000) { visible("Film 100") }
+            SystemClock.sleep(300)
+            val top = firstRow().second
+            SystemClock.sleep(server.lateSearchMs + 1500)
+            val first = firstRow()
+            assertTrue("The late provider's first film leads the results: $first", first.first.contains("\"browse:0\""))
+            assertEquals("The results still start at the top", top, first.second, 2f)
+        }
+    }
     private fun query(): String = searchQuery()
     @Test @Throws(Exception::class) fun aPointerSweepLeavesNoKeyHoveredWhileResultsArrive() {
         // The TV's pointer (or the emulator window's) passing over the keyboard while results arrive left keys drawn

@@ -243,6 +243,9 @@ class BrowseRecoveryTest : SearchHarness() {
             workers.execute { while (!server.isClosed) try { val socket = server.accept(); workers.execute { answer(socket) } } catch (ignored: Exception) { break } }
         }
         @Volatile var reverseSearch = false
+        /** When set, the first catalogue answers searches this many ms late and the others answer at once with their own
+         *  films (from Film 100), so the late, earlier-ranked answers arrive ahead of results already on screen. */
+        @Volatile var lateSearchMs: Long = 0
         fun requests(genre: String, skip: Int): Int { val count = requests["$genre:$skip"]; return if (count == null) 0 else count.get() }
         @Throws(Exception::class)
         fun title(index: Int): JSONObject { return JSONObject().put("id", "browse:$index").put("type", "movie").put("name", String.format(java.util.Locale.ROOT, "Film %02d", index)).put("description", "Generated navigation fixture.") }
@@ -275,12 +278,15 @@ class BrowseRecoveryTest : SearchHarness() {
                         }
                         else number = requests.computeIfAbsent("$genre:$skip") { key -> AtomicInteger() }.incrementAndGet()
                         if (catalogueDelayMs > 0) Thread.sleep(catalogueDelayMs)
+                        val late = lateSearchMs > 0 && extra.containsKey("search")
+                        if (late && parts[3] == "browse") Thread.sleep(lateSearchMs)
+                        val offset = if (late && parts[3] != "browse") 100 else 0
                         if (unavailable || genre == "Offline" || genre == "Flaky" && number < 3) status = failureStatus
                         if (genre == "Denied") status = 401
                         if (genre == "Flaky" && number == 3) flakyThird.await(15, TimeUnit.SECONDS)
                         val titles = JSONArray()
                         val count = if (extra.containsKey("search")) 96 else 24
-                        if (genre != "Empty" && !(emptySearch && extra.containsKey("search")) && status == 200) for (i in skip until skip + count) titles.put(title(if (reverseSearch && extra.containsKey("search")) count - 1 - i else i))
+                        if (genre != "Empty" && !(emptySearch && extra.containsKey("search")) && status == 200) for (i in skip until skip + count) titles.put(title(offset + if (reverseSearch && extra.containsKey("search")) count - 1 - i else i))
                         result.put(if (genre == "Bad data") "invalid" else "metas", titles)
                     } else if (path.startsWith("/meta/")) {
                         val id = URLDecoder.decode(path.substring(path.lastIndexOf('/') + 1, path.length - 5), "UTF-8")

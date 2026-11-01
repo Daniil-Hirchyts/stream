@@ -244,6 +244,16 @@ internal object SearchBlocks {
             else if (card && registry?.owns(wanted) != true) state.request?.invoke(wanted)
             else if (!state.visible && !state.changing && owner.tag == "search-results" && item.tiles.isNotEmpty()) state.request?.invoke(state.result())
         }
+        // A lazy grid keeps its first visible card in place when items arrive before it, so a later provider's better-ranked
+        // answers would end up above the viewport. Until the viewer is in the results they stay at the top: the request
+        // is made before the grid measures the new answers, so it wins over that anchoring.
+        val answered = remember(item.value) { arrayOfNulls<List<String>>(1) }
+        SideEffect {
+            val keys = item.tiles.map { it.key }
+            val changed = answered[0] != null && answered[0] != keys
+            answered[0] = keys
+            if (changed && restoreTarget.isEmpty() && keys.isNotEmpty() && state.current?.invoke() !in keys) grid.requestScrollToItem(0)
+        }
         LaunchedEffect(state.visible) {
             val show = state.visible
             if (split == show && keyboard.value == if (show) 0f else 1f) return@LaunchedEffect
