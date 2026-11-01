@@ -58,6 +58,15 @@ def tri_points(scale, dx, dy, steps=16):
 def argb(c, alpha=1.0): return "#%02X%02X%02X%02X" % (round(alpha * 255), c[0], c[1], c[2])
 def white(alpha): return argb((255, 255, 255), alpha)
 
+# The field is the icon's own rounded square over the 72 units launchers show, transparent around it. Launchers mask
+# adaptive icons to their own shape: a circle fits inside this square, but Fire OS uses an almost square mask that
+# would otherwise show the field's raw, sharp edges.
+SHAPE_INSET, SHAPE_RADIUS = 18.0, 72 * 0.22
+def shape_path():
+    a, b, r = SHAPE_INSET, 108 - SHAPE_INSET, SHAPE_RADIUS
+    return (f"M{a + r:.2f},{a}H{b - r:.2f}A{r:.2f},{r:.2f} 0 0 1 {b},{a + r:.2f}V{b - r:.2f}A{r:.2f},{r:.2f} 0 0 1 {b - r:.2f},{b}"
+            f"H{a + r:.2f}A{r:.2f},{r:.2f} 0 0 1 {a},{b - r:.2f}V{a + r:.2f}A{r:.2f},{r:.2f} 0 0 1 {a + r:.2f},{a}Z")
+
 TOP_Y, BOTTOM_Y = min(p[1] for p in TRI), max(p[1] for p in TRI)
 LEFT_X, RIGHT_X = min(p[0] for p in TRI), max(p[0] for p in TRI)
 GLOW_STOPS = [(0, 1.0), (0.5, 0.35), (1, 0)]
@@ -67,20 +76,21 @@ os.makedirs(f"{RES}/drawable", exist_ok=True); os.makedirs(f"{RES}/mipmap-anydpi
 glow_items = "".join(f'\n                <item android:offset="{o}" android:color="{argb(GLOW, GLOW_ALPHA * a)}" />' for o, a in GLOW_STOPS)
 with open(f"{RES}/drawable/ic_launcher_background.xml", "w") as f:
     f.write(f'''<?xml version="1.0" encoding="utf-8"?>
-<!-- Stream's icon field: graphite, lighter at the top, with a cool light behind the mark. Made by branding/make_brand.py. -->
+<!-- Stream's icon field: a graphite rounded square, lighter at the top, with a cool light behind the mark. Transparent
+     around the square, so a launcher's near-square mask (Fire OS) shows the icon's own corners. Made by branding/make_brand.py. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path android:pathData="M0,0h108v108h-108z">
+    <path android:pathData="{shape_path()}">
         <aapt:attr name="android:fillColor">
             <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="0" android:endY="108"
                 android:startColor="{argb(TOP)}" android:endColor="{argb(BOTTOM)}" />
         </aapt:attr>
     </path>
-    <path android:pathData="M0,0h108v108h-108z">
+    <path android:pathData="{shape_path()}">
         <aapt:attr name="android:fillColor">
             <gradient android:type="radial" android:centerX="{GLOW_CENTER[0]}" android:centerY="{GLOW_CENTER[1]}"
                 android:gradientRadius="{GLOW_RADIUS}">{glow_items}

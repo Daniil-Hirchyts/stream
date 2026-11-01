@@ -280,6 +280,11 @@ retains route scroll and focus. Each block's composables own its layout:
   This includes a page updated in place, such as Search, whose keyboard is
   already built while it loads. If focus is still on the bare list or nowhere
   once the page has settled, the first control takes it (`claimContentFocus`).
+  A remote move into a partial page (a first launch's Home, whose slow starter
+  providers keep it loading) ends that wait: the control the viewer reached keeps
+  focus when the page arrives, and an update never scrolls a browsing viewer back
+  to the top. An arrow that leaves focus on the bare list, after the control
+  under it was replaced, hands focus to the remembered or first control.
   An empty Library offers Browse, so it has a control too; a page with no
   controls at all keeps focus on the list, so Right can still collapse the rail.
 - **Platform views kept:** the Settings subtitle preview hosts the player's
@@ -362,7 +367,9 @@ measure (`./simulator.sh profile`), not a guarantee.
 
 `android/branding/make_brand.py` regenerates the launcher icon and the TV banner from
 one geometry: a graphite field and a frosted-glass play mark. The icon is an
-adaptive vector with a monochrome layer; the separate 16:9 banner is PNGs at five
+adaptive vector with a monochrome layer. Its field is a rounded square (22% corners)
+over the 72 units launchers show, transparent around it: circular masks fall inside
+it, and Fire OS's almost square mask shows those corners instead of the field's raw edges; the separate 16:9 banner is PNGs at five
 densities with the wordmark in Geist Sans SemiBold. The application declares
 the adaptive icon and TV banner separately; the launcher activity inherits them.
 Do not wrap the banner in a padded square icon: that makes the artwork smaller.
